@@ -1,6 +1,7 @@
 // Trames : tuiles 1-bit (1 = encre) qui se répètent depuis le coin de la page,
 // bibliothèque personnalisable, et dithering d'image (Floyd–Steinberg, Bayer, seuil).
 import { BAYER4, BAYER8 } from './dither.js';
+import { kvGet, kvSet } from './store.js';
 
 const make = (id, name, group, w, h, fn) => {
   const bits = new Uint8Array(w * h);
@@ -48,9 +49,24 @@ export const BUILTIN_TRAMAS = [
 
 const SOLID = { id: 'plein', name: 'Plein', group: 'Plein', w: 1, h: 1, bits: new Uint8Array([1]), builtin: true, solid: true };
 
+// Bibliothèque personnelle : trames enregistrées sur cet appareil, disponibles dans tous les projets.
+let library = [];
+export const getLibrary = () => library;
+const setLibrary = list => { library = list.map(t => ({ ...decodeTrama(t), group: 'Ma bibliothèque', lib: true })); };
+export async function loadTramaLibrary() { setLibrary((await kvGet('tramaLib')) || []); }
+export async function saveToLibrary(t) {
+  const list = (await kvGet('tramaLib')) || [], enc = encodeTrama(t), i = list.findIndex(x => x.id === t.id);
+  if (i >= 0) list[i] = enc; else list.push(enc);
+  await kvSet('tramaLib', list); setLibrary(list);
+}
+export async function removeFromLibrary(id) {
+  const list = ((await kvGet('tramaLib')) || []).filter(x => x.id !== id);
+  await kvSet('tramaLib', list); setLibrary(list);
+}
+
 export function allTramas(project) {
   const custom = (project?.tramas || []).map(decodeTrama);
-  return [SOLID, ...BUILTIN_TRAMAS, ...custom];
+  return [SOLID, ...BUILTIN_TRAMAS, ...library, ...custom];
 }
 
 export function tramaById(project, id) {

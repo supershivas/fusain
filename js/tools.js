@@ -1,17 +1,17 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, targetLayer, deleteBubble,
 } from './editor.js';
 import {
-  stampDisc, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
+  stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view } from './view.js';
-import { hitBubble } from './bubbles.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross } from './view.js';
+import { hitBubble, tailOrigin } from './bubbles.js';
 import { toast } from './toast.js';
 
-let session = null;
+let session = null, hinted = null;   // hinted : dernier calque signalé par un toast de redirection
 export const busy = () => !!session;
 
 const panelAt = (x, y) => page().panels.find(p => x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) || null;
@@ -29,6 +29,20 @@ function makeCtx(p, layer, paint, useMask = true) {
 }
 
 const diameter = pt => Math.max(1, Math.round(ed.size * (pt.type === 'pen' && ed.pressure ? 0.4 + 1.2 * pt.pressure : 1)));
+
+// Taille du tampon selon le pinceau : pression du stylet, vitesse du geste et départ effilé.
+function brushDiameter(pt, s, step) {
+  const sp = s.ctx.brush && s.ctx.brush.spec;
+  if (!sp) return diameter(pt);
+  s.travel += step; s.speed = s.speed * 0.6 + step * 0.4;
+  const pen = pt.type === 'pen' && ed.pressure;
+  let f = 1;
+  if (pen && sp.press > 0) f *= (1 - sp.press) + sp.press * (sp.pressMin + (1.6 - sp.pressMin) * pt.pressure);
+  if (sp.speed > 0) f *= Math.max(0.25, 1 - sp.speed * Math.min(1, s.speed / (ed.size * 2.5)) * (pen && sp.press > 0 ? 0.4 : 1));
+  if (sp.start > 0) f *= Math.min(1, 0.3 + s.travel / (ed.size * sp.start));
+  s.ctx.brush.pr = pt.pressure;
+  return Math.max(1, Math.round(ed.size * f));
+}
 
 function flush(s) {
   if (!s.ctx.dirty) return;
@@ -52,11 +66,15 @@ export function down(pt) {
 
 function begin(p, pt) {
   selectPanel(p.id);
+  // Chaque outil vise le calque de sa sorte : encre → calque d'encre, trame → calque de trame (créé s'il manque).
+  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.tool === 'pencil' ? 'ink' : (trame0 ? 'tram' : 'ink');
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
   else {
-    layer = activeLayer(p);
-    if (!layer.visible) { toast('Ce calque est masqué : affiche-le pour dessiner.'); return; }
+    layer = role === 'any' ? activeLayer(p) : targetLayer(p, role);
+    if (!layer.visible) { toast(`Le calque « ${layer.name} » est masqué : affiche-le pour dessiner.`); return; }
+    if (layer.locked) { toast(`Le calque « ${layer.name} » est verrouillé.`); return; }
+    if (layer !== activeLayer(p) && hinted !== layer.id) { hinted = layer.id; toast(`Dessiné dans « ${layer.name} »`, { duration: 1600 }); }
   }
   const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey), tool = ed.tool;
   const trame = currentTrama();
@@ -67,9 +85,11 @@ function begin(p, pt) {
       : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque }
       : { v: ed.ink };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
-    const d = diameter(pt);
-    session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d } };
-    stampDisc(session.ctx, lx, ly, d); flush(session);
+    const sp = tool === 'pencil' ? ed.brushParams : null;
+    const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
+    session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
+    if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pt.pressure };
+    stampBrush(session.ctx, lx, ly, d); flush(session);
   } else if (tool === 'fill') {
     const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly);
     if (!region) return;
@@ -98,7 +118,13 @@ export function move(pt) {
     return;
   }
   if (session.kind === 'stroke') {
-    const s = session, lx = Math.floor(pt.x - s.p.ex), ly = Math.floor(pt.y - s.p.ey), d = diameter(pt);
+    const s = session, tx = Math.floor(pt.x - s.p.ex), ty = Math.floor(pt.y - s.p.ey);
+    s.target = { x: tx, y: ty };
+    // stabilisation : le tampon suit le doigt avec un léger retard, ce qui lisse les tremblements
+    const k = s.ctx.brush && s.ctx.brush.spec.smooth ? 1 - s.ctx.brush.spec.smooth * 0.8 : 1;
+    s.pos.x += (tx - s.pos.x) * k; s.pos.y += (ty - s.pos.y) * k;
+    const lx = Math.round(s.pos.x), ly = Math.round(s.pos.y);
+    const d = brushDiameter(pt, s, Math.hypot(lx - s.last.x, ly - s.last.y));
     strokeSegment(s.ctx, s.last.x, s.last.y, lx, ly, s.last.d, d);
     s.last = { x: lx, y: ly, d };
     flush(s);
@@ -119,6 +145,9 @@ export function up() {
   const s = session; session = null;
   if (!s) return;
   if (s.kind === 'stroke') {
+    if (s.ctx.brush && s.ctx.brush.spec.smooth && (s.last.x !== s.target.x || s.last.y !== s.target.y)) {   // rattrape le retard de la stabilisation
+      strokeSegment(s.ctx, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
+    }
     ed.undo.commit(); markChanged();
   } else if (s.kind === 'shape') {
     setOverlay({ shape: null });
@@ -183,12 +212,18 @@ function bubbleDown(pt) {
   if (ed.bubbleDraw) { session = { kind: 'free', pts: [{ x: pt.x, y: pt.y }] }; setOverlay({ free: session.pts }); return; }
   const pg = page(), sel = pg.bubbles.find(b => b.id === ed.bubbleId), at = toScreen(pt.x, pt.y);
   const R = pt.type === 'touch' ? 26 : 16;
-  if (sel) {
-    if (near(at, toScreen(sel.x + sel.w, sel.y + sel.h), R)) { start(sel, 'resize', pt); return; }
-    if (sel.tail && near(at, toScreen(sel.tail.x, sel.tail.y), R)) { start(sel, 'tail', pt); return; }
+  if (sel && !sel.hidden) {
+    if (near(at, bubbleCross(sel), R)) { deleteBubble(sel); return; }
+    if (sel.locked) { /* verrouillée : sélectionnable, pas déplaçable */ }
+    else if (near(at, toScreen(sel.x + sel.w, sel.y + sel.h), R)) { start(sel, 'resize', pt); return; }
+    if (!sel.locked && sel.tail && near(at, toScreen(sel.tail.x, sel.tail.y), R)) { start(sel, 'tail', pt); return; }
+    const o = sel.locked ? null : tailOrigin(sel);
+    if (o && near(at, toScreen(o.x, o.y), R)) { start(sel, 'origin', pt); return; }
   }
   for (let i = pg.bubbles.length - 1; i >= 0; i--) {
-    if (hitBubble(pg.bubbles[i], pt.x, pt.y)) { selectBubble(pg.bubbles[i].id); start(pg.bubbles[i], 'move', pt); return; }
+    const bb = pg.bubbles[i];
+    if (bb.hidden || pg.bubblesHidden) continue;
+    if (hitBubble(bb, pt.x, pt.y)) { selectBubble(bb.id); if (!bb.locked) start(bb, 'move', pt); return; }
   }
   selectBubble(null);
 }
@@ -206,6 +241,8 @@ function bubbleMove(pt) {
   } else if (s.mode === 'resize') {
     b.w = Math.max(80, Math.round(o.w + dx)); b.h = Math.max(60, Math.round(o.h + dy)); b.auto = false;
     if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(o.x + (q.x - o.x) * kx), y: Math.round(o.y + (q.y - o.y) * ky) })); }
+  } else if (s.mode === 'origin') {
+    b.tailAngle = Math.round(((Math.atan2(pt.y - (b.y + b.h / 2), pt.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
   } else if (s.mode === 'tail') b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
   setOverlay({});
 }

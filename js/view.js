@@ -3,7 +3,7 @@
 import { ed, page, gutterHandles } from './editor.js';
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
-import { drawBubble } from './bubbles.js';
+import { drawBubble, tailOrigin } from './bubbles.js';
 
 export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1, moved: false };   // moved : l'utilisateur a zoomé ou déplacé la page
 let canvas, ctx, raf = 0;
@@ -104,7 +104,7 @@ export function dropCaches(pg) { for (const p of pg.panels) caches.delete(p); }
 function refresh(panel) {
   const c = cacheOf(panel);
   if (c.dirty) {
-    compositeRect(panel, c.u32, c.dirty, true);
+    compositeRect(panel, c.u32, c.dirty, true, { solo: ed.solo });
     c.cx.putImageData(c.img, 0, 0, c.dirty.x, c.dirty.y, c.dirty.w, c.dirty.h);
     c.dirty = null;
   }
@@ -159,7 +159,7 @@ export function render() {
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
-  for (const b of pg.bubbles) drawBubble(ctx, b, ed.project.dpi);
+  if (!pg.bubblesHidden) for (const b of pg.bubbles) if (!b.hidden) drawBubble(ctx, b, ed.project.dpi);
 
   // aides, en pixels d'écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -202,9 +202,12 @@ function drawNotes(pg) {
   }
 }
 
+// Position écran de la croix de suppression d'une bulle : au-dessus de son coin haut droit.
+export function bubbleCross(b) { const q = toScreen(b.x + b.w, b.y); return { x: q.x + 4, y: q.y - 22 }; }
+
 function drawBubbleSelection(pg, accent) {
   const b = pg.bubbles.find(x => x.id === ed.bubbleId);
-  if (!b) return;
+  if (!b || b.hidden || pg.bubblesHidden) return;
   const tl = toScreen(b.x, b.y), br = toScreen(b.x + b.w, b.y + b.h);
   ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
   ctx.strokeRect(tl.x - 4, tl.y - 4, br.x - tl.x + 8, br.y - tl.y + 8); ctx.setLineDash([]);
@@ -215,6 +218,16 @@ function drawBubbleSelection(pg, accent) {
   };
   handle(br, true);
   if (b.tail) handle(toScreen(b.tail.x, b.tail.y), true);
+  const x = bubbleCross(b);   // petite croix : supprimer la bulle
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(x.x, x.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x.x - 4, x.y - 4); ctx.lineTo(x.x + 4, x.y + 4); ctx.moveTo(x.x + 4, x.y - 4); ctx.lineTo(x.x - 4, x.y + 4); ctx.stroke();
+  const o = tailOrigin(b);   // origine de la queue : carré, à faire glisser le long du contour
+  if (o) {
+    const q = toScreen(o.x, o.y);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.roundRect(q.x - 7, q.y - 7, 14, 14, 3); ctx.fill(); ctx.stroke();
+  }
 }
 
 function drawShapePreview(accent) {

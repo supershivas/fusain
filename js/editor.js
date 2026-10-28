@@ -1,8 +1,8 @@
 // État de l'éditeur et actions sur le document (pages, cases, calques, bulles), toutes annulables.
 import {
-  newLayer, newPage, newBubble, pageLayers, ensureData, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel,
+  newLayer, newPage, newBubble, pageLayers, ensureData, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel, DRAFT_COLORS,
 } from './model.js';
-import { UndoStack } from './raster.js';
+import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.js';
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
@@ -11,7 +11,7 @@ import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.j
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null,
-  tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, toolSettings: {}, bubbleDefaults: {}, ditherOpts: {},
+  tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
@@ -25,7 +25,7 @@ export const notify = what => subs.forEach(fn => fn(what));
 
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
-  pencil: { sizeMm: 0.5, ink: 1 },
+  pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
   texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3 },
   fill: { ink: 1, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
@@ -39,7 +39,33 @@ export function storeToolSettings() {
 export function applyToolSettings() {
   const d = TOOL_DEFAULTS[ed.tool];
   if (d) Object.assign(ed, d, ed.toolSettings[ed.tool]);
+  ed.brushParams = { ...BRUSH_DEFAULTS, ...(ed.brushParams || brushSpec(ed.brushId, ed.customBrushes)) };
   syncSize();
+}
+
+// ── Pinceaux : livrés ou enregistrés par l'utilisateur ──
+export const allBrushes = () => BUILTIN_BRUSHES.concat(ed.customBrushes);
+export const currentBrush = () => allBrushes().find(b => b.id === ed.brushId) || BUILTIN_BRUSHES[0];
+
+// Choisir un pinceau reprend la dernière taille réglée pour lui.
+export function selectBrush(id) {
+  ed.brushSizes[ed.brushId] = ed.sizeMm;
+  ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
+  setSizeMm(ed.brushSizes[id] ?? ed.brushParams.sizeMm);
+}
+export function resetBrush() { ed.brushParams = brushSpec(ed.brushId, ed.customBrushes); }
+export function saveBrushAs(name) {
+  const id = 'c' + Math.random().toString(36).slice(2, 8);
+  ed.customBrushes.push({ ...ed.brushParams, id, name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm });
+  ed.brushSizes[id] = ed.sizeMm; ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
+}
+export function updateBrush() {
+  const i = ed.customBrushes.findIndex(b => b.id === ed.brushId);
+  if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
+}
+export function deleteBrush(id) {
+  ed.customBrushes = ed.customBrushes.filter(b => b.id !== id);
+  if (ed.brushId === id) selectBrush('stylo');
 }
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
 export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
@@ -133,8 +159,8 @@ export async function duplicatePage() {
     Object.assign(np, { ex: p.ex, ey: p.ey, ew: p.ew, eh: p.eh, stroke: p.stroke });
     np.note = { ...p.note };
     np.layers = p.layers.map(l => {
-      const nl = newLayer(l.name, l.w, l.h, { draft: l.draft });
-      nl.visible = l.visible;
+      const nl = newLayer(l.name, l.w, l.h, { kind: l.kind, color: l.color });
+      Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked });
       if (l.data) { nl.data = l.data.slice(); nl.dirty = true; }
       return nl;
     });
@@ -313,8 +339,8 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   const dst = pg.panels.find(p => p.id === panelId);
   if (!dst || dst === src) return false;
   const clone = l => {
-    const nl = newLayer(l.name, dst.ew, dst.eh, { draft: l.draft });
-    nl.visible = l.visible;
+    const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color });
+    Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked });
     if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode), dst);
     nl.dirty = true;
     return nl;
@@ -409,19 +435,77 @@ export function refitAutoBubbles() {
 
 export function selectPanel(id) { if (ed.panelId !== id) { ed.panelId = id; notify('panel'); requestRender(); } }
 
-export function selectLayer(id) { panel().active = id; markChanged(); notify('layers'); }
+export function selectLayer(id) {
+  const p = panel(), l = p.layers.find(x => x.id === id);
+  p.active = id;
+  if (l && l.kind === 'ink') p._ink = id; else if (l && l.kind === 'tram') p._tram = id;
+  markChanged(); notify('layers');
+}
 
-export function addLayer(draft = false) {
-  const p = panel(), l = newLayer(draft ? 'Brouillon' : 'Calque ' + (p.layers.length + 1), p.ew, p.eh, { draft });
+// Un nouveau brouillon prend la première couleur pas encore utilisée dans la case.
+function nextDraftColor(p) {
+  const used = new Set(p.layers.filter(l => l.draft).map(l => l.color));
+  return Object.keys(DRAFT_COLORS).find(c => !used.has(c)) || 'blue';
+}
+
+export function addLayer(kind = 'ink') {
+  if (kind === true) kind = 'draft';
+  const p = panel(), color = kind === 'draft' ? nextDraftColor(p) : undefined;
+  const base = { draft: 'Brouillon', tram: 'Trames', ink: 'Encrage' }[kind], n = p.layers.filter(x => x.kind === kind).length;
+  const l = newLayer(n ? `${base} ${n + 1}` : base, p.ew, p.eh, { kind, color });
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
   apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
 }
 
+// ── Calque visé par un outil : l'encrage va dans un calque d'encre (ou de brouillon si c'est l'actif), les trames dans un calque de trame ──
+const roleOk = (l, role) => (role === 'tram' ? l.kind === 'tram' : l.kind === 'ink' || l.kind === 'draft');
+export function peekTarget(p, role) {
+  const act = activeLayer(p);
+  if (roleOk(act, role)) return act;
+  const last = p.layers.find(l => l.id === (role === 'tram' ? p._tram : p._ink) && roleOk(l, role));
+  if (last) return last;
+  return [...p.layers].reverse().find(l => l.kind === (role === 'tram' ? 'tram' : 'ink')) || null;
+}
+export function targetLayer(p, role) {
+  const found = peekTarget(p, role);
+  if (found) { if (found.kind !== 'draft') p[role === 'tram' ? '_tram' : '_ink'] = found.id; return found; }
+  // aucun calque de cette sorte dans la case : on en crée un (annulable), sous l'encrage pour les trames
+  const kind = role === 'tram' ? 'tram' : 'ink', l = newLayer(kind === 'tram' ? 'Trames' : 'Encrage', p.ew, p.eh, { kind });
+  const inkAt = p.layers.findIndex(x => x.kind === 'ink'), at = kind === 'tram' && inkAt >= 0 ? inkAt : p.layers.length, prev = p.active;
+  const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
+  return l;
+}
+
+export function duplicateLayer() {
+  const p = panel(), src = activeLayer(p);
+  const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color });
+  Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false });
+  if (src.data) l.data = src.data.slice();
+  l.dirty = true;
+  const at = p.layers.indexOf(src) + 1, prevActive = p.active;
+  const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Dupliquer le calque', unapply, apply);
+}
+
+// Réglage d'un calque (opacité, couleur, verrou, type) : enregistré avec le projet, hors historique de pixels.
+export function setLayerProp(id, key, value) {
+  const p = panel(), l = p.layers.find(x => x.id === id);
+  if (!l) return;
+  l[key] = value;
+  if (key === 'kind') { l.draft = value === 'draft'; if (l.draft && !l.color) l.color = nextDraftColor(p); }
+  invalidate(p); notify('layers'); markChanged();
+}
+
+export function setSolo(id) { ed.solo = ed.solo === id ? null : id; invalidatePage(); notify('layers'); }
+
 // Nouveau calque déjà rempli (image tramée importée).
 export function addImageLayer(name, data) {
-  const p = panel(), l = newLayer(name, p.ew, p.eh);
+  const p = panel(), l = newLayer(name, p.ew, p.eh, { kind: 'tram' });
   l.data = placeVisible(data, p); l.dirty = true;   // `data` est de la taille du cadre visible
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
@@ -460,7 +544,7 @@ export function renameLayer(id, name) {
 
 export function clearLayer() {
   const l = activeLayer();
-  if (!l.data) return;
+  if (!l.data || l.locked) return;
   ed.undo.begin('Vider le calque');
   ed.undo.touch(l, 0, 0, l.w, l.h);
   ensureData(l).fill(0);
@@ -543,14 +627,21 @@ export function addFreeBubble(points) {
   return addBubbleObj(b);
 }
 
-export function deleteBubble() {
-  const pg = page(), b = bubble();
+export function deleteBubble(b = bubble()) {
+  const pg = page();
   if (!b) return;
   const at = pg.bubbles.indexOf(b);
   const apply = () => { pg.bubbles.splice(pg.bubbles.indexOf(b), 1); ed.bubbleId = null; notify('bubbles'); requestRender(); markChanged(); };
   const unapply = () => { pg.bubbles.splice(at, 0, b); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
   apply(); ed.undo.pushAction('Supprimer la bulle', unapply, apply);
 }
+
+// Bulles dans la liste des calques : afficher / masquer et verrouiller, une par une ou toutes ensemble.
+export function setBubbleProp(b, key, value) {
+  b[key] = value; if (key === 'hidden' && value && ed.bubbleId === b.id) ed.bubbleId = null;
+  notify('bubbles'); requestRender(); markChanged();
+}
+export function togglePageBubbles() { const pg = page(); pg.bubblesHidden = !pg.bubblesHidden; notify('bubbles'); requestRender(); markChanged(); }
 
 export function selectBubble(id) { ed.bubbleId = id; notify('bubbles'); requestRender(); }
 

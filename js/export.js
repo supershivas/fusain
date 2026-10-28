@@ -19,13 +19,13 @@ export function renderPage(project, page, scale = 1) {
   for (const p of page.panels) {
     const pc = document.createElement('canvas'); pc.width = p.ew; pc.height = p.eh;
     const pctx = pc.getContext('2d'), img = pctx.createImageData(p.ew, p.eh);
-    compositeRect(p, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: p.ew, h: p.eh }, false);
+    compositeRect(p, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: p.ew, h: p.eh }, false, { export: true });
     pctx.putImageData(img, 0, 0);
     ctx.drawImage(pc, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);   // seul le cadre visible est imprimé
     const bw = mmToPx(panelStroke(p), project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
-  for (const b of page.bubbles) drawBubble(ctx, b, project.dpi);
+  if (!page.bubblesHidden) for (const b of page.bubbles) if (!b.hidden) drawBubble(ctx, b, project.dpi);
   return c;
 }
 

@@ -11,6 +11,7 @@ import * as tools from './tools.js';
 import { closeAllModals, esc, icon, $ } from './ui-core.js';
 import { toast } from './toast.js';
 import { loadImportedFonts } from './fonts.js';
+import { loadTramaLibrary } from './tramas.js';
 import { installGuards, shouldSuggestInstall, markInstallTipSeen } from './shell.js';
 
 const root = document.getElementById('app');
@@ -123,6 +124,7 @@ if ('serviceWorker' in navigator) {
   catch (err) { toast(err.message, { type: 'error' }); }
   renderSyncDot();
   loadImportedFonts().catch(() => {});
+  loadTramaLibrary().catch(() => {});
   sync.startAutoSync();
   await route();
 })();

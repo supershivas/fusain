@@ -3,13 +3,14 @@ import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, storeToolSettings, applyToolSettings, setSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
-import { attach, fit, view, zoomAt, requestRender, resize } from './view.js';
+import { BRUSH_GROUPS, previewBrush } from './raster.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate } from './view.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke } from './model.js';
-import { allTramas, tramaById, drawTramaSwatch, encodeTrama, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
+import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
@@ -20,7 +21,7 @@ import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
 
 const TOOLS = [
-  { id: 'pencil', icon: 'pencil', label: 'Crayon (B)', key: 'b' },
+  { id: 'pencil', icon: 'pencil', label: 'Crayon et pinceaux (B)', key: 'b' },
   { id: 'texture', icon: 'texture', label: 'Pinceau trame (T)', key: 't' },
   { id: 'eraser', icon: 'eraser', label: 'Gomme (E)', key: 'e' },
   { id: 'fill', icon: 'bucket-droplet', label: 'Remplir (G)', key: 'g' },
@@ -32,7 +33,7 @@ const TOOLS = [
 ];
 const SHAPES = [{ id: 'line', icon: 'slash', label: 'Ligne' }, { id: 'rect', icon: 'square', label: 'Rectangle' }, { id: 'ellipse', icon: 'circle', label: 'Ellipse' }];
 const TABS = [
-  { id: 'layers', icon: 'stack-2', label: 'Calques' }, { id: 'tramas', icon: 'texture', label: 'Trames' },
+  { id: 'layers', icon: 'stack-2', label: 'Calques' }, { id: 'brushes', icon: 'brush', label: 'Pinceaux' }, { id: 'tramas', icon: 'texture', label: 'Trames' },
   { id: 'pages', icon: 'files', label: 'Pages' }, { id: 'bubbles', icon: 'message-circle', label: 'Bulles' },
   { id: 'case', icon: 'layout-grid', label: 'Case' },
 ];
@@ -50,6 +51,9 @@ export function loadPrefs() {
     if (p.toolSettings && typeof p.toolSettings === 'object') ed.toolSettings = p.toolSettings;
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
     if (p.ditherOpts && typeof p.ditherOpts === 'object') ed.ditherOpts = p.ditherOpts;
+    if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
+    if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
+    if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
     if (typeof p.tool === 'string') ed.tool = p.tool === 'bubble' || p.tool === 'layout' ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
@@ -58,7 +62,8 @@ export function savePrefs() {
   storeToolSettings();
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, showNotes: ed.showNotes,
-      toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool }));
+      toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
+      customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets }));
   } catch { /* */ }
 }
 
@@ -88,6 +93,7 @@ export function mountEditor(el) {
   $('#optbar', root).addEventListener('click', onOptbar);
   $('#optbar', root).addEventListener('input', onOptInput);
   $('#dock', root).addEventListener('click', onDock);
+  $('#dock', root).addEventListener('toggle', onSecToggle, true);
   $('#dock', root).addEventListener('input', onDockInput);
   $('#dock', root).addEventListener('change', onDockChange);
   $('#dock', root).addEventListener('focusin', onDockFocus);
@@ -214,7 +220,10 @@ function tramaControl() {
 export function renderOptbar() {
   const o = $('#optbar', root), t = ed.tool;
   let html = '';
-  if (t === 'pencil') html = sizeControl() + inkControl();
+  if (t === 'pencil') {
+    html = `<button class="swatch-btn" data-opt="brushes" aria-label="Choisir le pinceau, actuel : ${esc(currentBrush().name)}"><canvas width="64" height="30" data-bprev="1" style="width:64px"></canvas>${esc(currentBrush().name)}</button>`
+      + sizeControl() + inkControl();
+  }
   else if (t === 'eraser') html = sizeControl();
   else if (t === 'texture') html = sizeControl() + tramaControl() + inkControl();
   else if (t === 'fill') html = tramaControl() + inkControl();
@@ -247,6 +256,7 @@ export function renderOptbar() {
   }
   o.hidden = !html; o.innerHTML = html;
   paintSwatches(o);
+  $$('canvas[data-bprev]', o).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
 }
 
 function paintSwatches(scope) {
@@ -266,6 +276,7 @@ function onOptbar(e) {
   else if (b.dataset.delpanel) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); }
   else if (b.dataset.freebubble) { ed.bubbleDraw = b.dataset.freebubble === '1'; renderOptbar(); }
   else if (b.dataset.maskpen) { ed.maskErase = b.dataset.maskpen === '1'; savePrefs(); renderOptbar(); }
+  else if (b.dataset.opt === 'brushes') { dockOpen = true; $('#dock', root).hidden = false; renderToolbar(); dockTabTo('brushes'); setTimeout(resize, 0); }
   else if (b.dataset.opt === 'trames') { dockOpen = true; $('#dock', root).hidden = false; renderToolbar(); dockTabTo('tramas'); setTimeout(resize, 0); }
 }
 
@@ -289,51 +300,136 @@ function onOptInput(e) {
 
 function dockTabTo(id) { dockTab = id; renderDock(); }
 
+// ── Sections repliables : le volet reste court ; l'état ouvert / fermé de chacune est gardé sur l'appareil ──
+const SEC_KEY = 'fusain:sections';
+let secState = {};
+try { secState = JSON.parse(localStorage.getItem(SEC_KEY)) || {}; } catch { /* */ }
+const sec = (id, title, body, def = true, extra = '') =>
+  `<details class="sec" data-sec="${id}" ${(secState[id] ?? def) ? 'open' : ''}><summary><span>${title}</span>${extra}</summary><div class="sec-body">${body}</div></details>`;
+function onSecToggle(e) {
+  const el = e.target;
+  if (!el.matches || !el.matches('details[data-sec]')) return;
+  secState[el.dataset.sec] = el.open;
+  try { localStorage.setItem(SEC_KEY, JSON.stringify(secState)); } catch { /* */ }
+}
+
+// Sorte de calque visée par l'outil actuel (pour repérer la cible dans la liste).
+function toolRole() {
+  const t = ed.tool;
+  if (t === 'pencil') return 'ink';
+  if (t === 'texture' || t === 'fill' || t === 'shape') return tramaById(ed.project, ed.tramaId).solid ? 'ink' : 'tram';
+  return null;
+}
+
 export function renderDock() {
   const d = $('#dock', root);
   if (!d || !ed.project) return;
   const prevScroll = $('.dock-body', d) ? $('.dock-body', d).scrollTop : 0;
   d.innerHTML = `<div class="dock-tabs" role="tablist">${TABS.map(t =>
     `<button role="tab" data-tab="${t.id}" class="${dockTab === t.id ? 'on' : ''}" aria-selected="${dockTab === t.id}" aria-label="${t.label}" title="${t.label}">${icon(t.icon)}</button>`).join('')}</div>
-    <div class="dock-body">${({ layers: layersTab, tramas: tramasTab, pages: pagesTab, bubbles: bubblesTab, case: caseTab })[dockTab]()}</div>`;
+    <div class="dock-body">${({ layers: layersTab, brushes: brushesTab, tramas: tramasTab, pages: pagesTab, bubbles: bubblesTab, case: caseTab })[dockTab]()}</div>`;
   $('.dock-body', d).scrollTop = prevScroll;
   paintSwatches(d);
+  if (dockTab === 'brushes') paintBrushPreviews(d);
   if (dockTab === 'tramas') $$('canvas[data-tcell]', d).forEach(c => drawTramaSwatch(c, tramaById(ed.project, c.dataset.tcell), 2));
 }
 
 function layersTab() {
-  const p = panel(), idx = page().panels.indexOf(p);
-  return `<h3>Case ${idx + 1}</h3>
-    ${[...p.layers].reverse().map(l => `<div class="layer ${l.id === p.active ? 'on' : ''}" data-layer="${l.id}">
+  const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
+  const target = role ? peekTarget(p, role) : null;
+  const dot = l => l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
+  const BICON = { parole: 'message-circle', pensee: 'cloud', narration: 'square', texte: 'typography' };
+  const bubRows = pg.bubbles.map(b => `<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
+      <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
+      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
+      <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
+      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`).join('');
+  const rows = [...p.layers].reverse().map(l => `<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
-      ${l.draft ? '<span class="tag">brouillon</span>' : ''}</div>`).join('')}
-    <div class="tools-row">
-      <button class="icon-btn icon-only" data-act="add-layer" title="Nouveau calque" aria-label="Nouveau calque">${icon('plus')}</button>
+      ${dot(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
+      <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`).join('');
+  const acts = `<div class="tools-row">
+      <button class="btn small" data-act="add-layer">${icon('plus')} Encre</button>
+      <button class="btn small" data-act="add-tram">${icon('plus')} Trame</button>
+      <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button>
+      <button class="icon-btn icon-only" data-act="dup-layer" title="Dupliquer le calque" aria-label="Dupliquer le calque">${icon('copy')}</button>
       <button class="icon-btn icon-only" data-act="up" title="Monter" aria-label="Monter le calque">${icon('arrow-up')}</button>
       <button class="icon-btn icon-only" data-act="down" title="Descendre" aria-label="Descendre le calque">${icon('arrow-down')}</button>
       <button class="icon-btn icon-only" data-act="rename" title="Renommer" aria-label="Renommer le calque">${icon('pencil')}</button>
-      <button class="icon-btn icon-only" data-act="draft" title="Brouillon : visible à l'écran, jamais exporté" aria-label="Basculer en brouillon">${icon('ruler-2')}</button>
       <button class="icon-btn icon-only" data-act="merge" title="Fusionner vers le bas" aria-label="Fusionner vers le bas">${icon('stack-pop')}</button>
       <button class="icon-btn icon-only" data-act="clear" title="Vider le calque" aria-label="Vider le calque">${icon('eraser')}</button>
-      <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button>
-    </div>
-    <p style="color:var(--text-muted);font-size:.8rem">Un calque « brouillon » sert au crayonné : il se voit à l'écran en bleu mais n'est ni exporté ni imprimé.</p>`;
+      <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button></div>`;
+  const kinds = [['ink', 'Encre'], ['tram', 'Trame'], ['draft', 'Brouillon']];
+  const props = `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
+      `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
+    <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
+    <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
+      <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
+    <small class="note">${cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.kind !== 'draft' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
+  const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
+  return sec('bubs', `Bulles et textes · ${pg.bubbles.length}`, bubRows || '<small class="note">Aucune bulle sur cette page.</small>', pg.bubbles.length > 0, eye)
+    + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
+    + sec('layp', `Calque « ${esc(cur.name)} »`, props, true);
+}
+
+// Réglages d'un pinceau : [clé, libellé, min, max, pas, format]
+const pct = v => `${Math.round(v * 100)} %`;
+const BPARAMS = [
+  ['press', 'Pression → taille', 0, 1, 0.05, pct], ['pressMin', 'Taille à pression nulle', 0, 1, 0.05, pct],
+  ['speed', 'Effilage selon la vitesse', 0, 1, 0.05, pct], ['start', 'Départ effilé', 0, 8, 0.5, v => `${v} Ø`],
+  ['smooth', 'Stabilisation', 0, 1, 0.05, pct], ['scatter', 'Dispersion', 0, 1, 0.05, pct], ['spacing', 'Espacement', 0.05, 3, 0.05, v => `${v.toFixed(2)} Ø`],
+];
+const GRAIN_TYPES = [['none', 'Aucun (plein)'], ['noise', 'Grain fin'], ['paper', 'Papier'], ['bristle', 'Poils'], ['spray', 'Aérographe']];
+
+function brushesTab() {
+  const cur = ed.brushParams, groups = [...BRUSH_GROUPS, 'Mes pinceaux'], list = allBrushes();
+  const sl = ([k, label, min, max, step, fmt]) => `<label class="field inline"><span>${label} : ${fmt(cur[k])}</span><input type="range" id="p-${k}" min="${min}" max="${max}" step="${step}" value="${cur[k]}"></label>`;
+  const custom = currentBrush().custom, here = currentBrush().group;
+  const lists = groups.map(g => { const items = list.filter(b => b.group === g); return items.length ? sec('bg-' + g, esc(g), items.map(b =>
+    `<button class="brush-row ${b.id === ed.brushId ? 'on' : ''}" data-brush="${b.id}"><canvas width="120" height="28" data-bp="${b.id}"></canvas><span>${esc(b.name)}</span></button>`).join(''), g === 'Encrage' || g === here) : ''; }).join('');
+  const settings = `<label class="field inline"><span>Forme</span><select id="p-shape">${[['round', 'Rond'], ['square', 'Carré'], ['nib', 'Plume (ellipse)'], ['rect', 'Plat (rectangle)']].map(([v, n]) => `<option value="${v}" ${cur.shape === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    ${cur.shape === 'nib' || cur.shape === 'rect' ? `<label class="field inline"><span>Finesse : ${pct(cur.ratio)}</span><input type="range" id="p-ratio" min="0.05" max="1" step="0.05" value="${cur.ratio}"></label>
+      <label class="check compact"><input type="checkbox" id="p-follow" ${cur.follow ? 'checked' : ''}> Perpendiculaire au geste</label>
+      ${cur.follow ? '' : `<label class="field inline"><span>Angle : ${cur.angle}°</span><input type="range" id="p-angle" min="0" max="175" step="5" value="${cur.angle}"></label>`}` : ''}
+    ${BPARAMS.map(sl).join('')}
+    <label class="field inline"><span>Grain</span><select id="p-grainType">${GRAIN_TYPES.map(([v, n]) => `<option value="${v}" ${cur.grainType === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    ${cur.grainType !== 'none' ? `<label class="field inline"><span>Couverture : ${pct(cur.grain)}</span><input type="range" id="p-grain" min="0.1" max="1" step="0.05" value="${cur.grain}"></label>
+      ${cur.grainType !== 'spray' ? `<label class="field inline"><span>Grain : ${cur.grainScale} px</span><input type="range" id="p-grainScale" min="1" max="6" step="0.5" value="${cur.grainScale}"></label>` : ''}` : ''}`;
+  const buttons = `<div class="row tight" style="margin:6px 0">
+      <button class="btn small" data-act="brush-reset" title="Rétablir les réglages du pinceau">${icon('refresh')} Rétablir</button>
+      <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
+      ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
+  return buttons + sec('brset', `Réglages · ${esc(currentBrush().name)}`, settings, false) + lists
+    + '<small class="note">Les pinceaux enregistrés restent sur cet appareil. Le grain donne un aspect crayon ou fusain, rendu en noir et blanc.</small>';
+}
+
+function paintBrushPreviews(scope) {
+  const dpi = ed.project.dpi;
+  $$('canvas[data-bp]', scope).forEach(c => {
+    const sp = { ...ed.brushParams, ...(allBrushes().find(b => b.id === c.dataset.bp) || {}) };
+    const spec = c.dataset.bp === ed.brushId ? ed.brushParams : sp;
+    previewBrush(c, spec, Math.max(2, Math.min(spec.sizeMm / 25.4 * dpi, 9)));
+  });
 }
 
 function tramasTab() {
   const list = allTramas(ed.project), groups = [...new Set(list.map(t => t.group))];
   const cur = tramaById(ed.project, ed.tramaId);
-  return `${groups.map(g => `<h3>${esc(g)}</h3><div class="tgrid">${list.filter(t => t.group === g).map(t =>
-    `<button class="tcell ${t.id === ed.tramaId ? 'on' : ''}" data-trama="${t.id}" aria-label="${esc(t.name)}" title="${esc(t.name)}">${t.solid ? '<span class="solid">Plein</span>' : `<canvas width="36" height="36" data-tcell="${t.id}"></canvas>`}</button>`).join('')}</div>`).join('')}
-    <h3>Réglages</h3>
-    <label class="field"><span>Échelle de la trame : ×${ed.tramaScale}</span><input type="range" id="d-scale" min="1" max="8" value="${ed.tramaScale}"></label>
-    <label class="check"><input type="checkbox" id="d-opaque" ${ed.tramaOpaque ? 'checked' : ''}> Fond blanc sous la trame</label>
-    <div class="row" style="margin-top:8px">
-      <button class="btn small" data-act="new-trame">${icon('plus')} Nouvelle trame</button>
-      ${cur.builtin === false ? `<button class="btn small" data-act="edit-trame">${icon('pencil')} Modifier</button><button class="btn small danger" data-act="del-trame">${icon('trash')}</button>` : ''}
-    </div>
-    <p style="color:var(--text-muted);font-size:.8rem;margin-top:10px">La trame est accrochée à la page : deux cases voisines se raccordent sans rupture.</p>`;
+  const settings = `<label class="field inline"><span>Échelle : ×${ed.tramaScale}</span><input type="range" id="d-scale" min="1" max="8" value="${ed.tramaScale}"></label>
+    <label class="check compact"><input type="checkbox" id="d-opaque" ${ed.tramaOpaque ? 'checked' : ''}> Fond blanc sous la trame</label>
+    <div class="row tight" style="margin-top:4px">
+      <button class="btn small" data-act="new-trame">${icon('plus')} Nouvelle</button>
+      <button class="btn small" data-act="tpreset-save" title="Enregistrer trame, échelle et fond actuels">${icon('device-floppy')} Enregistrer le réglage</button>
+      ${cur.builtin === false ? `<button class="btn small" data-act="edit-trame" aria-label="Modifier la trame">${icon('pencil')}</button><button class="btn small danger" data-act="del-trame" aria-label="Supprimer la trame">${icon('trash')}</button>` : ''}</div>`;
+  const presets = ed.tramaPresets.map(t => `<div class="row tight" style="margin-bottom:4px"><button class="btn small" data-tpreset="${t.id}" style="flex:1;justify-content:flex-start">${esc(t.name)}</button><button class="icon-btn icon-only" data-tpdel="${t.id}" aria-label="Supprimer le réglage ${esc(t.name)}">${icon('trash')}</button></div>`).join('');
+  const open = g => g === 'Plein' || g === 'Gris' || g === 'Ma bibliothèque' || g === cur.group;
+  return sec('trset', `Trame · ${esc(cur.name)}`, settings, true)
+    + (presets ? sec('trpre', 'Mes réglages', presets, true) : '')
+    + groups.map(g => sec('tg-' + g, esc(g), `<div class="tgrid">${list.filter(t => t.group === g).map(t =>
+      `<button class="tcell ${t.id === ed.tramaId ? 'on' : ''}" data-trama="${t.id}" aria-label="${esc(t.name)}" title="${esc(t.name)}">${t.solid ? '<span class="solid">Plein</span>' : `<canvas width="36" height="36" data-tcell="${t.id}"></canvas>`}</button>`).join('')}</div>`, open(g))).join('')
+    + '<small class="note">La trame est accrochée à la page : deux cases voisines se raccordent sans rupture.</small>';
 }
 
 function miniPage(pg) {
@@ -358,65 +454,56 @@ function pagesTab() {
 
 function bubblesTab() {
   const pg = page(), b = bubble();
-  return `<h3>Ajouter</h3><div class="tools-row">${BUBBLE_KINDS.map(k =>
-    `<button class="icon-btn icon-only" data-addb="${k.id}" title="${k.name}" aria-label="Ajouter : ${k.name}">${icon(k.icon)}</button>`).join('')}
-    <button class="icon-btn icon-only ${ed.bubbleDraw ? 'on' : ''}" data-act="free-bubble" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></div>
-    <h3>Sur cette page</h3>
-    <div class="blist">${pg.bubbles.length ? pg.bubbles.map(x => `<button data-b="${x.id}" class="${x.id === ed.bubbleId ? 'on' : ''}">${x.who ? esc(x.who) + ' : ' : ''}${esc(x.text || '(vide)')}</button>`).join('') : '<p style="color:var(--text-muted)">Aucune bulle.</p>'}</div>
-    ${b ? bubbleProps(b) : ''}`;
+  return `<div class="tools-row" style="margin:0 0 6px">${BUBBLE_KINDS.map(k =>
+    `<button class="icon-btn icon-only" data-addb="${k.id}" title="Ajouter : ${k.name}" aria-label="Ajouter : ${k.name}">${icon(k.icon)}</button>`).join('')}
+    <button class="icon-btn icon-only ${ed.bubbleDraw ? 'on' : ''}" data-act="free-bubble" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></div>`
+    + (pg.bubbles.length ? `<div class="blist">${pg.bubbles.map(x => `<button data-b="${x.id}" class="${x.id === ed.bubbleId ? 'on' : ''}">${x.who ? esc(x.who) + ' : ' : ''}${esc(x.text || '(vide)')}</button>`).join('')}</div>` : '<small class="note">Aucune bulle sur cette page.</small>')
+    + (b ? bubbleProps(b) : '');
 }
 
 // Curseurs numériques d'une bulle : identifiant → [propriété, libellé]
 const SLIDERS = {
   'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
   'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
   'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
   'b-tailbend': ['tailBend', v => `Courbure : ${v > 0 ? '+' : ''}${v}`], 'b-tailtip': ['tailTip', v => `Pointe émoussée : ${v} %`],
 };
-const slider = (id, p, min, max, step = 1) => `<label class="field"><span>${SLIDERS[id][1](p[SLIDERS[id][0]])}</span><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${p[SLIDERS[id][0]]}"></label>`;
+const slider = (id, p, min, max, step = 1) => `<label class="field inline"><span>${SLIDERS[id][1](p[SLIDERS[id][0]])}</span><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${p[SLIDERS[id][0]]}"></label>`;
 
 function bubbleProps(b) {
   const p = props(b);
-  return `<h3>Bulle sélectionnée</h3>
-      <label class="field"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select>
-        <small>Un modèle règle d'un coup la forme, le trait, la police et la queue ; chaque réglage reste modifiable.</small></label>
-      <label class="field"><span>Texte</span><textarea id="b-text" rows="3">${esc(b.text)}</textarea></label>
-      <div class="field"><span>Police</span><button class="btn" data-act="pick-font" style="justify-content:flex-start">${icon('typography')} ${esc(fontName(p.font))}</button></div>
-      <label class="field"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="24" step="0.5" value="${b.pt}"></label>
-      <h3>Forme</h3>
-      <label class="field"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+  const text = `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+      <textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
+      <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
+      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="24" step="0.5" value="${b.pt}"></label>
+      <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
+        <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
+  const shape = `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
-      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-6px 0 14px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}
-      ${slider('b-stroke', p, 0, 2, 0.05)}
-      <h3>Queue</h3>
-      <label class="field"><span>Style</span><select id="b-tailstyle">${TAILS.map(x => `<option value="${x.id}" ${x.id === p.tailStyle ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
-        <small>Déplace le point rouge pour orienter la queue.</small></label>
+      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
+      ${slider('b-pad', p, 0, 10, 0.5)}${slider('b-stroke', p, 0, 2, 0.05)}`;
+  const tail = `<label class="field inline"><span>Style</span><select id="b-tailstyle">${TAILS.map(x => `<option value="${x.id}" ${x.id === p.tailStyle ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+      ${p.tailStyle !== 'none' ? `<label class="check compact"><input type="checkbox" id="b-origin-auto" ${b.tailAngle == null ? 'checked' : ''}> Origine automatique</label>
+        ${b.tailAngle == null ? '' : slider('b-tailangle', p, 0, 359)}` : ''}
       ${p.tailStyle === 'pointe' ? slider('b-tailw', p, 4, 70) + slider('b-tailround', p, -100, 100, 5) + slider('b-tailbend', p, -100, 100, 5) + slider('b-tailtip', p, 0, 100, 5) : ''}
       ${p.tailStyle === 'fleche' || p.tailStyle === 'bulles' ? slider('b-tailw', p, 4, 70) + slider('b-tailbend', p, -100, 100, 5) : ''}
-      <h3>Texte</h3>
-      <label class="check"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
-      <label class="check"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille automatique</label>
-      <button class="btn small danger" data-act="del-bubble" style="margin-top:8px">${icon('trash')} Supprimer la bulle</button>`;
+      ${p.tailStyle !== 'none' ? '<small class="note">Points rouges sur la page : pointe et origine de la queue.</small>' : ''}`;
+  return sec('bt', 'Texte', text, true) + sec('bf', 'Forme', shape, false) + sec('bq', 'Queue', tail, false);
 }
 
 function caseTab() {
   const p = panel(), idx = page().panels.indexOf(p);
-  return `<h3>Case ${idx + 1}</h3>
-    <label class="field"><span>Plan</span><input type="text" id="n-plan" value="${esc(p.note.plan)}" placeholder="Plan large, gros plan…"></label>
-    <label class="field"><span>Description</span><textarea id="n-desc" rows="3" placeholder="Ce qu'il faut dessiner">${esc(p.note.description)}</textarea></label>
-    <label class="check"><input type="checkbox" id="n-show" ${ed.showNotes ? 'checked' : ''}> Afficher les notes sur la page</label>
-    <p style="color:var(--text-muted);font-size:.8rem">Les notes aident à dessiner ; elles ne sont jamais exportées.</p>
-    <h3>Cadre</h3>
-    <label class="field"><span>Trait du cadre : ${fmtMm(panelStroke(p))} mm</span><input type="range" id="n-stroke" min="0" max="2" step="0.05" value="${panelStroke(p)}"></label>
-    <button class="btn small" data-act="stroke-all">Appliquer à toutes les cases de la page</button>
-    <h3>Masque</h3>
-    <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:8px">Peins une zone avec l'outil Masque, puis choisis « Dans » ou « Hors » pour ne dessiner que dedans ou dehors.</p>
-    <div class="row"><button class="btn small" data-act="mask-clear">Vider le masque</button><button class="btn small" data-act="mask-invert">Inverser</button></div>
-    <h3>Image</h3>
-    <button class="btn small" data-act="dither">${icon('photo')} Importer une image tramée</button>
-    <h3>Copie</h3>
-    <button class="btn small" data-act="copy-case">${icon('copy')} Copier le contenu vers une autre case</button>`;
+  const notes = `<label class="field"><span>Plan</span><input type="text" id="n-plan" value="${esc(p.note.plan)}" placeholder="Plan large, gros plan…"></label>
+    <label class="field"><span>Description</span><textarea id="n-desc" rows="2" placeholder="Ce qu'il faut dessiner">${esc(p.note.description)}</textarea></label>
+    <label class="check compact"><input type="checkbox" id="n-show" ${ed.showNotes ? 'checked' : ''}> Afficher les notes sur la page (jamais exportées)</label>`;
+  const frame = `<label class="field inline"><span>Trait : ${fmtMm(panelStroke(p))} mm</span><input type="range" id="n-stroke" min="0" max="2" step="0.05" value="${panelStroke(p)}"></label>
+    <button class="btn small" data-act="stroke-all">Appliquer à toute la page</button>`;
+  const mask = `<small class="note">Peins une zone avec l'outil Masque, puis choisis « Dans » ou « Hors » pour ne dessiner que dedans ou dehors.</small>
+    <div class="row tight" style="margin-top:6px"><button class="btn small" data-act="mask-clear">Vider</button><button class="btn small" data-act="mask-invert">Inverser</button></div>`;
+  const more = `<div class="row tight"><button class="btn small" data-act="dither">${icon('photo')} Image tramée…</button>
+    <button class="btn small" data-act="copy-case">${icon('copy')} Copier vers…</button></div>`;
+  return sec('cn', `Case ${idx + 1} · notes`, notes, true) + sec('cf', 'Cadre', frame, false) + sec('cm', 'Masque', mask, false) + sec('cx', 'Image et copie', more, false);
 }
 
 // ───────────────────────── Événements du volet ─────────────────────────
@@ -424,6 +511,11 @@ function caseTab() {
 async function onDock(e) {
   const tab = e.target.closest('[data-tab]');
   if (tab) { dockTabTo(tab.dataset.tab); return; }
+  const br = e.target.closest('[data-brush]');
+  if (br) { selectBrush(br.dataset.brush); savePrefs(); renderDock(); renderOptbar(); return; }
+  const tp = e.target.closest('[data-tpreset]'), tpd = e.target.closest('[data-tpdel]');
+  if (tpd) { ed.tramaPresets = ed.tramaPresets.filter(x => x.id !== tpd.dataset.tpdel); savePrefs(); renderDock(); return; }
+  if (tp) { applyTramaPreset(tp.dataset.tpreset); return; }
   const tr = e.target.closest('[data-trama]');
   if (tr) {
     if (!['texture', 'fill', 'shape'].includes(ed.tool)) setTool('texture');   // seuls ces outils utilisent une trame
@@ -435,17 +527,28 @@ async function onDock(e) {
   if (bb) { selectBubble(bb.dataset.b); if (ed.tool !== 'bubble') ed.tool = 'bubble', renderToolbar(), renderOptbar(); return; }
   const ab = e.target.closest('[data-addb]');
   if (ab) { if (ed.tool !== 'bubble') { ed.tool = 'bubble'; renderToolbar(); renderOptbar(); } addBubble(ab.dataset.addb); return; }
+  const lk = e.target.closest('[data-lkind]'), lc = e.target.closest('[data-lcolor]');
+  if (lk) { setLayerProp(activeLayer().id, 'kind', lk.dataset.lkind); return; }
+  if (lc) { setLayerProp(activeLayer().id, 'color', lc.dataset.lcolor); return; }
   const lay = e.target.closest('[data-layer]');
   const act = e.target.closest('[data-act]');
   if (!act) return;
   const a = act.dataset.act;
   if (a === 'vis') toggleLayer(lay.dataset.layer, 'visible');
   else if (a === 'select-layer') selectLayer(lay.dataset.layer);
-  else if (a === 'add-layer') addLayer(false);
+  else if (a === 'add-layer') addLayer('ink');
+  else if (a === 'add-tram') addLayer('tram');
+  else if (a === 'bub-vis') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'hidden', !bb.hidden); }
+  else if (a === 'bub-lock') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'locked', !bb.locked); }
+  else if (a === 'bub-del') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); deleteBubble(bb); }
+  else if (a === 'bub-select') { selectBubble(e.target.closest('[data-bub]').dataset.bub); if (ed.tool !== 'bubble') setTool('bubble'); }
+  else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
   else if (a === 'del-layer') { if (!deleteLayer()) toast('Une case garde au moins un calque.'); }
   else if (a === 'up') moveLayer(1);
   else if (a === 'down') moveLayer(-1);
-  else if (a === 'draft') toggleLayer(activeLayer().id, 'draft');
+  else if (a === 'lock') setLayerProp(lay.dataset.layer, 'locked', !panel().layers.find(l => l.id === lay.dataset.layer).locked);
+  else if (a === 'add-draft') addLayer('draft');
+  else if (a === 'dup-layer') duplicateLayer();
   else if (a === 'merge') { if (!mergeDown()) toast('Pas de calque en dessous.'); }
   else if (a === 'clear') clearLayer();
   else if (a === 'rename') {
@@ -454,7 +557,8 @@ async function onDock(e) {
   } else if (a === 'new-trame') tramaEditor();
   else if (a === 'edit-trame') tramaEditor(tramaById(ed.project, ed.tramaId));
   else if (a === 'del-trame') {
-    if (await confirmModal({ title: 'Supprimer la trame', message: 'Cette trame personnalisée sera retirée de la bibliothèque du projet. Les dessins déjà faits ne changent pas.', confirm: 'Supprimer', danger: true })) {
+    if (await confirmModal({ title: 'Supprimer la trame', message: 'Cette trame personnalisée sera retirée de la bibliothèque. Les dessins déjà faits ne changent pas.', confirm: 'Supprimer', danger: true })) {
+      if (tramaById(ed.project, ed.tramaId).lib) await removeFromLibrary(ed.tramaId);
       ed.project.tramas = ed.project.tramas.filter(t => t.id !== ed.tramaId); ed.tramaId = 'plein'; markChanged(); renderDock(); renderOptbar();
     }
   }
@@ -473,6 +577,19 @@ async function onDock(e) {
   else if (a === 'pick-font') fontModal();
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
+  else if (a === 'brush-reset') { resetBrush(); renderDock(); renderOptbar(); }
+  else if (a === 'brush-save') {
+    const name = await promptModal({ title: 'Enregistrer le pinceau', label: 'Nom', value: 'Mon pinceau' });
+    if (name) { saveBrushAs(name); savePrefs(); renderDock(); renderOptbar(); toast('Pinceau enregistré.'); }
+  }
+  else if (a === 'brush-update') { updateBrush(); savePrefs(); toast('Pinceau mis à jour.'); }
+  else if (a === 'brush-del') {
+    if (await confirmModal({ title: 'Supprimer le pinceau', message: `« ${currentBrush().name} » sera retiré de tes pinceaux.`, confirm: 'Supprimer', danger: true })) { deleteBrush(ed.brushId); savePrefs(); renderDock(); renderOptbar(); }
+  }
+  else if (a === 'tpreset-save') {
+    const name = await promptModal({ title: 'Enregistrer le réglage de trame', label: 'Nom', value: tramaById(ed.project, ed.tramaId).name + ' ×' + ed.tramaScale });
+    if (name) { ed.tramaPresets.push({ id: 'tp' + Math.random().toString(36).slice(2, 8), name, tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque, ink: ed.ink }); savePrefs(); renderDock(); toast('Réglage enregistré.'); }
+  }
   else if (a === 'stroke-all') { setPanelStroke(panelStroke(panel()), true); toast('Trait appliqué à toutes les cases.'); }
   else if (a === 'export-pdf') exportPdf();
   else if (a === 'free-bubble') { ed.tool = 'bubble'; ed.bubbleDraw = true; renderToolbar(); renderOptbar(); renderDock(); }
@@ -496,14 +613,39 @@ function rememberBubble(b) {
 }
 
 let bubbleBefore = null;
+// Reprend un réglage de trame enregistré (trame, échelle, fond blanc, encre).
+function applyTramaPreset(id) {
+  const t = ed.tramaPresets.find(x => x.id === id);
+  if (!t) return;
+  if (!['texture', 'fill', 'shape'].includes(ed.tool)) setTool('texture');
+  ed.tramaId = allTramas(ed.project).some(x => x.id === t.tramaId) ? t.tramaId : 'plein';
+  ed.tramaScale = t.tramaScale; ed.tramaOpaque = t.tramaOpaque; ed.ink = t.ink;
+  savePrefs(); renderDock(); renderOptbar();
+}
+
 function onDockFocus(e) { const b = bubble(); if (b && /^b-/.test(e.target.id || '')) bubbleBefore = snapshotBubble(b); }
 
 function onDockInput(e) {
   const id = e.target.id, b = bubble();
+  if (/^p-/.test(id)) {
+    const key = id.slice(2);
+    if (e.target.type === 'checkbox') ed.brushParams[key] = e.target.checked;
+    else if (e.target.tagName === 'SELECT') ed.brushParams[key] = e.target.value;
+    else {
+      ed.brushParams[key] = +e.target.value;
+      const lab = e.target.previousElementSibling, row = BPARAMS.find(r => r[0] === key);
+      if (lab) lab.textContent = lab.textContent.replace(/ : .*$/, ' : ' + (row ? row[5](+e.target.value) : key === 'angle' ? e.target.value + '°' : key === 'grainScale' ? e.target.value + ' px' : pct(+e.target.value)));
+    }
+    savePrefs(); $$('canvas[data-bprev]', root).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
+    return;
+  }
   if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle de la trame : ×' + ed.tramaScale; paintSwatches(root); return; }
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
+  if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
+  if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
+  if (id === 'l-solo') { setSolo(activeLayer().id); return; }
   if (id === 'n-stroke') { setPanelStroke(+e.target.value); e.target.previousElementSibling.textContent = `Trait du cadre : ${fmtMm(+e.target.value)} mm`; return; }
   if (id === 'n-show') { ed.showNotes = e.target.checked; savePrefs(); requestRender(); return; }
   if (!b || !/^b-/.test(id)) return;
@@ -523,17 +665,22 @@ function onDockInput(e) {
     b[key] = +e.target.value; e.target.previousElementSibling.textContent = label(b[key]);
     if (key === 'pad') refitBubble(b);
   }
-  else if (id === 'b-tailstyle') { b.tailStyle = e.target.value; setTail(b, b.tailStyle !== 'none'); }
+  else if (id === 'b-origin-auto') {
+    if (e.target.checked) delete b.tailAngle;
+    else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
+  } else if (id === 'b-tailstyle') { b.tailStyle = e.target.value; setTail(b, b.tailStyle !== 'none'); }
   requestRender();
 }
 
 function onDockChange(e) {
+  if (/^p-(shape|grainType|follow)$/.test(e.target.id || '')) { renderDock(); renderOptbar(); return; }
+  if (/^p-/.test(e.target.id || '')) { paintBrushPreviews($('#dock', root)); return; }
   const b = bubble();
   if (b && /^b-/.test(e.target.id || '') && bubbleBefore) {
     commitBubbleEdit(b, bubbleBefore); bubbleBefore = null;
     if (e.target.id !== 'b-text' && e.target.id !== 'b-kind') rememberBubble(b);
     // Pas de reconstruction du volet à chaque champ : un toucher sur un bouton qui suit la sortie d'un champ serait perdu.
-    if (['b-kind', 'b-shape', 'b-tailstyle'].includes(e.target.id)) renderDock();
+    if (['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto'].includes(e.target.id)) renderDock();
     else if (e.target.id === 'b-text') { const li = $('.blist button.on', root); if (li) li.textContent = (b.who ? b.who + ' : ' : '') + (b.text || '(vide)'); }
   } else if (/^n-/.test(e.target.id || '')) markChanged();
 }
@@ -564,11 +711,18 @@ function tramaEditor(existing) {
       <div class="field"><span>Taille de la tuile</span><div class="seg" id="te-size">${[4, 8, 12, 16, 24].map(s => `<button type="button" data-s="${s}" class="${s === size ? 'on' : ''}">${s}</button>`).join('')}</div></div>
       <div id="te-grid" class="trame-editor"></div>
       <div class="row" style="justify-content:center"><canvas id="te-prev" width="160" height="80" style="border:1px solid var(--border);image-rendering:pixelated"></canvas></div>
-      <small style="color:var(--text-muted)">Touche ou fais glisser pour allumer ou éteindre les cases. Un 1 est de l'encre.</small>`,
-    actions: [{ label: 'Annuler' }, { label: 'Enregistrer', kind: 'primary', onClick: (c, box) => {
+      <small style="color:var(--text-muted)">Touche ou fais glisser pour allumer ou éteindre les cases. Un 1 est de l'encre.</small>
+      <label class="check" style="margin-top:8px"><input type="checkbox" id="te-lib" ${!existing || existing.lib ? 'checked' : ''}> Dans ma bibliothèque (tous les projets, sur cet appareil)</label>`,
+    actions: [{ label: 'Annuler' }, { label: 'Enregistrer', kind: 'primary', onClick: async (c, box) => {
       const t = { id, name: $('#te-name', box).value.trim() || 'Ma trame', w: size, h: size, bits };
       const enc = encodeTrama(t), list = ed.project.tramas, i = list.findIndex(x => x.id === id);
-      if (i >= 0) list[i] = enc; else list.push(enc);
+      if ($('#te-lib', box).checked) {
+        if (i >= 0) list.splice(i, 1);
+        await saveToLibrary(t);
+      } else {
+        if (existing && existing.lib) await removeFromLibrary(id);
+        if (i >= 0) list[i] = enc; else list.push(enc);
+      }
       ed.tramaId = id; markChanged(); renderDock(); renderOptbar();
     } }],
   });

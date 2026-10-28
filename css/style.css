@@ -284,3 +284,42 @@ input[type=range] { accent-color: var(--accent); width: 100%; min-height: 32px; 
 .optbar .size { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .optbar .num { width: 84px; min-height: 40px; padding: 4px 8px; font-size: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-primary); }
 .optbar .nib { min-height: 40px; padding: 4px 8px; font-size: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-primary); }
+
+.ldot { width: 14px; height: 14px; border-radius: 50%; flex: none; margin: 0 6px; border: 1px solid rgba(0,0,0,.2); }
+
+.brush-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-bg); margin-bottom: 6px; text-align: left; }
+.brush-row canvas { width: 120px; height: 30px; flex: none; image-rendering: auto; border-radius: 4px; background: #fff; }
+.brush-row span { font-size: .86rem; font-weight: 500; }
+.brush-row.on { border-color: var(--accent); background: var(--accent-soft); }
+
+/* ── Volet de droite compact : sections repliables, champs en ligne ── */
+.dock { width: 320px; }
+.dock-body { padding: 4px 10px 12px; font-size: .86rem; }
+details.sec { border-bottom: 1px solid var(--border); }
+details.sec > summary { list-style: none; min-height: 40px; display: flex; align-items: center; gap: 8px; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; cursor: pointer; -webkit-user-select: none; user-select: none; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::before { content: ''; width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .12s; flex: none; margin: 0 2px; }
+details.sec[open] > summary::before { transform: rotate(45deg); }
+details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-eye { min-width: 36px !important; height: 36px !important; font-size: 1.05rem !important; margin-right: -6px; }
+.sec-body { padding: 0 0 8px; }
+.field { margin-bottom: 8px; gap: 4px; }
+.field.inline { flex-direction: row; align-items: center; gap: 8px; margin-bottom: 4px; }
+.field.inline > span { flex: 0 0 46%; font-size: .78rem; line-height: 1.2; }
+.field.inline > input[type=range], .field.inline > select { flex: 1; min-width: 0; width: auto; }
+.field.inline > select { min-height: 38px; padding: 4px 8px; }
+.check.compact { min-height: 38px; font-size: .84rem; gap: 8px; }
+.note { display: block; color: var(--text-muted); font-size: .76rem; line-height: 1.35; margin: 2px 0 6px; }
+.layer { min-height: 40px; margin-bottom: 4px; }
+.layer .name { min-height: 38px; font-size: .86rem; }
+.layer .icon-btn { min-width: 38px; height: 40px; }
+.layer.target { box-shadow: inset 3px 0 0 var(--accent); }
+.layer .name .ti { margin-right: 4px; color: var(--text-muted); }
+.tools-row { margin: 4px 0 6px; }
+.tools-row .icon-btn { min-width: 40px; height: 40px; }
+.tgrid { grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.tcell { padding: 2px; border-width: 2px; }
+.brush-row { min-height: 40px; margin-bottom: 4px; padding: 2px 8px; }
+.brush-row canvas { width: 100px; height: 26px; }
+.blist button { min-height: 38px; margin-bottom: 4px; }
+.page-btn { min-height: 56px; margin-bottom: 4px; }

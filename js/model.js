@@ -72,12 +72,26 @@ export function pageSize(project) {
   };
 }
 
+// Couleurs des calques brouillon (à l'écran seulement : un brouillon n'est jamais imprimé).
+export const DRAFT_COLORS = {
+  blue: { name: 'Bleu', rgb: [90, 140, 220] }, orange: { name: 'Orange', rgb: [240, 140, 40] },
+  green: { name: 'Vert', rgb: [63, 163, 77] }, pink: { name: 'Rose', rgb: [224, 88, 155] },
+  purple: { name: 'Violet', rgb: [142, 91, 208] }, red: { name: 'Rouge', rgb: [214, 69, 69] },
+  gray: { name: 'Gris', rgb: [138, 138, 138] },
+};
+
+// opacity : 0 à 100 ; locked : on ne peut plus y dessiner ; color : couleur d'un brouillon.
+// kind : 'ink' (encrage), 'tram' (trames) ou 'draft' (brouillon). Les outils ne dessinent que dans les calques de leur sorte.
 export function newLayer(name, w, h, opts = {}) {
+  const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
   return {
-    id: uid(), name, visible: true, draft: !!opts.draft,
+    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : undefined,
     w, h, data: null, loaded: true, dirty: false, rev: null,
   };
 }
+
+// Anciens projets : le type se déduit du brouillon ou du nom du calque.
+const kindOf = l => l.kind ?? (l.draft ? 'draft' : /tram/i.test(l.name || '') ? 'tram' : 'ink');
 
 export function ensureData(layer) {
   if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h);
@@ -87,7 +101,7 @@ export function ensureData(layer) {
 export function newPanel(rect) {
   const layers = [
     newLayer('Brouillon', rect.w, rect.h, { draft: true }),
-    newLayer('Trames', rect.w, rect.h),
+    newLayer('Trames', rect.w, rect.h, { kind: 'tram' }),
     newLayer('Encrage', rect.w, rect.h),
   ];
   // La case montre le rectangle x,y,w,h ; les calques couvrent l'étendue ex,ey,ew,eh (au moins ce rectangle).
@@ -126,13 +140,13 @@ export function newBubble(kind, x, y) {
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, draft: l.draft, rev: l.rev });
+  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rev: l.rev });
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
     margin: project.margin, gutter: project.gutter, tramas: project.tramas,
     pages: project.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles,
+      id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
       panels: p.panels.map(c => ({
         id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, ex: c.ex, ey: c.ey, ew: c.ew, eh: c.eh, stroke: c.stroke, active: c.active, note: c.note,
         layers: c.layers.map(layerMeta), mask: c.mask ? layerMeta(c.mask) : null,
@@ -143,13 +157,13 @@ export function projectMeta(project) {
 
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, draft: !!l.draft,
+  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color,
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,
     tramas: meta.tramas || [],
     pages: meta.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles || [],
+      id: p.id, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden,
       panels: p.panels.map(c => ({
         id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, stroke: c.stroke, active: c.active, note: c.note || { plan: '', description: '' },
         ex: c.ex ?? c.x, ey: c.ey ?? c.y, ew: c.ew ?? c.w, eh: c.eh ?? c.h,

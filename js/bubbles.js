@@ -29,11 +29,11 @@ const PRESETS = {
   texte: { ...BASE, shape: 'none', tailStyle: 'none', pad: 0, wobble: 0 },
 };
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
-const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle']);
+const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle']);
 
 export function props(b) {
   const p = preset(b.kind);
-  for (const k of KEYS) if (b[k] !== undefined) p[k] = b[k];
+  for (const k of KEYS) if (b[k] !== undefined && b[k] !== null) p[k] = b[k];
   if (!b.tail) p.tailStyle = 'none';
   return p;
 }
@@ -202,9 +202,28 @@ function traceShape(ctx, b, p, pts, lw) {
 
 // ───────────────────────── Queue ─────────────────────────
 
+// Point d'attache de la queue sur le contour : choisi par l'angle `tailAngle` (degrés depuis le centre, 0 = droite),
+// sinon dans la direction de la pointe.
+function tailAnchor(pts, b, p) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (p.tailAngle !== undefined) {
+    const a = p.tailAngle * Math.PI / 180;
+    return rayHit(pts, cx, cy, cx + Math.cos(a) * 4000, cy + Math.sin(a) * 4000);
+  }
+  return rayHit(pts, cx, cy, b.tail.x, b.tail.y);
+}
+
+// Origine actuelle de la queue (pour la poignée d'édition).
+export function tailOrigin(b) {
+  const p = props(b);
+  if (!b.tail || p.tailStyle === 'none') return null;
+  const A = tailAnchor(outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p), b, p);
+  return A ? { x: A.x, y: A.y } : null;
+}
+
 function drawTail(ctx, b, p, pts, lw) {
   const t = b.tail, cx = b.x + b.w / 2, cy = b.y + b.h / 2, small = Math.min(b.w, b.h);
-  const A = rayHit(pts, cx, cy, t.x, t.y);
+  const A = tailAnchor(pts, b, p);
   if (!A) return;
   const len = Math.hypot(t.x - A.x, t.y - A.y) || 1, ux = (t.x - A.x) / len, uy = (t.y - A.y) / len, nx = -uy, ny = ux;
   const half = p.tailW / 100 * small / 2;

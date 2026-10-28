@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0 — 2026-10-28
+- Les outils visent le bon calque : l'encrage dans un calque d'encre, les trames dans un calque de trame (créé au besoin)
+- Bulles et textes listés dans les calques (masquer, verrouiller), croix pour supprimer une bulle, volet de droite compact en sections repliables
+
+## 1.5.0 — 2026-10-28
+- Bibliothèque de pinceaux façon Procreate (crayons, plumes, pinceaux, fusain…) avec réglages, et pinceaux enregistrables
+- Réglages de trame enregistrables et bibliothèque de trames pour tous les projets ; origine de la queue des bulles réglable
+
+## 1.4.0 — 2026-10-28
+- Plusieurs calques brouillon, chacun de sa couleur (bleu, orange, vert, rose, violet, rouge, gris)
+- Opacité par calque (un calque d'encre est imprimé en gris tramé), verrouillage, duplication et affichage d'un calque seul
+
 ## 1.3.0 — 2026-10-28
 - Plein écran sur iPad, conseil d'installation sur l'écran d'accueil, et plus de sélection, loupe ou zoom de page par le navigateur
 - Un trait commencé hors d'une case se poursuit dans la case où il entre (rogné au cadre)

@@ -1,7 +1,8 @@
 // Moteur raster 1-bit : annuler par différences de tuiles, pinceaux, formes, remplissage, composition.
 // Repris de Pixel Studio (pointeur, remplissage, tramage par Bayer), refait pour de grands canevas :
 // un calque est un tampon d'octets, et l'historique ne garde que les tuiles modifiées.
-import { ensureData } from './model.js';
+import { ensureData, DRAFT_COLORS } from './model.js';
+import { BAYER8 } from './dither.js';
 
 export const TILE = 64;
 export const INK = 1, PAPER = 2;
@@ -175,19 +176,159 @@ export function stampDisc(ctx, cx, cy, d) {
   grow(ctx, cx - half, cy - half, cx + half + 1, cy + half + 1);
 }
 
-// Segment avec diamètre interpolé (pression du stylet).
+// ───────────────────────── Pinceaux ─────────────────────────
+// Un pinceau est un ensemble de paramètres (forme, pression, effilage, grain, dispersion, stabilisation) :
+// les pinceaux livrés et ceux que l'utilisateur enregistre sont de simples variantes de ces réglages.
+
+export const BRUSH_DEFAULTS = {
+  shape: 'round',      // round | square | nib (ellipse) | rect
+  ratio: 1,            // finesse de nib / rect : 1 = aussi large que long
+  angle: 0,            // degrés
+  follow: false,       // l'axe long reste perpendiculaire au geste
+  sizeMm: 0.5,
+  press: 0,            // 0 à 1 : effet de la pression du stylet sur la taille
+  pressMin: 0.25,      // taille relative à pression nulle (quand press = 1)
+  speed: 0,            // 0 à 1 : le trait s'affine quand le geste va vite
+  start: 0,            // départ effilé, en diamètres
+  grain: 1,            // couverture 0 à 1 (1 = plein)
+  grainType: 'none',   // none | noise | paper | bristle | spray
+  grainScale: 1,       // taille d'un grain, en pixels
+  scatter: 0,          // dispersion du tampon, en fraction du diamètre
+  spacing: 0.2,        // écart des tampons, en diamètres
+  smooth: 0,           // stabilisation 0 à 1
+};
+
+export const BRUSH_GROUPS = ['Encrage', 'Esquisse', 'Pinceaux', 'Calligraphie', 'Texture'];
+const B = (id, name, group, o) => ({ id, name, group, ...o });
+export const BUILTIN_BRUSHES = [
+  B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5 }),
+  B('technique', 'Stylo technique', 'Encrage', { sizeMm: 0.3, smooth: 0.25 }),
+  B('plume', 'Plume d\'encrage', 'Encrage', { sizeMm: 0.5, press: 0.6, pressMin: 0.35, speed: 0.25, smooth: 0.15 }),
+  B('plumeg', 'Plume G (manga)', 'Encrage', { sizeMm: 0.8, press: 0.9, pressMin: 0.1, speed: 0.6, start: 3, smooth: 0.35 }),
+  B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, press: 1, pressMin: 0.08, speed: 0.8, start: 4, smooth: 0.4 }),
+  B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, press: 0.4, pressMin: 0.5, spacing: 0.18 }),
+  B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2, press: 0.5, pressMin: 0.4 }),
+  B('mine', 'Mine à plat', 'Esquisse', { sizeMm: 3.5, shape: 'rect', ratio: 0.25, angle: 20, grain: 0.55, grainType: 'paper' }),
+  B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, press: 1, pressMin: 0.1, speed: 0.5, start: 2.5, smooth: 0.3 }),
+  B('plat', 'Pinceau plat', 'Pinceaux', { sizeMm: 4, shape: 'rect', ratio: 0.35, follow: true }),
+  B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, press: 0.5, pressMin: 0.5, smooth: 0.2 }),
+  B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square' }),
+  B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40 }),
+  B('plate2', 'Plume plate suivie', 'Calligraphie', { sizeMm: 2.5, shape: 'nib', ratio: 0.2, follow: true }),
+  B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15, press: 0.6, pressMin: 0.4 }),
+  B('craie', 'Craie', 'Texture', { sizeMm: 6, grainType: 'paper', grain: 0.5, grainScale: 2, scatter: 0.05 }),
+  B('spray', 'Aérographe', 'Texture', { sizeMm: 8, grainType: 'spray', grain: 0.5 }),
+  B('point', 'Pointillé', 'Texture', { sizeMm: 1.2, spacing: 2.4 }),
+];
+export const brushSpec = (id, custom = []) => ({ ...BRUSH_DEFAULTS, ...(BUILTIN_BRUSHES.concat(custom).find(b => b.id === id) || BUILTIN_BRUSHES[0]) });
+
+// Bruit déterministe 0..1 d'un point : le grain est le même à chaque passage et se raccorde d'une case à l'autre.
+const hash2 = (x, y) => {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+// Bruit de valeur lissé (grain « papier » : reliefs étalés plutôt que points isolés)
+const smooth01 = t => t * t * (3 - 2 * t);
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = smooth01(x - xi), fy = smooth01(y - yi);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+}
+
+const isPlain = sp => sp.shape === 'round' && sp.grainType === 'none' && sp.grain >= 1 && !sp.scatter;
+
+// Tampon d'un pinceau à (cx, cy). `dir` : sens du geste. ctx.brush : { spec, seed, n, pr } (pr : pression 0..1).
+export function stampBrush(ctx, cx, cy, d, dir) {
+  const br = ctx.brush, sp = br ? br.spec : BRUSH_DEFAULTS;
+  if (!br || isPlain(sp)) return stampDisc(ctx, cx, cy, d);
+  d = Math.max(1, Math.round(d));
+  br.n = (br.n || 0) + 1;
+  if (sp.scatter) {   // dispersion : le tampon est décalé un peu au hasard (crayon, fusain)
+    cx += Math.round((hash2(cx * 3 + br.n, cy + br.seed) - 0.5) * sp.scatter * d);
+    cy += Math.round((hash2(cx + br.n * 5, cy * 7 + br.seed) - 0.5) * sp.scatter * d);
+  }
+  const data = ensureData(ctx.layer), half = Math.ceil(d / 2) + 3, ra = d / 2;
+  ctx.undo.touch(ctx.layer, cx - half, cy - half, cx + half + 1, cy + half + 1);
+  const pressureGrain = sp.press > 0 ? 0.55 + 0.9 * (br.pr ?? 0.5) : 1;
+  const cov = Math.max(0, Math.min(1, sp.grain * (sp.grainType === 'none' ? 1 : pressureGrain)));
+  const gs = Math.max(1, sp.grainScale);
+  const ang = (sp.follow && dir ? Math.atan2(dir.y, dir.x) + Math.PI / 2 : sp.angle * Math.PI / 180), ca = Math.cos(ang), sa = Math.sin(ang);
+  const rb = sp.shape === 'round' || sp.shape === 'square' ? ra : Math.max(0.6, ra * sp.ratio);
+
+  if (sp.grainType === 'spray') {
+    const n = Math.max(1, Math.round(Math.PI * ra * ra * cov * 0.1));
+    for (let k = 0; k < n; k++) {
+      br.n++;
+      const a = hash2(cx * 7 + k, cy * 13 + br.n + br.seed) * Math.PI * 2, rad = Math.sqrt(hash2(cx * 3 + br.n, cy * 5 + k + br.seed)) * ra;
+      put(ctx, data, Math.round(cx + Math.cos(a) * rad), Math.round(cy + Math.sin(a) * rad));
+    }
+    grow(ctx, cx - half, cy - half, cx + half + 1, cy + half + 1);
+    return;
+  }
+  const dx = dir ? dir.x : 1, dy = dir ? dir.y : 0;
+  for (let y = -half; y <= half; y++) for (let x = -half; x <= half; x++) {
+    // forme
+    let inside;
+    if (sp.shape === 'round') inside = x * x + y * y <= ra * ra + 0.25;
+    else if (sp.shape === 'square') inside = Math.abs(x) <= ra && Math.abs(y) <= ra;
+    else {
+      const u = x * ca + y * sa, v = -x * sa + y * ca;
+      inside = sp.shape === 'rect' ? Math.abs(u) <= ra && Math.abs(v) <= rb : (u * u) / (ra * ra) + (v * v) / (rb * rb) <= 1;
+    }
+    if (!inside) continue;
+    // grain
+    const px = cx + x + ctx.ox, py = cy + y + ctx.oy;
+    if (sp.grainType === 'noise') {
+      const edge = (x * x + y * y) / (ra * ra + 1);
+      if (hash2(Math.floor(px / gs), Math.floor(py / gs)) >= cov * (1 - 0.5 * edge)) continue;
+    } else if (sp.grainType === 'paper') {
+      const tooth = vnoise(px / (gs * 2.5), py / (gs * 2.5)) * 0.65 + hash2(px, py) * 0.35;
+      if (tooth >= cov) continue;
+    } else if (sp.grainType === 'bristle') {
+      const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs));
+      if (hash2(bristle, br.seed) >= cov) continue;
+    }
+    put(ctx, data, cx + x, cy + y);
+  }
+  grow(ctx, cx - half, cy - half, cx + half + 1, cy + half + 1);
+}
+
+// Segment avec diamètre interpolé (pression du stylet), tamponné avec ctx.brush s'il y en a un.
 export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
   const dist = Math.hypot(x1 - x0, y1 - y0);
-  const step = Math.max(1, Math.min(d0, d1) * 0.25);
+  const spacing = ctx.brush ? Math.max(0.05, ctx.brush.spec.spacing) : 0.25;
+  const step = Math.max(1, Math.min(d0, d1) * spacing);
   const n = Math.max(1, Math.ceil(dist / step));
+  const dir = dist > 0 ? { x: (x1 - x0) / dist, y: (y1 - y0) / dist } : null;
   let lx = null, ly = null;
   for (let i = 0; i <= n; i++) {
     const t = i / n;
     const x = Math.round(x0 + (x1 - x0) * t), y = Math.round(y0 + (y1 - y0) * t);
     if (x === lx && y === ly) continue;
     lx = x; ly = y;
-    stampDisc(ctx, x, y, d0 + (d1 - d0) * t);
+    stampBrush(ctx, x, y, d0 + (d1 - d0) * t, dir);
   }
+}
+
+// Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.
+export function previewBrush(canvas, spec, sizePx) {
+  const w = canvas.width, h = canvas.height, layer = { id: 'preview', w, h, data: new Uint8Array(w * h), dirty: false };
+  const ctx = { layer, undo: { touch() {} }, paint: { v: INK }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
+  let last = null;
+  for (let i = 0; i <= 60; i++) {
+    const t = i / 60, x = 10 + t * (w - 20), y = h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p = Math.pow(Math.sin(Math.PI * t), 0.6);
+    ctx.brush.pr = p;
+    let f = 1;
+    if (spec.press > 0) f *= (1 - spec.press) + spec.press * (spec.pressMin + (1.6 - spec.pressMin) * p);
+    if (spec.start > 0) f *= Math.min(1, 0.3 + t * 25 / spec.start / 3);
+    const d = Math.max(1, Math.round(sizePx * f));
+    if (last) strokeSegment(ctx, last.x, last.y, x, y, last.d, d); else stampBrush(ctx, Math.round(x), Math.round(y), d, null);
+    last = { x, y, d };
+  }
+  const cx = canvas.getContext('2d'), img = cx.createImageData(w, h), u = new Uint32Array(img.data.buffer);
+  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] ? 0xFF1A1714 : 0xFFFFFFFF;
+  cx.putImageData(img, 0, 0);
 }
 
 // ───────────────────────── Formes ─────────────────────────
@@ -272,7 +413,7 @@ export function applyRegion(ctx, region) {
 
 // ───────────────────────── Composition ─────────────────────────
 
-const C_INK = 0xFF000000, C_PAPER = 0xFFFFFFFF, C_DRAFT = 0xFFDC8C5A, C_MASK = 0x802B39C0;
+const C_MASK = 0x802B39C0;
 
 // Valeurs composées (0/1/2) d'une case, sans les brouillons : sert au remplissage et à l'export.
 // Hors du cadre visible, la valeur est 1 (encre) : un remplissage s'arrête au bord de la case.
@@ -290,21 +431,33 @@ export function compositeValues(panel, includeDraft = false) {
   return out;
 }
 
-// Peint le rectangle `r` de la case dans une ImageData (RGBA 32 bits) ; `draft` : montrer les brouillons.
-export function compositeRect(panel, u32, r, draft = true) {
-  const w = panel.ew;
-  for (let y = r.y; y < r.y + r.h; y++) {
-    const row = y * w;
-    for (let x = r.x; x < r.x + r.w; x++) u32[row + x] = 0;
-  }
+// Peint le rectangle `r` de la case dans une ImageData (RGBA 32 bits).
+//  draft : montrer les brouillons ; opts.solo : id d'un calque à voir seul ;
+//  opts.export : l'opacité d'un calque d'encre devient un gris tramé (Bayer 8 × 8), car l'impression est en 1 bit.
+export function compositeRect(panel, u32, r, draft = true, opts = {}) {
+  const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
+  for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, y * w + r.x, y * w + r.x + r.w);
+  const solo = opts.solo ? panel.layers.find(l => l.id === opts.solo) : null;
   for (const l of panel.layers) {
-    if (!l.visible || !l.data || (l.draft && !draft)) continue;
-    const d = l.data, ink = l.draft ? C_DRAFT : C_INK;
+    if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
+    const alpha = (l.opacity ?? 100) / 100;
+    if (alpha <= 0) continue;
+    const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : [0, 0, 0];
+    const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {
       const row = y * w;
       for (let x = r.x; x < r.x + r.w; x++) {
         const v = d[row + x];
-        if (v) u32[row + x] = v === INK ? ink : (l.draft ? 0 : C_PAPER);
+        if (!v) continue;
+        let a = alpha;
+        if (ditherOut) { if (alpha * 64 <= BAYER8[(y + panel.ey) & 7][(x + panel.ex) & 7]) continue; a = 1; }
+        const i = (row + x) * 4;
+        if (v !== INK && l.draft) { if (a >= 1) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; } continue; }   // le blanc d'un brouillon gomme ce qu'il recouvre
+        const cr = v === INK ? rgb[0] : 255, cg = v === INK ? rgb[1] : 255, cb = v === INK ? rgb[2] : 255;
+        if (a >= 1) { px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255; continue; }
+        const da = px[i + 3] / 255, oa = a + da * (1 - a);
+        px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
+        px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
       }
     }
   }
