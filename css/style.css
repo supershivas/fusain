@@ -60,6 +60,12 @@
 }
 
 html, body { height: 100%; }
+/* Outil de dessin : rien du navigateur par-dessus (sélection, loupe, menu de pression longue, zoom, rebond de page). */
+html { touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+img, svg, canvas { -webkit-user-drag: none; -webkit-touch-callout: none; }
+.home, .dock-body, .modal-body, .lab-stage, .lab-side { overscroll-behavior: contain; }
 body {
   font-family: var(--font-body);
   background: var(--bg);

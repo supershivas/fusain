@@ -6,6 +6,7 @@ import { ed } from './editor.js';
 import { savePrefs } from './editor-ui.js';
 import { loadVersion, loadChangelog, downloadJSON } from './app-update.js';
 import { exportAll, importBackup } from './portable.js';
+import { canFullscreen, isFullscreen, toggleFullscreen, isIOS, isStandalone } from './shell.js';
 
 const STATUS_TEXT = {
   off: 'Pas encore configurée : tes dessins restent sur cet appareil.',
@@ -28,6 +29,13 @@ export async function openSettings({ onImported } = {}) {
       <label class="check"><input type="checkbox" id="s-finger" ${ed.fingerDraws ? 'checked' : ''}> Le doigt dessine aussi
         </label><small style="color:var(--text-muted)">Désactivé, le doigt déplace la vue dès qu'un stylet a été détecté (la paume ne laisse aucune trace).</small>
       <label class="check"><input type="checkbox" id="s-pressure" ${ed.pressure ? 'checked' : ''}> Sensibilité à la pression du stylet</label>
+    </section>
+    <section class="modal-sec"><h3>Affichage</h3>
+      ${canFullscreen() ? `<button class="btn" id="s-fs">${icon('arrows-maximize')} ${isFullscreen() ? 'Quitter le plein écran' : 'Passer en plein écran'}</button>` : ''}
+      ${isStandalone() ? '<p style="color:var(--text-muted)">Fusain est installé : la barre du navigateur est déjà masquée.</p>'
+        : `<p style="margin-top:${canFullscreen() ? 10 : 0}px;color:var(--text-secondary)">${isIOS()
+          ? `Pour masquer la barre de Safari : touche ${icon('share-2')} <b>Partager</b>, puis <b>Sur l'écran d'accueil</b>, et ouvre Fusain depuis son icône. L'app s'affiche alors sans navigateur, et la pression longue ou le double toucher ne déclenchent plus rien.`
+          : 'Installe Fusain depuis le menu du navigateur (« Installer l\'application ») pour l\'ouvrir sans barre d\'adresse.'}</p>`}
     </section>
     <section class="modal-sec"><h3>Synchronisation (Supabase)</h3>
       <div class="status-line" id="s-status"></div>
@@ -92,6 +100,7 @@ export async function openSettings({ onImported } = {}) {
         await sync.verifyCode($('#s-mail', box).value.trim(), $('#s-code', box).value);
         toast('Connecté.'); sync.syncAll(); renderStatus();
       } else if (b.id === 's-out') { sync.signOut(); renderStatus(); }
+      else if (b.id === 's-fs') { await toggleFullscreen(); m.close(); }
       else if (b.id === 's-sync') { sync.syncAll(); toast('Synchronisation lancée.'); }
       else if (b.id === 's-export') {
         const data = await exportAll();

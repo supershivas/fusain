@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0 — 2026-10-28
+- Plein écran sur iPad, conseil d'installation sur l'écran d'accueil, et plus de sélection, loupe ou zoom de page par le navigateur
+- Un trait commencé hors d'une case se poursuit dans la case où il entre (rogné au cadre)
+
 ## 1.2.0 — 2026-10-28
 - Une case réduite ne perd plus son dessin ; on peut fusionner une case dans sa voisine ou la supprimer
 - Chaque outil garde ses réglages (taille, trame, forme, style de bulle) ; tailles en millimètres avec plumes courantes

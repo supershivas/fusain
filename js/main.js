@@ -11,6 +11,7 @@ import * as tools from './tools.js';
 import { closeAllModals, esc, icon, $ } from './ui-core.js';
 import { toast } from './toast.js';
 import { loadImportedFonts } from './fonts.js';
+import { installGuards, shouldSuggestInstall, markInstallTipSeen } from './shell.js';
 
 const root = document.getElementById('app');
 let inEditor = false;
@@ -65,6 +66,10 @@ async function showEditor(id) {
   await openInEditor(opened.project, 0);
   inEditor = true;
   mountEditor(root);
+  if (shouldSuggestInstall()) {
+    markInstallTipSeen();
+    toast('Astuce : installe Fusain sur l\'écran d\'accueil pour masquer la barre de Safari.', { actionLabel: 'Comment ?', duration: 12000, onAction: () => openSettings() });
+  }
   renderCrumb();
   document.title = opened.project.title + ' — Fusain';
 }
@@ -102,6 +107,7 @@ window.addEventListener('pagehide', () => saveNow());
 
 // ───────────────────────── Démarrage ─────────────────────────
 
+installGuards();
 loadPrefs();
 startUpdateCheck({
   onUpdated: v => toast(`Mis à jour en v${v}`),

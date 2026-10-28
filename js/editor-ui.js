@@ -13,6 +13,7 @@ import { allTramas, tramaById, drawTramaSwatch, encodeTrama, DITHER_METHODS, dit
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
+import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
 import { layoutSvg } from './home.js';
 import { buildPDF, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
 import { loadPage, unloadPage } from './store.js';
@@ -36,6 +37,7 @@ const TABS = [
   { id: 'case', icon: 'layout-grid', label: 'Case' },
 ];
 
+let fsListener = null;
 let root, dockTab = 'layers', dockOpen = true, unsub = null, keyHandler = null;
 
 const prefsKey = 'fusain:prefs';
@@ -100,6 +102,8 @@ export function mountEditor(el) {
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
+  fsListener = () => { renderToolbar(); setTimeout(resize, 100); };
+  onFullscreenChange(fsListener);
   setTimeout(resize, 0);
 }
 
@@ -122,6 +126,7 @@ function renderToolbar() {
     <button class="icon-btn icon-only" data-act="redo" id="btn-redo" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">${icon('arrow-forward-up')}</button></span>
     <span class="sp"></span>
     <button class="icon-btn icon-only" data-act="export" title="Exporter (PDF, PNG, JSON)" aria-label="Exporter">${icon('file-export')}</button>
+    ${canFullscreen() ? `<button class="icon-btn icon-only" data-act="fullscreen" title="Plein écran : masque la barre du navigateur" aria-label="Plein écran" aria-pressed="${isFullscreen()}">${icon(isFullscreen() ? 'arrows-minimize' : 'arrows-maximize')}</button>` : ''}
     <button class="icon-btn icon-only" data-act="dock" title="Panneaux" aria-label="Panneaux" aria-pressed="${dockOpen}">${icon('layout-sidebar-right')}</button>`;
   updateUndo();
 }
@@ -153,6 +158,7 @@ function onToolbar(e) {
   } else if (b.dataset.act === 'undo') undo();
   else if (b.dataset.act === 'redo') redo();
   else if (b.dataset.act === 'export') exportMenu();
+  else if (b.dataset.act === 'fullscreen') toggleFullscreen();
   else if (b.dataset.act === 'dock') { dockOpen = !dockOpen; $('#dock', root).hidden = !dockOpen; renderToolbar(); setTimeout(resize, 0); }
 }
 

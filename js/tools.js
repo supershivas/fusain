@@ -42,7 +42,15 @@ export function down(pt) {
   if (ed.tool === 'bubble') { bubbleDown(pt); return; }
   if (ed.tool === 'layout') { layoutDown(pt); return; }
   const p = panelAt(pt.x, pt.y);
-  if (!p) return;
+  if (!p) {
+    // Départ hors de toute case : le geste est suivi, et il se pose dans la première case où il entre (rogné au cadre).
+    if (['pencil', 'texture', 'eraser', 'mask', 'shape'].includes(ed.tool)) session = { kind: 'pre', pts: [pt] };
+    return;
+  }
+  begin(p, pt);
+}
+
+function begin(p, pt) {
   selectPanel(p.id);
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
@@ -79,6 +87,16 @@ export function down(pt) {
 
 export function move(pt) {
   if (!session) return;
+  if (session.kind === 'pre') {
+    session.pts.push(pt);
+    const p = panelAt(pt.x, pt.y);
+    if (p) {
+      const pts = session.pts; session = null;
+      begin(p, pts[0]);                                   // le début, hors cadre, est rogné : seule la partie dedans se dessine
+      if (session) for (const q of pts.slice(1)) move(q);
+    }
+    return;
+  }
   if (session.kind === 'stroke') {
     const s = session, lx = Math.floor(pt.x - s.p.ex), ly = Math.floor(pt.y - s.p.ey), d = diameter(pt);
     strokeSegment(s.ctx, s.last.x, s.last.y, lx, ly, s.last.d, d);

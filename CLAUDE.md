@@ -39,6 +39,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - Réglages par outil : `TOOL_DEFAULTS` / `storeToolSettings` / `applyToolSettings` (`editor.js`), rangés dans `localStorage` (`fusain:prefs`) avec le dernier style de chaque type de bulle (`bubbleDefaults`). Les tailles se règlent en mm (`sizeMm`), `ed.size` en est la valeur en pixels.
 - Gouttières : `gutterHandles` / `resizeGutter` (`editor.js`) regroupent les cases qui bordent une même gouttière ; `reshape` garde le dessin à sa place sur la page. Copie de case : `copyPanelTo`.
 - `js/view.js` (rendu et zoom), `input.js` (Pointer Events, rejet de la paume, pincer), `tools.js` (outils au pointeur), `editor.js` (état et actions annulables).
+- `js/shell.js` — plein écran (Safari iPad seulement, pas iPhone), détection iOS / installé, garde-fous contre la sélection, le menu de pression longue, le zoom de page et le double toucher (avec le CSS de `style.css`). Les champs de saisie gardent `user-select: text`, sinon Safari ne les laisse plus taper.
 - `js/store.js` (IndexedDB, PNG 2 bits via `png.js`), `sync.js` (Supabase par `fetch`), `portable.js` (export/import JSON, découpage).
 - `js/home.js`, `editor-ui.js`, `settings.js`, `ui-core.js`, `toast.js`, `main.js` (routage `#/p/<id>`), `app-update.js` (copié du design system).
 
