@@ -7,7 +7,7 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null, lastTap = null;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
@@ -111,14 +111,6 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     if (e.pointerType === 'pen' && e.type === 'pointerup' && penInfo) {
       const info = penInfo; penInfo = null;
       if (info.erase && onPenEraser) onPenEraser(false);
-      // double tape du bout du stylet (sans tracer) : bascule plume ↔ gomme ; les deux points posés sont défaits
-      if (info.t && info.max < 8 && performance.now() - info.t < 300 && onPenToggle) {
-        const now = performance.now();
-        if (lastTap && now - lastTap.t < 500 && Math.hypot(info.x - lastTap.x, info.y - lastTap.y) < 30) {
-          while (ed.undo.ptr > lastTap.ptr && ed.undo.canUndo) ed.undo.undo();
-          lastTap = null; onPenToggle(true);
-        } else lastTap = { t: now, x: info.x, y: info.y, ptr: info.ptr };
-      } else lastTap = null;
     }
     if (panning && panning.id === e.pointerId) stopPan();
     if (gesture && rec.type === 'touch' && touchCount() === 0) {

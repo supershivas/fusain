@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.4 — 2026-10-28
+- Le double tape du stylet ne change plus d’outil (le bouton du flanc le fait toujours)
+
 ## 1.10.3 — 2026-10-28
 - Firefox sur iPad : un toucher long sur le dessin (paume comprise) n’ouvre plus le menu « Rechercher »
 

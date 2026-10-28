@@ -147,7 +147,7 @@ function updateUndo() {
   }
 }
 
-// Stylet : bascule plume ↔ gomme (double tape ou bouton du flanc) ; le bout gomme du stylet gomme le temps d'un trait.
+// Stylet : bascule plume ↔ gomme (bouton du flanc) ; le bout gomme du stylet gomme le temps d'un trait.
 let penBefore = null;
 function penToggle(fromTap) {
   if (fromTap) { markChanged(); requestRender(); }
