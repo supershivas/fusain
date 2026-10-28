@@ -6,7 +6,7 @@ import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
-import { autoSize, pathBounds } from './bubbles.js';
+import { autoSize, pathBounds, props as bubbleProps } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
@@ -707,6 +707,18 @@ export function duplicateBubble(b = bubble()) {
   const unapply = () => { pg.bubbles.splice(pg.bubbles.indexOf(nb), 1); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
   apply(); ed.undo.pushAction('Dupliquer la bulle', unapply, apply);
   return nb;
+}
+
+// Copie les réglages de trait d'une bulle (épaisseur, même épaisseur que les cases, rognage) sur toutes les bulles du projet ; annulable.
+export function applyBubbleLines(src = bubble()) {
+  if (!src) return 0;
+  const keys = ['stroke', 'sameStroke', 'clip', 'noFrame'], all = ed.project.pages.flatMap(p => p.bubbles);
+  const before = new Map(all.map(b => [b, keys.map(k => b[k])]));
+  const set = vals => { for (const b of all) { const v = vals(b); keys.forEach((k, i) => { if (v[i] === undefined) delete b[k]; else b[k] = v[i]; }); } notify('bubbles'); requestRender(); markChanged(); };
+  const to = keys.map(k => (k === 'stroke' ? bubbleProps(src).stroke : src[k]));
+  const after = () => to;
+  set(after); ed.undo.pushAction('Traits des bulles', () => set(b => before.get(b)), () => set(after));
+  return all.length;
 }
 
 export function deleteBubble(b = bubble()) {

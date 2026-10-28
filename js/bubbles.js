@@ -1,5 +1,6 @@
 // Bulles et textes : dessinés en vectoriel sur la page (aperçu écran et export PDF partagent ce code).
 // Coordonnées en pixels de page ; marge intérieure et trait en millimètres ; le reste en pourcentages.
+import { panelStroke } from './model.js';
 import { fontSpec, touchFont, DEFAULT_FONT } from './fonts.js';
 
 export const BUBBLE_KINDS = [
@@ -275,7 +276,7 @@ function drawTail(ctx, b, p, pts, lw) {
 }
 
 // lwOverride : épaisseur du trait en pixels (le Labo compare des épaisseurs).
-export function drawBubble(ctx, b, dpi, lwOverride) {
+export function drawBubble(ctx, b, dpi, lwOverride, fillOnly = false) {
   b = localBubble(b);
   const p = props(b), lw = lwOverride !== undefined ? lwOverride : mm(p.stroke, dpi);
   ctx.save();
@@ -288,7 +289,7 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
   if (p.shape !== 'none') { traceShape(ctx, b, p, pts, lw); ctx.fill(); if (lw > 0) ctx.stroke(); }
   if (b.tail && p.tailStyle !== 'none') drawTail(ctx, b, p, pts, lw);
 
-  if (b.text) {
+  if (b.text && !fillOnly) {
     setFont(ctx, b, dpi);
     const fp = fontPx(b, dpi), pad = mm(p.pad, dpi);
     const maxW = roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
@@ -300,15 +301,26 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
   ctx.restore();
 }
 
-// Dessine une bulle sur la page ; avec `clip`, elle est rognée au cadre de la case où se trouve son centre.
-export function drawPageBubble(ctx, b, dpi, panels) {
-  if (!b.clip) { drawBubble(ctx, b, dpi); return; }
+// Case d'une bulle : celle à laquelle elle est liée, sinon celle qui contient son centre ou, à défaut, la première qu'elle touche.
+export function bubblePanelOf(b, panels) {
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-  const p = panels.find(q => q.id === b.panel) || panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
-    || panels.find(q => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y);
-  if (!p) { drawBubble(ctx, b, dpi); return; }
+  return panels.find(q => q.id === b.panel) || panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
+    || panels.find(q => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y) || null;
+}
+
+// Dessine une bulle sur la page. Options de trait : `sameStroke` (même épaisseur que le cadre de sa case), `clip` (rognée au cadre de sa case)
+// et `noFrame` (rognée, elle efface le trait du cadre là où elle le touche : son remplissage couvre le cadre, son contour reste dans la case).
+export function drawPageBubble(ctx, b, dpi, panels) {
+  const p = (b.clip || b.sameStroke) ? bubblePanelOf(b, panels) : null;
+  const lw = b.sameStroke && p ? mm(panelStroke(p), dpi) : undefined;
+  if (!b.clip || !p) { drawBubble(ctx, b, dpi, lw); return; }
+  if (b.noFrame) {
+    const bw = mm(panelStroke(p), dpi) + 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(p.x - bw, p.y - bw, p.w + bw * 2, p.h + bw * 2); ctx.clip();
+    drawBubble(ctx, b, dpi, 0, true); ctx.restore();
+  }
   ctx.save(); ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
-  drawBubble(ctx, b, dpi); ctx.restore();
+  drawBubble(ctx, b, dpi, lw); ctx.restore();
 }
 
 export function hitBubble(b, x, y) {

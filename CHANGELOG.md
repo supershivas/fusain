@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.15.0 — 2026-10-28
+- Bulles : trait de même épaisseur que les cases, « Appliquer ces traits à toutes les bulles »
+- Bulles rognées : option pour effacer le trait de la case là où la bulle la touche
+
 ## 1.14.0 — 2026-10-28
 - Les bulles et textes sont liés à une case : supprimer, fusionner ou copier une case emporte ses bulles
 - Les bulles se dupliquent (bouton, glisser vers la gauche, menu Calque)

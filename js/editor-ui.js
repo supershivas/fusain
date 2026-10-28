@@ -1,7 +1,7 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
-  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, duplicateBubble, selectBubble, commitBubbleEdit, refitBubble,
+  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, duplicateBubble, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
@@ -11,7 +11,7 @@ import { attach, fit, view, zoomAt, requestRender, resize, invalidate } from './
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
-import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './bubbles.js';
+import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
@@ -590,8 +590,12 @@ function bubbleShape(b) {
   return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
       ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}${slider('b-stroke', p, 0, 2, 0.05)}${slider('b-rot', p, 0, 359)}
-      <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>`;
+      ${slider('b-pad', p, 0, 10, 0.5)}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
+      <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
+      <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
+      ${b.clip ? `<label class="check compact"><input type="checkbox" id="b-noframe" ${b.noFrame ? 'checked' : ''}> Pas de trait de case là où la bulle la touche</label>` : ''}
+      <button class="btn small" data-act="bubble-lines-all" style="margin:2px 0 8px">Appliquer ces traits à toutes les bulles</button>
+      ${slider('b-rot', p, 0, 359)}`;
 }
 function bubbleTail(b) {
   const p = props(b);
@@ -658,6 +662,7 @@ async function onDock(e) {
     if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   }
   else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'bubble-lines-all') { const n = applyBubbleLines(bubble()); if (n) toast(`Traits appliqués à ${n} bulle${n > 1 ? 's' : ''}.`); }
   else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
   else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
@@ -785,7 +790,9 @@ function onDockInput0(e) {
     if (key === 'rot' && !b.rot) delete b.rot;
     if (key === 'pad') refitBubble(b);
   }
-  else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else delete b.clip; }
+  else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else { delete b.clip; delete b.noFrame; } }
+  else if (id === 'b-noframe') { if (e.target.checked) b.noFrame = true; else delete b.noFrame; }
+  else if (id === 'b-samestroke') { if (e.target.checked) b.sameStroke = true; else delete b.sameStroke; }
   else if (id === 'b-origin-auto') {
     if (e.target.checked) delete b.tailAngle;
     else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) - (b.rot || 0) + 720) % 360);
@@ -801,7 +808,7 @@ function onDockChange(e) {
     commitBubbleEdit(b, bubbleBefore); bubbleBefore = null;
     if (e.target.id !== 'b-text' && e.target.id !== 'b-kind') rememberBubble(b);
     // Pas de reconstruction du volet à chaque champ : un toucher sur un bouton qui suit la sortie d'un champ serait perdu.
-    if (['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto'].includes(e.target.id)) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); }
+    if (['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto', 'b-clip', 'b-samestroke'].includes(e.target.id)) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); }
     renderDock();
   } else if (/^n-/.test(e.target.id || '')) markChanged();
 }
