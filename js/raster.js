@@ -487,6 +487,10 @@ export function compositeValues(panel, includeDraft = false) {
 // Peint le rectangle `r` de la case dans une ImageData (RGBA 32 bits).
 //  draft : montrer les brouillons ; opts.solo : id d'un calque à voir seul ;
 //  opts.export : l'opacité d'un calque d'encre devient un gris tramé (Bayer 8 × 8), car l'impression est en 1 bit.
+// Couleur libre d'un calque d'encre ou de trame : `color` = « #rrggbb » (les brouillons gardent un nom de la palette).
+const HEX = /^#[0-9a-f]{6}$/i;
+export const tintOf = l => (!l.draft && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
+
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
   for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, y * w + r.x, y * w + r.x + r.w);
@@ -495,7 +499,7 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
-    const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : [0, 0, 0];
+    const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : (tintOf(l) || [0, 0, 0]);
     const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {
       const row = y * w;

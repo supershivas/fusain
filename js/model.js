@@ -85,7 +85,7 @@ export const DRAFT_COLORS = {
 export function newLayer(name, w, h, opts = {}) {
   const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
   return {
-    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : undefined,
+    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : opts.color,
     w, h, data: null, loaded: true, dirty: false, rev: null,
   };
 }

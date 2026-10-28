@@ -559,7 +559,11 @@ export function setLayerProp(id, key, value) {
   const p = panel(), l = p.layers.find(x => x.id === id);
   if (!l) return;
   l[key] = value;
-  if (key === 'kind') { l.draft = value === 'draft'; if (l.draft && !l.color) l.color = nextDraftColor(p); }
+  if (key === 'kind') {
+    l.draft = value === 'draft';
+    if (l.draft && (!l.color || l.color[0] === '#')) l.color = nextDraftColor(p);
+    else if (!l.draft && l.color && l.color[0] !== '#') delete l.color;   // la couleur d'un brouillon est un nom de palette, celle d'un calque une teinte libre
+  }
   invalidate(p); notify('layers'); markChanged();
 }
 

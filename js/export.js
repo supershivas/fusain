@@ -60,6 +60,15 @@ function packBits(canvas) {
   return out;
 }
 
+// Image RVB 8 bits (pages avec des calques en couleur).
+function packRGB(canvas) {
+  const { width: w, height: h } = canvas, px = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const out = new Uint8Array(w * h * 3);
+  for (let i = 0, j = 0; i < px.length; i += 4, j += 3) { out[j] = px[i]; out[j + 1] = px[i + 1]; out[j + 2] = px[i + 2]; }
+  return out;
+}
+const usesColor = project => project.pages.some(pg => pg.panels.some(p => p.layers.some(l => !l.draft && /^#[0-9a-f]{6}$/i.test(l.color || ''))));
+
 // Chaîne PDF en UTF-16BE (accents corrects dans le titre du document).
 const pdfString = s => '<FEFF' + Array.from({ length: s.length }, (_, i) => s.charCodeAt(i).toString(16).padStart(4, '0')).join('').toUpperCase() + '>';
 
@@ -70,7 +79,7 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
   const text = s => write(enc.encode(s));
   text('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
 
-  const pages = project.pages, n = pages.length;
+  const pages = project.pages, n = pages.length, color = usesColor(project);
   await ensureFonts(project, pages);
   // numéros d'objets : 1 catalogue, 2 liste des pages, 3 info, puis par page : page, contenu, image
   const pageObj = i => 4 + i * 3, contentObj = i => 5 + i * 3, imageObj = i => 6 + i * 3;
@@ -87,7 +96,7 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
     await prepare(pages[i]);
     const canvas = renderPage(project, pages[i], 1);
     release(pages[i]);
-    const bits = packBits(canvas), packed = await deflate(bits);
+    const bits = color ? packRGB(canvas) : packBits(canvas), packed = await deflate(bits);
     const { width: pw, height: ph } = canvas;
     obj(pageObj(i), '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + wpt + ' ' + hpt + '] /Contents ' + contentObj(i) +
       ' 0 R /Resources << /XObject << /Im0 ' + imageObj(i) + ' 0 R >> >> >>');
@@ -96,7 +105,7 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
     const data = packed || bits;
     offsets[imageObj(i)] = length;
     text(imageObj(i) + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + pw + ' /Height ' + ph +
-      ' /ColorSpace /DeviceGray /BitsPerComponent 1 ' + (packed ? '/Filter /FlateDecode ' : '') +
+      (color ? ' /ColorSpace /DeviceRGB /BitsPerComponent 8 ' : ' /ColorSpace /DeviceGray /BitsPerComponent 1 ') + (packed ? '/Filter /FlateDecode ' : '') +
       '/Length ' + data.length + ' >>\nstream\n');
     write(data);
     text('\nendstream\nendobj\n');

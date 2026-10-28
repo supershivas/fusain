@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.0 — 2026-10-28
+- Encrage et trames en couleur : chaque calque d'encre ou de trame a sa couleur libre (volet Calques)
+- L'export PDF passe en couleur dès qu'un calque est coloré
+
 ## 1.16.0 — 2026-10-28
 - Deux doigts font aussi tourner la page, avec un aimant aux angles courants (0, 45, 90°…) ; menu Image : tourner de 90° ou remettre droite
 - Un simple toucher avec l'outil main (ou au doigt quand on dessine au stylet) change de case sans dessiner

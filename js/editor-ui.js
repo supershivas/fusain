@@ -444,7 +444,7 @@ function pageTab() { return pagesTab() + caseTab(); }
 function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
-  const dot = l => l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
+  const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
@@ -473,6 +473,9 @@ function layersTab() {
   const props = `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>
     ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
+    ${cur.kind !== 'draft' ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
+      <input type="color" id="l-tint" value="${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? cur.color : '#000000'}" aria-label="Couleur du calque" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg)">
+      <button class="btn small" data-act="tint-reset" ${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? '' : 'disabled'}>Noir</button></div>` : ''}
     <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
     <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
@@ -662,6 +665,7 @@ async function onDock(e) {
     if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   }
   else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'tint-reset') { setLayerProp(activeLayer().id, 'color', undefined); }
   else if (a === 'bubble-lines-all') { const n = applyBubbleLines(bubble()); if (n) toast(`Traits appliqués à ${n} bulle${n > 1 ? 's' : ''}.`); }
   else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
@@ -767,6 +771,7 @@ function onDockInput0(e) {
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
+  if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
   if (id === 'l-solo') { setSolo(activeLayer().id); return; }
