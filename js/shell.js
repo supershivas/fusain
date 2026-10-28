@@ -37,6 +37,12 @@ export function installGuards() {
   document.addEventListener('contextmenu', e => { if (!editable(e.target)) e.preventDefault(); });
   document.addEventListener('selectstart', e => { if (!editable(e.target)) e.preventDefault(); });
   document.addEventListener('dragstart', e => { if (!editable(e.target)) e.preventDefault(); });
+  // Filet de sécurité (Firefox et Chrome sur iPad ignorent parfois user-select) : toute sélection hors champ est aussitôt retirée,
+  // donc le menu « Rechercher sur Firefox / dans la page » n'a plus de texte sur lequel s'afficher
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && !editable(document.activeElement)) sel.removeAllRanges();
+  });
   // Firefox : « / » et « ' » ouvrent la recherche rapide (Rechercher dans la page) dès qu'on tape hors d'un champ
   document.addEventListener('keydown', e => {
     if ((e.key === '/' || e.key === "'" || e.key === '\u2019') && !e.ctrlKey && !e.metaKey && !editable(e.target)) e.preventDefault();

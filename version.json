@@ -1,7 +1,7 @@
 {
-  "version": "1.10.1",
+  "version": "1.10.2",
   "date": "2026-10-28",
   "changes": [
-    "Firefox : plus de barre « Rechercher dans la page » en tapant « / » ou « ' », et plus de sélection de texte au toucher long"
+    "Firefox et Chrome sur iPad : toute sélection de texte hors champ est retirée aussitôt, ce qui supprime le menu « Rechercher »"
   ]
 }

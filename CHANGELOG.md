@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.2 — 2026-10-28
+- Firefox et Chrome sur iPad : toute sélection de texte hors champ est retirée aussitôt, ce qui supprime le menu « Rechercher »
+
 ## 1.10.1 — 2026-10-28
 - Firefox : plus de barre « Rechercher dans la page » en tapant « / » ou « ' », et plus de sélection de texte au toucher long
 
