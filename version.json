@@ -1,7 +1,7 @@
 {
-  "version": "1.10.2",
+  "version": "1.10.3",
   "date": "2026-10-28",
   "changes": [
-    "Firefox et Chrome sur iPad : toute sélection de texte hors champ est retirée aussitôt, ce qui supprime le menu « Rechercher »"
+    "Firefox sur iPad : un toucher long sur le dessin (paume comprise) n’ouvre plus le menu « Rechercher »"
   ]
 }

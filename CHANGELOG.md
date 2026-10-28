@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.3 — 2026-10-28
+- Firefox sur iPad : un toucher long sur le dessin (paume comprise) n’ouvre plus le menu « Rechercher »
+
 ## 1.10.2 — 2026-10-28
 - Firefox et Chrome sur iPad : toute sélection de texte hors champ est retirée aussitôt, ce qui supprime le menu « Rechercher »
 

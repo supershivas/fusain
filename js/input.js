@@ -28,6 +28,8 @@ function point(e, el) {
 export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser }) {
   el.style.touchAction = 'none';
   el.addEventListener('contextmenu', e => e.preventDefault());
+  // WebKit (Safari, Firefox et Chrome sur iPad) lance toucher long et menu « Rechercher » sur touchstart, que pointerdown n'annule pas
+  el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
 
   el.addEventListener('pointerdown', e => {
     if (e.pointerType === 'pen') {
