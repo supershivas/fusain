@@ -48,6 +48,7 @@ export function loadPrefs() {
     if (typeof p.fingerDraws === 'boolean') ed.fingerDraws = p.fingerDraws;
     if (typeof p.pressure === 'boolean') ed.pressure = p.pressure;
     if (typeof p.pressureGamma === 'number') ed.pressureGamma = p.pressureGamma;
+    if (['off', 'normal', 'strong'].includes(p.palm)) ed.palm = p.palm;
     if (typeof p.showNotes === 'boolean') ed.showNotes = p.showNotes;
     if (p.toolSettings && typeof p.toolSettings === 'object') ed.toolSettings = p.toolSettings;
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
@@ -62,7 +63,7 @@ export function loadPrefs() {
 export function savePrefs() {
   storeToolSettings();
   try {
-    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, showNotes: ed.showNotes,
+    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
       customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets }));
   } catch { /* */ }

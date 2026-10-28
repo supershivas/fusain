@@ -7,9 +7,15 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;
-let gesture = null, panning = null, pending = null, drawingId = null;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
+
+// Rejet de la paume : tant qu'un stylet vient d'être vu, les doigts sont ignorés (délai réglable dans les Réglages).
+const palmMs = () => ({ off: 0, normal: 700, strong: 1600 }[ed.palm] ?? 1600);
+const penRecent = () => penSeen && !ed.fingerDraws && palmMs() > 0 && performance.now() - lastPen < palmMs();
+// Un contact large (paume, tranche de la main) n'est pas un doigt.
+const bigContact = e => palmMs() > 0 && Math.max(e.width || 0, e.height || 0) > 40;
 
 const touchCount = () => [...pointers.values()].filter(p => p.type === 'touch').length;
 
@@ -23,8 +29,18 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
   el.addEventListener('contextmenu', e => e.preventDefault());
 
   el.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'pen') { penSeen = true; penDown = true; try { localStorage.setItem('fusain:pen', '1'); } catch { /* */ } }
-    if (e.pointerType === 'touch' && penDown) return;                 // paume posée pendant que le stylet dessine
+    if (e.pointerType === 'pen') {
+      penSeen = true; penDown = true; lastPen = performance.now();
+      try { localStorage.setItem('fusain:pen', '1'); } catch { /* */ }
+      // le stylet se pose : tout ce que des doigts avaient commencé (déplacement, geste, trait) était une paume
+      if (!ed.fingerDraws && palmMs() > 0) {
+        if (drawingId !== null && pointers.get(drawingId) && pointers.get(drawingId).type === 'touch') { tools.cancel(); drawingId = null; }
+        if (pending) { clearTimeout(pending.timer); pending = null; }
+        for (const [id, r] of [...pointers]) if (r.type === 'touch') pointers.delete(id);
+        gesture = null; stopPan();
+      }
+    }
+    if (e.pointerType === 'touch' && (penDown || penRecent() || bigContact(e))) return;   // paume
     e.preventDefault();
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     el.setPointerCapture(e.pointerId);
@@ -46,17 +62,22 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
   });
 
   el.addEventListener('pointermove', e => {
-    if (e.pointerType === 'touch' && penDown) return;
+    if (e.pointerType === 'pen') lastPen = performance.now();   // y compris le survol du stylet, avant qu'il touche
+    if (e.pointerType === 'touch' && (penDown || penRecent())) return;
     const rec = pointers.get(e.pointerId);
     if (!rec) { hover(e, el); return; }
     rec.x = e.clientX; rec.y = e.clientY;
     if (gesture && rec.type === 'touch') {
       e.preventDefault();
       // trois doigts : on ne zoome plus ; un frottement ou une rotation vide le calque (geste de Procreate)
-      if (touchCount() >= 3) { if (!gesture.cleared && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
+      if (touchCount() >= 3) { if (!gesture.cleared && !(penSeen && performance.now() - lastPen < 4000) && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
       moveGesture(); return;
     }
-    if (panning && panning.id === e.pointerId) { panBy(e.clientX - panning.x, e.clientY - panning.y); panning.x = e.clientX; panning.y = e.clientY; return; }
+    if (panning && panning.id === e.pointerId) {
+      // un doigt qui déplace la vue (stylet en usage) doit bouger franchement : une paume qui frôle l'écran ne fait rien
+      if (!panning.moved) { if (Math.hypot(e.clientX - panning.x0, e.clientY - panning.y0) < (e.pointerType === 'touch' && penSeen ? 18 : 3)) return; panning.moved = true; panning.x = e.clientX; panning.y = e.clientY; return; }
+      panBy(e.clientX - panning.x, e.clientY - panning.y); panning.x = e.clientX; panning.y = e.clientY; return;
+    }
     if (drawingId === e.pointerId) {
       e.preventDefault();
       const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
@@ -66,7 +87,7 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
   });
 
   const end = e => {
-    if (e.pointerType === 'pen') penDown = false;
+    if (e.pointerType === 'pen') { penDown = false; lastPen = performance.now(); }
     const rec = pointers.get(e.pointerId);
     if (!rec) return;
     if (pending && pending.e.pointerId === e.pointerId) { flushPending(el); }
@@ -128,7 +149,7 @@ function cancelDrawing() {
   if (drawingId !== null) { tools.cancel(); drawingId = null; }
 }
 
-function startPan(e) { panning = { id: e.pointerId, x: e.clientX, y: e.clientY }; }
+function startPan(e) { panning = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false }; }
 function stopPan() { panning = null; }
 
 // ───────────────────────── Deux doigts : zoom et déplacement ─────────────────────────

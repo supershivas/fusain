@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1 — 2026-10-28
+- Rejet de la paume renforcé : les doigts sont ignorés 1,6 s après le stylet, ainsi que les contacts larges
+- Réglage « Rejet de la paume » (fort, normal, désactivé) dans les Réglages
+
 ## 1.7.0 — 2026-10-28
 - Glisser un calque ou une bulle vers la gauche propose Dupliquer / Supprimer
 - Pression du stylet : active par défaut sur les pinceaux, interrupteur dans la barre d'outils, courbe et zone d'essai dans les Réglages

@@ -15,7 +15,7 @@ export const ed = {
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
-  fingerDraws: false, pressure: true, pressureGamma: 1, showNotes: true,
+  fingerDraws: false, palm: 'strong', pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
 };
 

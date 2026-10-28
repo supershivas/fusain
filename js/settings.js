@@ -30,6 +30,8 @@ export async function openSettings({ onImported } = {}) {
     <section><h3 class="sec-title">Dessin</h3>
       <label class="check"><input type="checkbox" id="s-finger" ${ed.fingerDraws ? 'checked' : ''}> Le doigt dessine aussi
         </label><small style="color:var(--text-muted)">Désactivé, le doigt déplace la vue dès qu'un stylet a été détecté (la paume ne laisse aucune trace).</small>
+      <label class="field" style="margin-bottom:8px"><span>Rejet de la paume</span><select id="s-palm">${[['strong', 'Fort : ignore les doigts 1,6 s après le stylet'], ['normal', 'Normal : 0,7 s'], ['off', 'Désactivé']].map(([v, n]) => `<option value="${v}" ${ed.palm === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <small>Tant que le stylet est utilisé, les doigts, les contacts larges et les gestes (zoom, annuler, vider) sont ignorés.</small></label>
       <label class="check"><input type="checkbox" id="s-pressure" ${ed.pressure ? 'checked' : ''}> Sensibilité à la pression du stylet</label>
       <label class="field" style="margin-bottom:6px"><span>Courbe de pression : <span id="s-gamma-v">${gammaLabel(ed.pressureGamma)}</span></span>
         <input type="range" id="s-gamma" min="0.4" max="2.2" step="0.1" value="${ed.pressureGamma}" aria-label="Courbe de pression"></label>
@@ -102,6 +104,7 @@ export async function openSettings({ onImported } = {}) {
 
   box.addEventListener('change', e => {
     if (e.target.id === 's-finger') { ed.fingerDraws = e.target.checked; savePrefs(); }
+    else if (e.target.id === 's-palm') { ed.palm = e.target.value; savePrefs(); }
     else if (e.target.id === 's-pressure') { ed.pressure = e.target.checked; savePrefs(); }
     else if (e.target.id === 's-gamma') { ed.pressureGamma = +e.target.value; $('#s-gamma-v', box).textContent = gammaLabel(ed.pressureGamma); savePrefs(); }
     else if (e.target.id === 's-import-file') doImport(e.target.files[0]);
