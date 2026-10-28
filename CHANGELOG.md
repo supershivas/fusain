@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 — 2026-10-28
+- Une case réduite ne perd plus son dessin ; on peut fusionner une case dans sa voisine ou la supprimer
+- Chaque outil garde ses réglages (taille, trame, forme, style de bulle) ; tailles en millimètres avec plumes courantes
+- Trait du cadre réglable par case ; bouton Exporter (PDF, PNG, JSON) toujours visible
+
 ## 1.1.0 — 2026-10-28
 - Bulles : queue réglable (largeur, arrondi, courbure, pointe), contours imparfaits, 26 polices dont des polices de BD et manuscrites, import de police
 - Nouvel outil Taille des cases : tirettes sur les gouttières, annulable

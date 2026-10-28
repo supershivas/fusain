@@ -118,6 +118,8 @@ export function paintValue(paint, px, py) {
 // mask.mode : 'in' peint seulement dans la zone du masque, 'out' seulement en dehors.
 function writable(ctx, x, y) {
   if (x < 0 || y < 0 || x >= ctx.layer.w || y >= ctx.layer.h) return false;
+  const c = ctx.clip;   // cadre visible de la case : on ne dessine pas dans la réserve hors cadre
+  if (c && (x < c.x0 || y < c.y0 || x >= c.x1 || y >= c.y1)) return false;
   const m = ctx.mask;
   if (!m) return true;
   const inside = m.data[y * ctx.layer.w + x] !== 0;
@@ -273,19 +275,24 @@ export function applyRegion(ctx, region) {
 const C_INK = 0xFF000000, C_PAPER = 0xFFFFFFFF, C_DRAFT = 0xFFDC8C5A, C_MASK = 0x802B39C0;
 
 // Valeurs composées (0/1/2) d'une case, sans les brouillons : sert au remplissage et à l'export.
+// Hors du cadre visible, la valeur est 1 (encre) : un remplissage s'arrête au bord de la case.
 export function compositeValues(panel, includeDraft = false) {
-  const out = new Uint8Array(panel.w * panel.h);
+  const out = new Uint8Array(panel.ew * panel.eh);
   for (const l of panel.layers) {
     if (!l.visible || !l.data || (l.draft && !includeDraft)) continue;
     const d = l.data;
     for (let i = 0; i < d.length; i++) if (d[i]) out[i] = d[i];
+  }
+  const x0 = panel.x - panel.ex, y0 = panel.y - panel.ey;
+  for (let y = 0; y < panel.eh; y++) for (let x = 0; x < panel.ew; x++) {
+    if (x < x0 || y < y0 || x >= x0 + panel.w || y >= y0 + panel.h) out[y * panel.ew + x] = INK;
   }
   return out;
 }
 
 // Peint le rectangle `r` de la case dans une ImageData (RGBA 32 bits) ; `draft` : montrer les brouillons.
 export function compositeRect(panel, u32, r, draft = true) {
-  const w = panel.w;
+  const w = panel.ew;
   for (let y = r.y; y < r.y + r.h; y++) {
     const row = y * w;
     for (let x = r.x; x < r.x + r.w; x++) u32[row + x] = 0;

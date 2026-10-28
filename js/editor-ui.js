@@ -3,12 +3,12 @@ import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles,
+  copyPanelTo, refitAutoBubbles, storeToolSettings, applyToolSettings, setSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { attach, fit, view, zoomAt, requestRender, resize } from './view.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize } from './model.js';
+import { LAYOUTS, pageSize, panelStroke } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -45,11 +45,19 @@ export function loadPrefs() {
     if (typeof p.fingerDraws === 'boolean') ed.fingerDraws = p.fingerDraws;
     if (typeof p.pressure === 'boolean') ed.pressure = p.pressure;
     if (typeof p.showNotes === 'boolean') ed.showNotes = p.showNotes;
-    if (typeof p.size === 'number') ed.size = p.size;
+    if (p.toolSettings && typeof p.toolSettings === 'object') ed.toolSettings = p.toolSettings;
+    if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
+    if (p.ditherOpts && typeof p.ditherOpts === 'object') ed.ditherOpts = p.ditherOpts;
+    if (typeof p.tool === 'string') ed.tool = p.tool === 'bubble' || p.tool === 'layout' ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
+// Préférences de l'appareil : réglages de chaque outil, dernier style de chaque type de bulle, options d'image tramée.
 export function savePrefs() {
-  try { localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, showNotes: ed.showNotes, size: ed.size })); } catch { /* */ }
+  storeToolSettings();
+  try {
+    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, showNotes: ed.showNotes,
+      toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool }));
+  } catch { /* */ }
 }
 
 // ───────────────────────── Montage ─────────────────────────
@@ -60,9 +68,11 @@ export function mountEditor(el) {
   root.innerHTML = `<div class="ed">
     <nav class="toolbar" id="toolbar" aria-label="Outils"></nav>
     <section class="stage" id="stage">
-      <canvas id="view" aria-label="Page de BD"></canvas>
       <div class="optbar" id="optbar"></div>
-      <div class="zoombar" id="zoombar"></div>
+      <div class="canvas-wrap">
+        <canvas id="view" aria-label="Page de BD"></canvas>
+        <div class="zoombar" id="zoombar"></div>
+      </div>
     </section>
     <aside class="dock" id="dock" ${dockOpen ? '' : 'hidden'}></aside>
   </div>`;
@@ -81,7 +91,8 @@ export function mountEditor(el) {
   $('#dock', root).addEventListener('focusin', onDockFocus);
 
   unsub = subscribe(what => {
-    if (what === 'undo') updateUndo();
+    if (what === 'undo') { updateUndo(); if (ed.tool === 'layout') renderOptbar(); }
+    else if (what === 'panels') renderAll();
     else if (what === 'project' || what === 'page') { renderAll(); fit(); }
     else if (what === 'panel') { renderDock(); renderOptbar(); }
     else if (what === 'layers' || what === 'bubbles') renderDock();
@@ -110,6 +121,7 @@ function renderToolbar() {
     <button class="icon-btn icon-only" data-act="undo" id="btn-undo" title="Annuler (Ctrl+Z)" aria-label="Annuler">${icon('arrow-back-up')}</button>
     <button class="icon-btn icon-only" data-act="redo" id="btn-redo" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">${icon('arrow-forward-up')}</button></span>
     <span class="sp"></span>
+    <button class="icon-btn icon-only" data-act="export" title="Exporter (PDF, PNG, JSON)" aria-label="Exporter">${icon('file-export')}</button>
     <button class="icon-btn icon-only" data-act="dock" title="Panneaux" aria-label="Panneaux" aria-pressed="${dockOpen}">${icon('layout-sidebar-right')}</button>`;
   updateUndo();
 }
@@ -124,9 +136,11 @@ export function undo() { ed.undo.undo(); markChanged(); requestRender(); }
 export function redo() { ed.undo.redo(); markChanged(); requestRender(); }
 
 function setTool(id) {
+  storeToolSettings();   // l'outil quitté garde ses réglages ; celui qu'on prend retrouve les siens
   ed.tool = id;
-  if (id !== 'bubble') ed.bubbleId = null;
-  if (id === 'mask' && ed.maskMode === 'off') ed.maskMode = 'off';
+  applyToolSettings();
+  savePrefs();
+  if (id !== 'bubble') { ed.bubbleId = null; ed.bubbleDraw = false; }
   renderToolbar(); renderOptbar(); if (id === 'bubble') dockTabTo('bubbles'); requestRender();
 }
 
@@ -138,6 +152,7 @@ function onToolbar(e) {
     setTool(b.dataset.tool);
   } else if (b.dataset.act === 'undo') undo();
   else if (b.dataset.act === 'redo') redo();
+  else if (b.dataset.act === 'export') exportMenu();
   else if (b.dataset.act === 'dock') { dockOpen = !dockOpen; $('#dock', root).hidden = !dockOpen; renderToolbar(); setTimeout(resize, 0); }
 }
 
@@ -168,11 +183,19 @@ function onZoombar(e) {
 
 // ───────────────────────── Options de l'outil ─────────────────────────
 
-const mmOf = px => (px / ed.project.dpi * 25.4).toFixed(2).replace('.', ',');
-
+// Tailles courantes des plumes techniques, en millimètres.
+const NIBS = [0.1, 0.2, 0.3, 0.5, 0.8, 1, 2, 3, 5, 10, 20];
+const fmtMm = v => String(+v.toFixed(2)).replace('.', ',');
+const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(600));
+const vToSize = v => {
+  const mm = 0.05 * Math.pow(600, v / 100);
+  return +(mm < 1 ? Math.round(mm / 0.05) * 0.05 : mm < 5 ? Math.round(mm / 0.1) * 0.1 : Math.round(mm / 0.5) * 0.5).toFixed(2);
+};
 function sizeControl() {
-  return `<label class="opt">Taille <input type="range" id="o-size" min="1" max="80" value="${ed.size}" aria-label="Taille du trait">
-    <span class="val" id="o-size-val">${ed.size} px · ${mmOf(ed.size)} mm</span></label>`;
+  return `<span class="opt size"><label class="opt">Taille <input type="range" id="o-size" min="0" max="100" value="${sizeToV(ed.sizeMm)}" aria-label="Taille du trait"></label>
+    <label class="opt"><input type="number" id="o-mm" class="num" min="0.05" max="30" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"> mm</label>
+    <select id="o-nib" class="nib" aria-label="Tailles courantes"><option value="">Plumes</option>${NIBS.map(n => `<option value="${n}" ${n === +ed.sizeMm.toFixed(2) ? 'selected' : ''}>${fmtMm(n)} mm</option>`).join('')}</select>
+    <span class="val" id="o-size-val">${ed.size} px</span></span>`;
 }
 const inkControl = () => `<span class="row tight" role="group" aria-label="Encre">
   <button class="ink-btn ${ed.ink === 1 ? 'on' : ''}" data-ink="1" style="background:#000" aria-label="Encre noire" aria-pressed="${ed.ink === 1}"></button>
@@ -206,7 +229,10 @@ export function renderOptbar() {
       ? `<span class="hint">Trace le contour de la bulle d'un seul geste.</span><button class="btn small" data-freebubble="0">Annuler</button>`
       : `<button class="btn small" data-freebubble="1">${icon('writing')} Dessiner une bulle</button><span class="hint">Touche une bulle pour la déplacer ; points rouges : taille et queue.</span>`;
   } else if (t === 'layout') {
-    html = `<span class="hint">Fais glisser une tirette sur une gouttière : une case grandit, sa voisine rétrécit.</span>`;
+    const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
+    html = `<span class="hint">Glisse une gouttière pour agrandir une case sans rien effacer. Case ${idx + 1} :</span>`
+      + mergeCandidates(pn).map(c => `<button class="btn small" data-merge="${c.id}" title="La case ${idx + 1} absorbe la case ${c.index + 1}">${icon(ARROW[c.dir])} Fusionner avec la ${c.index + 1}</button>`).join('')
+      + (page().panels.length > 1 ? `<button class="btn small danger" data-delpanel="1">${icon('trash')} Supprimer la case</button>` : '');
   } else if (t === 'pan') {
     html = `<span class="hint">Fais glisser pour déplacer la page. Pincer pour zoomer.</span>`;
   }
@@ -227,19 +253,30 @@ function paintSwatches(scope) {
 function onOptbar(e) {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.dataset.ink) { ed.ink = +b.dataset.ink; renderOptbar(); }
-  else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; renderToolbar(); renderOptbar(); }
+  if (b.dataset.ink) { ed.ink = +b.dataset.ink; savePrefs(); renderOptbar(); }
+  else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
+  else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
+  else if (b.dataset.delpanel) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); }
   else if (b.dataset.freebubble) { ed.bubbleDraw = b.dataset.freebubble === '1'; renderOptbar(); }
-  else if (b.dataset.maskpen) { ed.maskErase = b.dataset.maskpen === '1'; renderOptbar(); }
+  else if (b.dataset.maskpen) { ed.maskErase = b.dataset.maskpen === '1'; savePrefs(); renderOptbar(); }
   else if (b.dataset.opt === 'trames') { dockOpen = true; $('#dock', root).hidden = false; renderToolbar(); dockTabTo('tramas'); setTimeout(resize, 0); }
 }
 
+function showSize(from) {
+  const v = $('#o-size-val', root); if (v) v.textContent = `${ed.size} px`;
+  if (from !== 'o-size') { const r = $('#o-size', root); if (r) r.value = sizeToV(ed.sizeMm); }
+  if (from !== 'o-mm') { const n = $('#o-mm', root); if (n) n.value = +ed.sizeMm.toFixed(2); }
+  const nib = $('#o-nib', root); if (nib) nib.value = NIBS.includes(+ed.sizeMm.toFixed(2)) ? +ed.sizeMm.toFixed(2) : '';
+  savePrefs();
+}
+
 function onOptInput(e) {
-  if (e.target.id === 'o-size') {
-    ed.size = +e.target.value; savePrefs();
-    $('#o-size-val', root).textContent = `${ed.size} px · ${mmOf(ed.size)} mm`;
-  } else if (e.target.id === 'o-filled') ed.shapeFilled = e.target.checked;
+  const id = e.target.id;
+  if (id === 'o-size') { setSizeMm(vToSize(+e.target.value)); showSize('o-size'); }
+  else if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); showSize('o-mm'); } }
+  else if (id === 'o-nib') { if (e.target.value) { setSizeMm(+e.target.value); showSize('o-nib'); } }
+  else if (id === 'o-filled') { ed.shapeFilled = e.target.checked; savePrefs(); }
 }
 
 // ───────────────────────── Volet ─────────────────────────
@@ -309,7 +346,8 @@ function pagesTab() {
       <button class="icon-btn icon-only" data-act="page-right" title="Avancer la page" aria-label="Avancer la page">${icon('arrow-down')}</button>
       <button class="icon-btn icon-only" data-act="relayout" title="Changer la disposition des cases" aria-label="Changer la disposition">${icon('layout-grid')}</button>
       <button class="icon-btn icon-only" data-act="del-page" title="Supprimer la page" aria-label="Supprimer la page">${icon('trash')}</button>
-    </div>`;
+    </div>
+    <button class="btn primary" data-act="export-pdf" style="margin-top:8px;width:100%">${icon('file-type-pdf')} Exporter en PDF</button>`;
 }
 
 function bubblesTab() {
@@ -363,6 +401,9 @@ function caseTab() {
     <label class="field"><span>Description</span><textarea id="n-desc" rows="3" placeholder="Ce qu'il faut dessiner">${esc(p.note.description)}</textarea></label>
     <label class="check"><input type="checkbox" id="n-show" ${ed.showNotes ? 'checked' : ''}> Afficher les notes sur la page</label>
     <p style="color:var(--text-muted);font-size:.8rem">Les notes aident à dessiner ; elles ne sont jamais exportées.</p>
+    <h3>Cadre</h3>
+    <label class="field"><span>Trait du cadre : ${fmtMm(panelStroke(p))} mm</span><input type="range" id="n-stroke" min="0" max="2" step="0.05" value="${panelStroke(p)}"></label>
+    <button class="btn small" data-act="stroke-all">Appliquer à toutes les cases de la page</button>
     <h3>Masque</h3>
     <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:8px">Peins une zone avec l'outil Masque, puis choisis « Dans » ou « Hors » pour ne dessiner que dedans ou dehors.</p>
     <div class="row"><button class="btn small" data-act="mask-clear">Vider le masque</button><button class="btn small" data-act="mask-invert">Inverser</button></div>
@@ -378,7 +419,10 @@ async function onDock(e) {
   const tab = e.target.closest('[data-tab]');
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   const tr = e.target.closest('[data-trama]');
-  if (tr) { ed.tramaId = tr.dataset.trama; renderDock(); renderOptbar(); return; }
+  if (tr) {
+    if (!['texture', 'fill', 'shape'].includes(ed.tool)) setTool('texture');   // seuls ces outils utilisent une trame
+    ed.tramaId = tr.dataset.trama; savePrefs(); renderDock(); renderOptbar(); return;
+  }
   const pgb = e.target.closest('[data-page]');
   if (pgb) { goToPage(+pgb.dataset.page); return; }
   const bb = e.target.closest('[data-b]');
@@ -414,7 +458,7 @@ async function onDock(e) {
   else if (a === 'page-right') movePage(1);
   else if (a === 'relayout') {
     const id = await pickLayout('Disposition des cases');
-    if (id) relayoutPage(id);
+    if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); }
   } else if (a === 'del-page') {
     if (ed.project.pages.length < 2) { toast('Un projet garde au moins une page.'); return; }
     const restore = await deletePage();
@@ -423,6 +467,8 @@ async function onDock(e) {
   else if (a === 'pick-font') fontModal();
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
+  else if (a === 'stroke-all') { setPanelStroke(panelStroke(panel()), true); toast('Trait appliqué à toutes les cases.'); }
+  else if (a === 'export-pdf') exportPdf();
   else if (a === 'free-bubble') { ed.tool = 'bubble'; ed.bubbleDraw = true; renderToolbar(); renderOptbar(); renderDock(); }
   else if (a === 'mask-clear') clearMask();
   else if (a === 'mask-invert') invertMask();
@@ -435,6 +481,14 @@ function setTail(b, on) {
   else if (!b.tail) b.tail = { x: Math.round(b.x + b.w * 0.35), y: Math.round(b.y + b.h + 160) };
 }
 
+// Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
+const STYLE_KEYS = ['pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+function rememberBubble(b) {
+  const d = {};
+  for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
+  ed.bubbleDefaults[b.kind] = d; savePrefs();
+}
+
 let bubbleBefore = null;
 function onDockFocus(e) { const b = bubble(); if (b && /^b-/.test(e.target.id || '')) bubbleBefore = snapshotBubble(b); }
 
@@ -444,6 +498,7 @@ function onDockInput(e) {
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
+  if (id === 'n-stroke') { setPanelStroke(+e.target.value); e.target.previousElementSibling.textContent = `Trait du cadre : ${fmtMm(+e.target.value)} mm`; return; }
   if (id === 'n-show') { ed.showNotes = e.target.checked; savePrefs(); requestRender(); return; }
   if (!b || !/^b-/.test(id)) return;
   if (!bubbleBefore) bubbleBefore = snapshotBubble(b);
@@ -452,7 +507,7 @@ function onDockInput(e) {
   else if (id === 'b-caps') { b.caps = e.target.checked; refitBubble(b); }
   else if (id === 'b-auto') { b.auto = e.target.checked; refitBubble(b); }
   else if (id === 'b-kind') {
-    Object.assign(b, preset(e.target.value)); b.kind = e.target.value;
+    Object.assign(b, preset(e.target.value), ed.bubbleDefaults[e.target.value] || {}); b.kind = e.target.value;
     if (b.path) b.shape = 'libre';
     setTail(b, b.tailStyle !== 'none');
     refitBubble(b);
@@ -470,6 +525,7 @@ function onDockChange(e) {
   const b = bubble();
   if (b && /^b-/.test(e.target.id || '') && bubbleBefore) {
     commitBubbleEdit(b, bubbleBefore); bubbleBefore = null;
+    if (e.target.id !== 'b-text' && e.target.id !== 'b-kind') rememberBubble(b);
     // Pas de reconstruction du volet à chaque champ : un toucher sur un bouton qui suit la sortie d'un champ serait perdu.
     if (['b-kind', 'b-shape', 'b-tailstyle'].includes(e.target.id)) renderDock();
     else if (e.target.id === 'b-text') { const li = $('.blist button.on', root); if (li) li.textContent = (b.who ? b.who + ' : ' : '') + (b.text || '(vide)'); }
@@ -540,17 +596,17 @@ function tramaEditor(existing) {
 function ditherModal() {
   const p = panel();
   let bitmap = null, result = null, timer = 0;
-  const opts = { method: 'floyd', threshold: 128, brightness: 0, contrast: 0, fit: 'contain' };
+  const opts = { method: 'floyd', threshold: 128, brightness: 0, contrast: 0, fit: 'contain', ...ed.ditherOpts };
   const m = openModal({
     title: 'Image tramée', wide: true,
     body: `<p>Transforme une photo ou un dessin en noir et blanc tramé, placé dans un nouveau calque de la case ${page().panels.indexOf(p) + 1}.</p>
       <label class="field" style="margin-top:10px"><span>Image</span><input type="file" id="di-file" accept="image/*"></label>
       <div id="di-ctl" hidden>
-        <label class="field"><span>Méthode</span><select id="di-method">${DITHER_METHODS.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}</select></label>
-        <label class="field"><span>Seuil</span><input type="range" id="di-th" min="20" max="235" value="128"></label>
-        <label class="field"><span>Luminosité</span><input type="range" id="di-br" min="-100" max="100" value="0"></label>
-        <label class="field"><span>Contraste</span><input type="range" id="di-co" min="-100" max="100" value="0"></label>
-        <label class="field"><span>Cadrage</span><select id="di-fit"><option value="contain">Image entière</option><option value="cover">Remplir la case</option></select></label>
+        <label class="field"><span>Méthode</span><select id="di-method">${DITHER_METHODS.map(d => `<option value="${d.id}" ${d.id === opts.method ? 'selected' : ''}>${d.name}</option>`).join('')}</select></label>
+        <label class="field"><span>Seuil</span><input type="range" id="di-th" min="20" max="235" value="${opts.threshold}"></label>
+        <label class="field"><span>Luminosité</span><input type="range" id="di-br" min="-100" max="100" value="${opts.brightness}"></label>
+        <label class="field"><span>Contraste</span><input type="range" id="di-co" min="-100" max="100" value="${opts.contrast}"></label>
+        <label class="field"><span>Cadrage</span><select id="di-fit"><option value="contain" ${opts.fit === 'contain' ? 'selected' : ''}>Image entière</option><option value="cover" ${opts.fit === 'cover' ? 'selected' : ''}>Remplir la case</option></select></label>
         <canvas id="di-prev" class="dither-prev"></canvas>
       </div>`,
     actions: [{ label: 'Annuler' }, { label: 'Placer dans la case', kind: 'primary', onClick: () => {
@@ -578,6 +634,7 @@ function ditherModal() {
     if (id === 'di-method') opts.method = e.target.value; else if (id === 'di-th') opts.threshold = +e.target.value;
     else if (id === 'di-br') opts.brightness = +e.target.value; else if (id === 'di-co') opts.contrast = +e.target.value;
     else if (id === 'di-fit') opts.fit = e.target.value; else return;
+    ed.ditherOpts = { ...opts }; savePrefs();
     later();
   });
 }
@@ -601,7 +658,7 @@ function fontModal() {
     const before = snapshotBubble(b);
     b.font = id;
     loadFont(id).then(() => { refitAutoBubbles(); requestRender(); });
-    refitBubble(b); commitBubbleEdit(b, before); renderDock(); m.close();
+    refitBubble(b); commitBubbleEdit(b, before); rememberBubble(b); renderDock(); m.close();
   };
   m.el.addEventListener('click', e => { const f = e.target.closest('[data-font]'); if (f) apply(f.dataset.font); });
   $('#font-file', m.el).addEventListener('change', async e => {
@@ -640,6 +697,23 @@ function copyModal() {
     if (md) { mode = md.dataset.m; $$('#cp-mode button', m.el).forEach(x => x.classList.toggle('on', x === md)); }
   });
   $('#cp-page', m.el).addEventListener('change', e => { pageIdx = +e.target.value; target = null; grid(); });
+}
+
+// Menu d'export : PDF de toutes les pages, PNG de la page affichée, sauvegarde JSON du projet.
+function exportMenu() {
+  const m = openModal({
+    title: 'Exporter', narrow: true,
+    body: `<div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn primary" data-m="pdf">${icon('file-type-pdf')} PDF · ${ed.project.pages.length} page${ed.project.pages.length > 1 ? 's' : ''}, ${ed.project.dpi} dpi</button>
+      <button class="btn" data-m="png">${icon('photo')} PNG · page ${ed.pageIdx + 1}</button>
+      <button class="btn" data-m="json">${icon('file-export')} Sauvegarde JSON du projet</button></div>
+      <p style="margin-top:12px;color:var(--text-muted);font-size:.82rem">Le PDF contient les cases, leurs cadres et les bulles ; les calques « brouillon » et les notes ne sont pas imprimés.</p>`,
+  });
+  m.el.onclick = e => {
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    m.close();
+    if (b.dataset.m === 'pdf') exportPdf(); else if (b.dataset.m === 'png') exportPng(); else exportJson();
+  };
 }
 
 // ───────────────────────── Menu du projet et exports ─────────────────────────
@@ -702,8 +776,8 @@ function onKey(e) {
   const t = TOOLS.find(x => x.key === k);
   if (t) { setTool(t.id); return; }
   if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; renderOptbar(); }
-  else if (k === '[') { ed.size = Math.max(1, ed.size - Math.ceil(ed.size / 8)); renderOptbar(); }
-  else if (k === ']') { ed.size = Math.min(80, ed.size + Math.ceil(ed.size / 8)); renderOptbar(); }
+  else if (k === '[') { setSizeMm(ed.sizeMm / 1.2); savePrefs(); renderOptbar(); }
+  else if (k === ']') { setSizeMm(ed.sizeMm * 1.2); savePrefs(); renderOptbar(); }
   else if (k === '0') fit();
   else if (k === 'delete' || k === 'backspace') { if (bubble()) deleteBubble(); }
 }

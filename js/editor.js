@@ -11,7 +11,7 @@ import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.j
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null,
-  tool: 'pencil', size: 6, ink: 1,
+  tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, toolSettings: {}, bubbleDefaults: {}, ditherOpts: {},
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
@@ -22,6 +22,28 @@ export const ed = {
 const subs = new Set();
 export const subscribe = fn => { subs.add(fn); return () => subs.delete(fn); };
 export const notify = what => subs.forEach(fn => fn(what));
+
+// Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
+export const TOOL_DEFAULTS = {
+  pencil: { sizeMm: 0.5, ink: 1 },
+  texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  eraser: { sizeMm: 3 },
+  fill: { ink: 1, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  mask: { sizeMm: 6, maskErase: false },
+};
+export function storeToolSettings() {
+  const d = TOOL_DEFAULTS[ed.tool];
+  if (d) ed.toolSettings[ed.tool] = Object.fromEntries(Object.keys(d).map(k => [k, ed[k]]));
+}
+export function applyToolSettings() {
+  const d = TOOL_DEFAULTS[ed.tool];
+  if (d) Object.assign(ed, d, ed.toolSettings[ed.tool]);
+  syncSize();
+}
+// La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
+export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
+export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(30, mm)); syncSize(); }
 
 export const page = () => ed.project.pages[ed.pageIdx];
 export const panel = () => page().panels.find(p => p.id === ed.panelId) || page().panels[0];
@@ -39,6 +61,7 @@ const measureCtx = () => ctx2d || (ctx2d = document.createElement('canvas').getC
 export async function openInEditor(project, pageIdx = 0) {
   ed.project = project; ed.pageIdx = Math.min(pageIdx, project.pages.length - 1);
   ed.undo.clear(); ed.bubbleId = null;
+  applyToolSettings();
   await loadPage(project, page());
   ed.panelId = page().panels[0] ? page().panels[0].id : null;
   invalidatePage();
@@ -107,6 +130,7 @@ export async function duplicatePage() {
   const src = page(), pg = { id: uid(), panels: [], bubbles: JSON.parse(JSON.stringify(src.bubbles)).map(b => ({ ...b, id: uid() })) };
   for (const p of src.panels) {
     const np = newPanel(p);
+    Object.assign(np, { ex: p.ex, ey: p.ey, ew: p.ew, eh: p.eh, stroke: p.stroke });
     np.note = { ...p.note };
     np.layers = p.layers.map(l => {
       const nl = newLayer(l.name, l.w, l.h, { draft: l.draft });
@@ -116,7 +140,7 @@ export async function duplicatePage() {
     });
     const ai = p.layers.findIndex(l => l.id === p.active);
     np.active = np.layers[Math.max(0, ai)].id;
-    if (p.mask && p.mask.data) { np.mask = newLayer('Masque', p.w, p.h); np.mask.data = p.mask.data.slice(); np.mask.dirty = true; }
+    if (p.mask && p.mask.data) { np.mask = newLayer('Masque', p.ew, p.eh); np.mask.data = p.mask.data.slice(); np.mask.dirty = true; }
     pg.panels.push(np);
   }
   ed.project.pages.splice(ed.pageIdx + 1, 0, pg);
@@ -151,67 +175,52 @@ export function movePage(dir) {
   ed.pageIdx = j; markChanged(); notify('page');
 }
 
-// Change la disposition des cases de la page : les calques existants sont rognés ou prolongés dans leur case.
+// Change la disposition des cases de la page. Le dessin reste à sa place ; les cases en trop sont retirées (annulable).
 export function relayoutPage(layoutId) {
   const project = ed.project, pg = page();
   const { w, h } = pageSize(project);
   const layout = layoutById(layoutId, pg.panels.length);
   const rects = layoutRects(layout, w, h, mmToPx(project.margin, project.dpi), mmToPx(project.gutter, project.dpi));
   const before = pg.panels.slice();
-  const after = rects.map((r, i) => {
-    const old = before[i];
-    if (!old) return newPanel(r);
-    return resizedPanel(old, r);
-  });
-  const apply = list => swapPanels(pg, list);
-  apply(after);
-  ed.undo.pushAction('Disposition', () => apply(before), () => apply(after));
+  const after = rects.map((r, i) => before[i] ? reshape(before[i], r) : newPanel(r));
+  swapPanels(pg, after);
+  ed.undo.pushAction('Disposition', () => swapPanels(pg, before), () => swapPanels(pg, after));
+  return { removed: Math.max(0, before.length - after.length) };
 }
-
-function resizedPanel(old, r) {
-  const np = { ...old, x: r.x, y: r.y, w: r.w, h: r.h, note: old.note };
-  const move = l => {
-    if (!l) return l;
-    const nl = { ...l, w: r.w, h: r.h, data: null, dirty: true };
-    if (l.data) {
-      nl.data = new Uint8Array(r.w * r.h);
-      for (let y = 0; y < Math.min(l.h, r.h); y++) nl.data.set(l.data.subarray(y * l.w, y * l.w + Math.min(l.w, r.w)), y * r.w);
-    }
-    return nl;
-  };
-  np.layers = old.layers.map(move); np.mask = move(old.mask);
-  np.active = np.layers[Math.max(0, old.layers.findIndex(l => l.id === old.active))].id;
-  return np;
-}
-
 
 // Remplace les cases de la page (disposition, gouttières) ; les calques des cases nouvelles ou restaurées sont à réécrire.
 function swapPanels(pg, list) {
-  const prev = new Set(pg.panels);
+  const prev = new Set(pg.panels.flatMap(p => [...p.layers, p.mask]));
   pg.panels = list;
   if (!list.some(p => p.id === ed.panelId)) ed.panelId = list[0].id;
-  for (const p of list) if (!prev.has(p)) for (const l of [...p.layers, p.mask]) if (l) l.dirty = true;
-  dropCaches(pg); invalidatePage(); notify('page'); markChanged();
+  for (const p of list) for (const l of [...p.layers, p.mask]) if (l && !prev.has(l)) l.dirty = true;
+  dropCaches(pg); invalidatePage(); notify('panels'); markChanged();
 }
 
+const union = (a, b) => {
+  const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y), x1 = Math.max(a.x + a.w, b.x + b.w), y1 = Math.max(a.y + a.h, b.y + b.h);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+};
+
 // Nouvelle case de rectangle `r` : le dessin reste à sa place sur la page, la case en révèle plus ou moins.
-function reshape(old, r) {
-  const np = { ...old, x: r.x, y: r.y, w: r.w, h: r.h };
-  const dx = old.x - r.x, dy = old.y - r.y;
-  const move = l => {
+// Les calques ne rétrécissent jamais (ils couvrent l'étendue la plus large atteinte) : rien n'est effacé, même case réduite.
+function reshape(old, r, extra = null) {
+  const oldExt = { x: old.ex, y: old.ey, w: old.ew, h: old.eh };
+  let ext = union(oldExt, r);
+  if (extra) ext = union(ext, extra);
+  const np = { ...old, x: r.x, y: r.y, w: r.w, h: r.h, ex: ext.x, ey: ext.y, ew: ext.w, eh: ext.h };
+  if (ext.x === oldExt.x && ext.y === oldExt.y && ext.w === oldExt.w && ext.h === oldExt.h) return np;   // mêmes calques
+  const dx = old.ex - ext.x, dy = old.ey - ext.y;
+  const grow = l => {
     if (!l) return l;
-    const nl = { ...l, w: r.w, h: r.h, data: null, dirty: true, loaded: true };
+    const nl = { ...l, w: ext.w, h: ext.h, data: null, dirty: true, loaded: true };
     if (l.data) {
-      nl.data = new Uint8Array(r.w * r.h);
-      const i0 = Math.max(0, -dx), i1 = Math.min(l.w, r.w - dx);
-      if (i1 > i0) for (let j = 0; j < l.h; j++) {
-        const nj = j + dy;
-        if (nj >= 0 && nj < r.h) nl.data.set(l.data.subarray(j * l.w + i0, j * l.w + i1), nj * r.w + i0 + dx);
-      }
+      nl.data = new Uint8Array(ext.w * ext.h);
+      for (let j = 0; j < l.h; j++) nl.data.set(l.data.subarray(j * l.w, (j + 1) * l.w), (j + dy) * ext.w + dx);
     }
     return nl;
   };
-  np.layers = old.layers.map(move); np.mask = move(old.mask);
+  np.layers = old.layers.map(grow); np.mask = grow(old.mask);
   return np;
 }
 
@@ -265,6 +274,22 @@ export function resizeGutter(h, d) {
 
 // ───────────────────────── Copier le contenu d'une case dans une autre ─────────────────────────
 
+// Partie visible d'un calque (w × h de la case), extraite de son étendue.
+function visibleData(layer, panel) {
+  const out = new Uint8Array(panel.w * panel.h);
+  if (!layer.data) return out;
+  const ox = panel.x - panel.ex, oy = panel.y - panel.ey;
+  for (let y = 0; y < panel.h; y++) out.set(layer.data.subarray((oy + y) * layer.w + ox, (oy + y) * layer.w + ox + panel.w), y * panel.w);
+  return out;
+}
+
+// Pose des pixels de la taille du cadre visible dans un tampon de l'étendue de la case.
+function placeVisible(vis, panel) {
+  const out = new Uint8Array(panel.ew * panel.eh), ox = panel.x - panel.ex, oy = panel.y - panel.ey;
+  for (let y = 0; y < panel.h; y++) out.set(vis.subarray(y * panel.w, (y + 1) * panel.w), (oy + y) * panel.ew + ox);
+  return out;
+}
+
 // Reporte des pixels d'une case dans une autre de taille différente : 'same' garde l'échelle (coin haut gauche), 'fit' ajuste.
 function transferPixels(data, sw, sh, dw, dh, mode) {
   const out = new Uint8Array(dw * dh);
@@ -288,9 +313,9 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   const dst = pg.panels.find(p => p.id === panelId);
   if (!dst || dst === src) return false;
   const clone = l => {
-    const nl = newLayer(l.name, dst.w, dst.h, { draft: l.draft });
+    const nl = newLayer(l.name, dst.ew, dst.eh, { draft: l.draft });
     nl.visible = l.visible;
-    if (l.data) nl.data = transferPixels(l.data, l.w, l.h, dst.w, dst.h, mode);
+    if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode), dst);
     nl.dirty = true;
     return nl;
   };
@@ -308,6 +333,71 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   return true;
 }
 
+// ───────────────────────── Fusionner, supprimer, cadre d'une case ─────────────────────────
+
+// Cases voisines qu'on peut absorber : adjacentes, et le rectangle qui les réunit ne recouvre aucune autre case.
+export function mergeCandidates(a) {
+  const ps = page().panels, gap = mmToPx(ed.project.gutter, ed.project.dpi), tol = Math.max(4, gap * 0.6), out = [];
+  const overlap = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 0;
+  for (const b of ps) {
+    if (b === a) continue;
+    let dir = null;
+    if (Math.abs(a.x + a.w + gap - b.x) <= tol && overlap(a.y, a.y + a.h, b.y, b.y + b.h)) dir = 'right';
+    else if (Math.abs(b.x + b.w + gap - a.x) <= tol && overlap(a.y, a.y + a.h, b.y, b.y + b.h)) dir = 'left';
+    else if (Math.abs(a.y + a.h + gap - b.y) <= tol && overlap(a.x, a.x + a.w, b.x, b.x + b.w)) dir = 'down';
+    else if (Math.abs(b.y + b.h + gap - a.y) <= tol && overlap(a.x, a.x + a.w, b.x, b.x + b.w)) dir = 'up';
+    if (!dir) continue;
+    const u = union(a, b);
+    const blocked = ps.some(c => c !== a && c !== b && overlap(u.x, u.x + u.w, c.x, c.x + c.w) && overlap(u.y, u.y + u.h, c.y, c.y + c.h));
+    if (!blocked) out.push({ id: b.id, dir, index: ps.indexOf(b) });
+  }
+  return out;
+}
+
+// La case `aId` absorbe `bId` : elle occupe tout l'espace réuni et reprend le dessin de l'autre (calques de même nom fusionnés).
+export function mergePanels(aId, bId) {
+  const pg = page(), a = pg.panels.find(p => p.id === aId), b = pg.panels.find(p => p.id === bId);
+  if (!a || !b) return false;
+  const before = pg.panels.slice();
+  const na = reshape(a, union(a, b), { x: b.ex, y: b.ey, w: b.ew, h: b.eh });
+  // les calques de `a` sont copiés : l'état d'avant reste intact pour l'annulation
+  const cloneL = l => (l ? { ...l, data: l.data ? l.data.slice() : null, dirty: true } : l);
+  na.layers = na.layers.map(cloneL); na.mask = cloneL(na.mask);
+  const ox = b.ex - na.ex, oy = b.ey - na.ey;
+  const paste = (from, to) => {
+    if (!from.data) return;
+    const dst = ensureData(to);
+    for (let j = 0; j < from.h; j++) for (let i = 0; i < from.w; i++) { const v = from.data[j * from.w + i]; if (v) dst[(j + oy) * to.w + i + ox] = v; }
+  };
+  for (const bl of b.layers) {
+    let target = na.layers.find(l => l.name === bl.name && l.draft === bl.draft);
+    if (!target) { target = newLayer(bl.name, na.ew, na.eh, { draft: bl.draft }); target.visible = bl.visible; na.layers.push(target); }
+    paste(bl, target);
+  }
+  if (b.mask && b.mask.data) { if (!na.mask) { na.mask = newLayer('Masque', na.ew, na.eh); } paste(b.mask, na.mask); na.mask.dirty = true; }
+  na.note = { plan: a.note.plan || b.note.plan, description: [a.note.description, b.note.description].filter(Boolean).join(' / ') };
+  const after = before.filter(p => p !== b).map(p => (p === a ? na : p));
+  swapPanels(pg, after);
+  ed.panelId = na.id; notify('panel');
+  ed.undo.pushAction('Fusionner les cases', () => swapPanels(pg, before), () => { swapPanels(pg, after); ed.panelId = na.id; });
+  return true;
+}
+
+export function deletePanel() {
+  const pg = page(), p = panel();
+  if (pg.panels.length < 2) return false;
+  const before = pg.panels.slice(), after = before.filter(x => x !== p);
+  swapPanels(pg, after); notify('panel');
+  ed.undo.pushAction('Supprimer la case', () => swapPanels(pg, before), () => swapPanels(pg, after));
+  return true;
+}
+
+// Trait du cadre en millimètres, pour la case active ou pour toutes celles de la page.
+export function setPanelStroke(mm, all = false) {
+  for (const p of all ? page().panels : [panel()]) p.stroke = mm;
+  requestRender(); markChanged();
+}
+
 // Après le chargement d'une police, les bulles à taille automatique sont remesurées.
 export function refitAutoBubbles() {
   let any = false;
@@ -322,7 +412,7 @@ export function selectPanel(id) { if (ed.panelId !== id) { ed.panelId = id; noti
 export function selectLayer(id) { panel().active = id; markChanged(); notify('layers'); }
 
 export function addLayer(draft = false) {
-  const p = panel(), l = newLayer(draft ? 'Brouillon' : 'Calque ' + (p.layers.length + 1), p.w, p.h, { draft });
+  const p = panel(), l = newLayer(draft ? 'Brouillon' : 'Calque ' + (p.layers.length + 1), p.ew, p.eh, { draft });
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
@@ -331,8 +421,8 @@ export function addLayer(draft = false) {
 
 // Nouveau calque déjà rempli (image tramée importée).
 export function addImageLayer(name, data) {
-  const p = panel(), l = newLayer(name, p.w, p.h);
-  l.data = data; l.dirty = true;
+  const p = panel(), l = newLayer(name, p.ew, p.eh);
+  l.data = placeVisible(data, p); l.dirty = true;   // `data` est de la taille du cadre visible
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
@@ -396,7 +486,7 @@ export function mergeDown() {
 
 export function ensureMask() {
   const p = panel();
-  if (!p.mask) { p.mask = newLayer('Masque', p.w, p.h); p.mask.data = new Uint8Array(p.w * p.h); }
+  if (!p.mask) { p.mask = newLayer('Masque', p.ew, p.eh); p.mask.data = new Uint8Array(p.ew * p.eh); }
   return p.mask;
 }
 
@@ -435,6 +525,7 @@ export function addBubbleObj(b) {
 export function addBubble(kind, at) {
   const p = panel();
   const b = newBubble(kind, 0, 0), c = at || { x: p.x + p.w / 2, y: p.y + p.h / 3 };
+  Object.assign(b, ed.bubbleDefaults[kind] || {});   // le dernier style réglé pour ce type de bulle
   b.x = Math.round(c.x - b.w / 2); b.y = Math.round(c.y - b.h / 2);
   if (b.tail) b.tail = { x: Math.round(b.x + b.w * 0.35), y: Math.round(b.y + b.h + 160) };
   return addBubbleObj(b);

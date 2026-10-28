@@ -1,7 +1,7 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
-import { pageSize } from './model.js';
+import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect } from './raster.js';
-import { drawBubble, lineWidth, props } from './bubbles.js';
+import { drawBubble, props } from './bubbles.js';
 import { loadFont } from './fonts.js';
 
 // Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
@@ -16,15 +16,14 @@ export function renderPage(project, page, scale = 1) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   ctx.scale(scale, scale);
-  const lw = lineWidth(project.dpi);
   for (const p of page.panels) {
-    const pc = document.createElement('canvas'); pc.width = p.w; pc.height = p.h;
-    const pctx = pc.getContext('2d'), img = pctx.createImageData(p.w, p.h);
-    compositeRect(p, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: p.w, h: p.h }, false);
+    const pc = document.createElement('canvas'); pc.width = p.ew; pc.height = p.eh;
+    const pctx = pc.getContext('2d'), img = pctx.createImageData(p.ew, p.eh);
+    compositeRect(p, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: p.ew, h: p.eh }, false);
     pctx.putImageData(img, 0, 0);
-    ctx.drawImage(pc, p.x, p.y);
-    ctx.strokeStyle = '#000'; ctx.lineWidth = lw * 1.5;
-    ctx.strokeRect(p.x, p.y, p.w, p.h);
+    ctx.drawImage(pc, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);   // seul le cadre visible est imprimé
+    const bw = mmToPx(panelStroke(p), project.dpi);
+    if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
   for (const b of page.bubbles) drawBubble(ctx, b, project.dpi);
   return c;

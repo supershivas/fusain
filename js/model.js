@@ -8,6 +8,9 @@ export const uid = () => (crypto.randomUUID ? crypto.randomUUID()
     return (c === 'x' ? r : (r & 3 | 8)).toString(16);
   }));
 
+// Trait du cadre d'une case, en millimètres (réglable par case ; 0,5 mm par défaut).
+export const panelStroke = p => (p.stroke ?? 0.5);
+
 export const mmToPx = (mm, dpi) => Math.round(mm / 25.4 * dpi);
 export const pxToMm = (px, dpi) => px / dpi * 25.4;
 
@@ -87,8 +90,10 @@ export function newPanel(rect) {
     newLayer('Trames', rect.w, rect.h),
     newLayer('Encrage', rect.w, rect.h),
   ];
+  // La case montre le rectangle x,y,w,h ; les calques couvrent l'étendue ex,ey,ew,eh (au moins ce rectangle).
+  // Réduire une case ne coupe donc jamais le dessin : il reste en réserve hors du cadre.
   return {
-    id: uid(), x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+    id: uid(), x: rect.x, y: rect.y, w: rect.w, h: rect.h, ex: rect.x, ey: rect.y, ew: rect.w, eh: rect.h,
     layers, active: layers[2].id, mask: null,
     note: { plan: '', description: '' },
   };
@@ -129,7 +134,7 @@ export function projectMeta(project) {
     pages: project.pages.map(p => ({
       id: p.id, bubbles: p.bubbles,
       panels: p.panels.map(c => ({
-        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, active: c.active, note: c.note,
+        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, ex: c.ex, ey: c.ey, ew: c.ew, eh: c.eh, stroke: c.stroke, active: c.active, note: c.note,
         layers: c.layers.map(layerMeta), mask: c.mask ? layerMeta(c.mask) : null,
       })),
     })),
@@ -146,9 +151,10 @@ export function projectFromMeta(meta) {
     pages: meta.pages.map(p => ({
       id: p.id, bubbles: p.bubbles || [],
       panels: p.panels.map(c => ({
-        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, active: c.active, note: c.note || { plan: '', description: '' },
-        layers: c.layers.map(l => layer(l, c.w, c.h)),
-        mask: c.mask ? layer(c.mask, c.w, c.h) : null,
+        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, stroke: c.stroke, active: c.active, note: c.note || { plan: '', description: '' },
+        ex: c.ex ?? c.x, ey: c.ey ?? c.y, ew: c.ew ?? c.w, eh: c.eh ?? c.h,
+        layers: c.layers.map(l => layer(l, c.ew ?? c.w, c.eh ?? c.h)),
+        mask: c.mask ? layer(c.mask, c.ew ?? c.w, c.eh ?? c.h) : null,
       })),
     })),
   };

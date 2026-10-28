@@ -1,11 +1,11 @@
 // Vue : une seule toile affiche la page (papier, cases, bulles, aides). Chaque case garde son propre
 // canevas, recomposé seulement là où on a dessiné.
 import { ed, page, gutterHandles } from './editor.js';
-import { pageSize } from './model.js';
+import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
-import { drawBubble, lineWidth } from './bubbles.js';
+import { drawBubble } from './bubbles.js';
 
-export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1 };
+export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1, moved: false };   // moved : l'utilisateur a zoomé ou déplacé la page
 let canvas, ctx, raf = 0;
 const overlay = { cursor: null, shape: null, free: null, guide: null };
 const caches = new WeakMap();
@@ -24,7 +24,7 @@ export function resize() {
   view.w = r.width; view.h = r.height; view.dpr = dpr;
   canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr));
   canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
-  if (first && ed.project) fit();
+  if ((first || !view.moved) && ed.project) fit();   // tant qu'on n'a pas bougé la page, elle suit la taille de la zone
   requestRender();
 }
 
@@ -33,6 +33,7 @@ export const pageDims = () => pageSize(ed.project);
 export function fit() {
   if (!ed.project || !view.w) return;
   const { w, h } = pageDims(), pad = view.w < 700 ? 8 : 24;
+  view.moved = false;
   view.s = Math.min((view.w - pad * 2) / w, (view.h - pad * 2) / h);
   view.ox = (view.w - w * view.s) / 2; view.oy = (view.h - h * view.s) / 2;
   requestRender();
@@ -51,13 +52,14 @@ export function zoomAt(sx, sy, factor) {
   const { w } = pageDims(), minS = Math.min(view.w / w, 0.5) * 0.4, maxS = 16;
   const s = Math.max(minS, Math.min(maxS, view.s * factor)), k = s / view.s;
   view.ox = sx - (sx - view.ox) * k; view.oy = sy - (sy - view.oy) * k; view.s = s;
+  view.moved = true;
   clampView(); requestRender();
 }
 
-export function panBy(dx, dy) { view.ox += dx; view.oy += dy; clampView(); requestRender(); }
+export function panBy(dx, dy) { view.ox += dx; view.oy += dy; view.moved = true; clampView(); requestRender(); }
 export function setView(s, ox, oy) {
   const { w } = pageDims(), minS = Math.min(view.w / w, 0.5) * 0.4;
-  view.s = Math.max(minS, Math.min(16, s)); view.ox = ox; view.oy = oy; clampView(); requestRender();
+  view.s = Math.max(minS, Math.min(16, s)); view.ox = ox; view.oy = oy; view.moved = true; clampView(); requestRender();
 }
 
 export function setOverlay(o) { Object.assign(overlay, o); requestRender(); }
@@ -66,10 +68,10 @@ export function setOverlay(o) { Object.assign(overlay, o); requestRender(); }
 
 function cacheOf(panel) {
   let c = caches.get(panel);
-  if (!c || c.w !== panel.w || c.h !== panel.h) {
-    const canvasEl = document.createElement('canvas'); canvasEl.width = panel.w; canvasEl.height = panel.h;
-    const cx = canvasEl.getContext('2d'), img = cx.createImageData(panel.w, panel.h);
-    c = { w: panel.w, h: panel.h, canvas: canvasEl, cx, img, u32: new Uint32Array(img.data.buffer), dirty: { x: 0, y: 0, w: panel.w, h: panel.h },
+  if (!c || c.w !== panel.ew || c.h !== panel.eh) {
+    const canvasEl = document.createElement('canvas'); canvasEl.width = panel.ew; canvasEl.height = panel.eh;
+    const cx = canvasEl.getContext('2d'), img = cx.createImageData(panel.ew, panel.eh);
+    c = { w: panel.ew, h: panel.eh, canvas: canvasEl, cx, img, u32: new Uint32Array(img.data.buffer), dirty: { x: 0, y: 0, w: panel.ew, h: panel.eh },
       mcanvas: null, mcx: null, mimg: null, mu32: null, mdirty: null };
     caches.set(panel, c);
   }
@@ -84,8 +86,8 @@ const union = (a, b) => {
 
 export function invalidate(panel, rect) {
   const c = cacheOf(panel);
-  const r = rect ? { x: Math.max(0, rect.x), y: Math.max(0, rect.y), w: rect.w, h: rect.h } : { x: 0, y: 0, w: panel.w, h: panel.h };
-  r.w = Math.min(panel.w - r.x, r.w); r.h = Math.min(panel.h - r.y, r.h);
+  const r = rect ? { x: Math.max(0, rect.x), y: Math.max(0, rect.y), w: rect.w, h: rect.h } : { x: 0, y: 0, w: panel.ew, h: panel.eh };
+  r.w = Math.min(panel.ew - r.x, r.w); r.h = Math.min(panel.eh - r.y, r.h);
   if (r.w <= 0 || r.h <= 0) return;
   c.dirty = union(c.dirty, r);
   c.mdirty = union(c.mdirty, r);
@@ -112,12 +114,12 @@ function refresh(panel) {
 function refreshMask(panel) {
   const c = cacheOf(panel);
   if (!c.mcanvas) {
-    c.mcanvas = document.createElement('canvas'); c.mcanvas.width = panel.w; c.mcanvas.height = panel.h;
-    c.mcx = c.mcanvas.getContext('2d'); c.mimg = c.mcx.createImageData(panel.w, panel.h);
-    c.mu32 = new Uint32Array(c.mimg.data.buffer); c.mdirty = { x: 0, y: 0, w: panel.w, h: panel.h };
+    c.mcanvas = document.createElement('canvas'); c.mcanvas.width = panel.ew; c.mcanvas.height = panel.eh;
+    c.mcx = c.mcanvas.getContext('2d'); c.mimg = c.mcx.createImageData(panel.ew, panel.eh);
+    c.mu32 = new Uint32Array(c.mimg.data.buffer); c.mdirty = { x: 0, y: 0, w: panel.ew, h: panel.eh };
   }
   if (c.mdirty) {
-    maskRect(panel.mask, c.mu32, c.mdirty, panel.w);
+    maskRect(panel.mask, c.mu32, c.mdirty, panel.ew);
     c.mcx.putImageData(c.mimg, 0, 0, c.mdirty.x, c.mdirty.y, c.mdirty.w, c.mdirty.h);
     c.mdirty = null;
   }
@@ -148,14 +150,14 @@ export function render() {
   ctx.restore();
 
   ctx.imageSmoothingEnabled = s < 1;
-  const lw = lineWidth(ed.project.dpi);
   for (const p of pg.panels) {
     const c = refresh(p);
-    ctx.drawImage(c.canvas, p.x, p.y);
+    ctx.drawImage(c.canvas, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);
     if (p.mask && ed.maskMode !== 'off' || (p.mask && ed.tool === 'mask')) {
-      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x, p.y); }
+      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h); }
     }
-    ctx.strokeStyle = '#000'; ctx.lineWidth = lw * 1.5; ctx.strokeRect(p.x, p.y, p.w, p.h);
+    const bw = mmToPx(panelStroke(p), ed.project.dpi);
+    if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
   for (const b of pg.bubbles) drawBubble(ctx, b, ed.project.dpi);
 

@@ -24,7 +24,8 @@ function maskFor(p) {
 }
 
 function makeCtx(p, layer, paint, useMask = true) {
-  return { layer, undo: ed.undo, ox: p.x, oy: p.y, paint, mask: useMask ? maskFor(p) : null, dirty: null };
+  const clip = { x0: p.x - p.ex, y0: p.y - p.ey, x1: p.x - p.ex + p.w, y1: p.y - p.ey + p.h };
+  return { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null };
 }
 
 const diameter = pt => Math.max(1, Math.round(ed.size * (pt.type === 'pen' && ed.pressure ? 0.4 + 1.2 * pt.pressure : 1)));
@@ -49,7 +50,7 @@ export function down(pt) {
     layer = activeLayer(p);
     if (!layer.visible) { toast('Ce calque est masqué : affiche-le pour dessiner.'); return; }
   }
-  const lx = Math.floor(pt.x - p.x), ly = Math.floor(pt.y - p.y), tool = ed.tool;
+  const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey), tool = ed.tool;
   const trame = currentTrama();
 
   if (tool === 'pencil' || tool === 'texture' || tool === 'eraser' || tool === 'mask') {
@@ -62,7 +63,7 @@ export function down(pt) {
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d } };
     stampDisc(session.ctx, lx, ly, d); flush(session);
   } else if (tool === 'fill') {
-    const region = floodRegion(compositeValues(p, false), p.w, p.h, lx, ly);
+    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly);
     if (!region) return;
     ed.undo.begin('Remplir');
     const ctx = makeCtx(p, layer, { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
@@ -79,7 +80,7 @@ export function down(pt) {
 export function move(pt) {
   if (!session) return;
   if (session.kind === 'stroke') {
-    const s = session, lx = Math.floor(pt.x - s.p.x), ly = Math.floor(pt.y - s.p.y), d = diameter(pt);
+    const s = session, lx = Math.floor(pt.x - s.p.ex), ly = Math.floor(pt.y - s.p.ey), d = diameter(pt);
     strokeSegment(s.ctx, s.last.x, s.last.y, lx, ly, s.last.d, d);
     s.last = { x: lx, y: ly, d };
     flush(s);
@@ -107,7 +108,7 @@ export function up() {
     const trame = currentTrama(), p = s.p;
     const paint = { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque };
     const ctx = makeCtx(p, s.layer, paint);
-    const x0 = Math.floor(s.x0 - p.x), y0 = Math.floor(s.y0 - p.y), x1 = Math.floor(s.x1 - p.x), y1 = Math.floor(s.y1 - p.y);
+    const x0 = Math.floor(s.x0 - p.ex), y0 = Math.floor(s.y0 - p.ey), x1 = Math.floor(s.x1 - p.ex), y1 = Math.floor(s.y1 - p.ey);
     ed.undo.begin({ line: 'Ligne', rect: 'Rectangle', ellipse: 'Ellipse' }[ed.shapeKind]);
     // les traits des formes suivent la même trame que les remplissages
     if (ed.shapeKind === 'line') strokeSegment(ctx, x0, y0, x1, y1, ed.size);
@@ -151,7 +152,9 @@ function layoutDown(pt) {
     if (along < h.span[0] - R / view.s || along > h.span[1] + R / view.s || across > R) continue;
     if (!best || across < best.across) best = { h, across };
   }
-  if (best) session = { kind: 'gutter', h: best.h, x0: pt.x, y0: pt.y, d: 0 };
+  if (best) { session = { kind: 'gutter', h: best.h, x0: pt.x, y0: pt.y, d: 0 }; return; }
+  const p = panelAt(pt.x, pt.y);   // sinon on choisit la case touchée, pour la fusionner ou la supprimer
+  if (p) selectPanel(p.id);
 }
 
 // ───────────────────────── Bulles ─────────────────────────
