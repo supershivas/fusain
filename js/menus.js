@@ -25,7 +25,7 @@ const menus = () => {
       ['tool-layout', 'Taille des cases', 'layout-board-split', 'L'], ['relayout', 'Disposition des cases…', 'layout-grid'], ['frame', `Trait du cadre (case ${idx + 1})`, 'border-style'], ['dither', 'Image tramée…', 'photo']]],
     ['Calque', [
       ['add-ink', 'Nouveau calque d\'encre', 'plus'], ['add-tram', 'Nouveau calque de trame', 'plus'], ['add-draft', 'Nouveau brouillon', 'plus'], null,
-      ['dup-layer', 'Dupliquer', 'copy'], ['merge-layer', 'Fusionner vers le bas', 'stack-pop'], ['del-layer', 'Supprimer', 'trash', '', panel().layers.length < 2], null,
+      ['dup-layer', 'Dupliquer', 'copy'], ['dup-bubble', 'Dupliquer la bulle', 'message-circle'], ['merge-layer', 'Fusionner vers le bas', 'stack-pop'], ['del-layer', 'Supprimer', 'trash', '', panel().layers.length < 2], null,
       ['lock-layer', layer.locked ? 'Déverrouiller' : 'Verrouiller', layer.locked ? 'lock-open' : 'lock'], ['solo-layer', ed.solo === layer.id ? 'Afficher tous les calques' : 'Afficher seul', 'eye']]],
     ['Page', [
       ['add-page', 'Nouvelle page…', 'file-plus'], ['dup-page', 'Dupliquer', 'copy'], ['del-page', 'Supprimer', 'trash', '', !many], null,

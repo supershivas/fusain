@@ -1,7 +1,7 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
-  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
+  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, duplicateBubble, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
@@ -272,7 +272,7 @@ export function renderOptbar() {
       ? `<span class="hint">Trace le contour de la bulle d'un seul geste.</span><button class="btn small" data-freebubble="0">Annuler</button>`
       : `<span class="row tight" role="group" aria-label="Ajouter une bulle">${BUBBLE_KINDS.map(k => `<button class="icon-btn icon-only" data-addb="${k.id}" title="Ajouter : ${k.name}" aria-label="Ajouter : ${k.name}">${icon(k.icon)}</button>`).join('')}
           <button class="icon-btn icon-only" data-freebubble="1" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></span>`
-        + (b ? popBtn('btext') + popBtn('bshape') + popBtn('btail') + `<button class="icon-btn icon-only" data-delbubble="1" title="Supprimer la bulle" aria-label="Supprimer la bulle">${icon('trash')}</button>`
+        + (b ? popBtn('btext') + popBtn('bshape') + popBtn('btail') + `<button class="icon-btn icon-only" data-dupbubble="1" title="Dupliquer la bulle" aria-label="Dupliquer la bulle">${icon('copy')}</button><button class="icon-btn icon-only" data-delbubble="1" title="Supprimer la bulle" aria-label="Supprimer la bulle">${icon('trash')}</button>`
           : `<span class="hint">Touche une bulle pour la régler ; points rouges : taille et queue.</span>`);
   } else if (t === 'layout') {
     const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
@@ -318,6 +318,7 @@ function onOptbar(e) {
   else if (b.dataset.opt === 'pressure') { ed.pressure = !ed.pressure; savePrefs(); renderOptbar(); toast(ed.pressure ? 'Pression du stylet activée.' : 'Pression du stylet désactivée.', { duration: 1500 }); }
   else if (b.dataset.pop) { popId = popId === b.dataset.pop ? null : b.dataset.pop; renderOptbar(); renderPop(); }
   else if (b.dataset.addb) { addBubble(b.dataset.addb); popId = 'btext'; renderOptbar(); renderPop(); }
+  else if (b.dataset.dupbubble) duplicateBubble();
   else if (b.dataset.delbubble) { const bb = bubble(); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
 }
 
@@ -448,9 +449,9 @@ function layersTab() {
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
       <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
-      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
+      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button><span class="tag" title="Case liée">C${pg.panels.findIndex(q => q.id === b.panel) + 1 || '?'}</span>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
-      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
+      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
   const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
@@ -657,6 +658,7 @@ async function onDock(e) {
     if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   }
   else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
   else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
   else if (a === 'del-layer') { if (!deleteLayer()) toast('Une case garde au moins un calque.'); }
@@ -1092,7 +1094,7 @@ const COMMANDS = {
   frame: () => { secState.cf = true; showDock('page'); },
   dither: ditherModal,
   'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
-  'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
+  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
   'solo-layer': () => setSolo(activeLayer().id),
   'add-page': async () => { const id = await pickLayout('Nouvelle page'); if (id) await addPage(id); },

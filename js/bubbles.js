@@ -304,7 +304,7 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
 export function drawPageBubble(ctx, b, dpi, panels) {
   if (!b.clip) { drawBubble(ctx, b, dpi); return; }
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-  const p = panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
+  const p = panels.find(q => q.id === b.panel) || panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
     || panels.find(q => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y);
   if (!p) { drawBubble(ctx, b, dpi); return; }
   ctx.save(); ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();

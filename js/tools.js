@@ -251,6 +251,8 @@ function bubbleMove(pt) {
   const s = session, b = s.b, dx = pt.x - s.x0, dy = pt.y - s.y0, o = s.orig;
   if (s.mode === 'move') {
     b.x = Math.round(o.x + dx); b.y = Math.round(o.y + dy);
+    const into = panelAt(b.x + b.w / 2, b.y + b.h / 2);   // posée sur une autre case, la bulle s'y lie
+    if (into) b.panel = into.id;
     if (o.tail) b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
     if (o.path) b.path = o.path.map(q => ({ x: Math.round(q.x + dx), y: Math.round(q.y + dy) }));
   } else if (s.mode === 'resize') {

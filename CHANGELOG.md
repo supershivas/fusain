@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.14.0 — 2026-10-28
+- Les bulles et textes sont liés à une case : supprimer, fusionner ou copier une case emporte ses bulles
+- Les bulles se dupliquent (bouton, glisser vers la gauche, menu Calque)
+
 ## 1.13.0 — 2026-10-28
 - Bulles : rotation (poignée sur la page ou curseur « Rotation » dans Forme)
 - Taille du texte jusqu'à 200 pt, avec l'option « Rogner à la case » pour qu'une bulle ne sorte pas du cadre

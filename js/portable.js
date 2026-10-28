@@ -123,6 +123,7 @@ export function projectFromDecoupage(d, { format = FORMATS[0], dpi = 300 } = {})
         b.y = Math.round(y);
         y += b.h + panel.h * 0.05;
         if (b.tail) b.tail = { x: Math.round(b.x + b.w * (left ? 0.3 : 0.7)), y: Math.round(b.y + b.h + panel.h * 0.07) };
+        b.panel = panel.id;
         page.bubbles.push(b);
       });
     });

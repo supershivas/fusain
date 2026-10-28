@@ -157,8 +157,10 @@ export async function addPage(layoutId, count) {
 
 export async function duplicatePage() {
   const src = page(), pg = { id: uid(), panels: [], bubbles: JSON.parse(JSON.stringify(src.bubbles)).map(b => ({ ...b, id: uid() })) };
+  linkBubbles(src);
+  const ids = new Map();
   for (const p of src.panels) {
-    const np = newPanel(p);
+    const np = newPanel(p); ids.set(p.id, np.id);
     Object.assign(np, { ex: p.ex, ey: p.ey, ew: p.ew, eh: p.eh, stroke: p.stroke });
     np.note = { ...p.note };
     np.layers = p.layers.map(l => {
@@ -172,6 +174,7 @@ export async function duplicatePage() {
     if (p.mask && p.mask.data) { np.mask = newLayer('Masque', p.ew, p.eh); np.mask.data = p.mask.data.slice(); np.mask.dirty = true; }
     pg.panels.push(np);
   }
+  src.bubbles.forEach((b, i) => { pg.bubbles[i].panel = ids.get(b.panel); });
   ed.project.pages.splice(ed.pageIdx + 1, 0, pg);
   markChanged();
   await goToPage(ed.pageIdx + 1);
@@ -218,8 +221,28 @@ export function relayoutPage(layoutId) {
 }
 
 // Remplace les cases de la page (disposition, gouttières) ; les calques des cases nouvelles ou restaurées sont à réécrire.
+// Chaque bulle est liée à une case (`b.panel`). Les bulles d'une case retirée partent avec elle et reviennent si on annule.
+const stashed = new WeakMap();
+const panelOfPoint = (panels, x, y) => panels.find(q => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h);
+export function linkBubbles(pg) {
+  for (const b of pg.bubbles) {
+    if (pg.panels.some(p => p.id === b.panel)) continue;
+    const q = panelOfPoint(pg.panels, b.x + b.w / 2, b.y + b.h / 2) || pg.panels[0];
+    if (q) b.panel = q.id;
+  }
+}
 function swapPanels(pg, list) {
   const prev = new Set(pg.panels.flatMap(p => [...p.layers, p.mask]));
+  linkBubbles(pg);
+  const was = new Set(pg.panels.map(p => p.id)), now = new Set(list.map(p => p.id)), box = stashed.get(pg) || new Map();
+  stashed.set(pg, box);
+  for (const id of was) if (!now.has(id)) {
+    const gone = pg.bubbles.filter(b => b.panel === id);
+    if (gone.length) { box.set(id, gone); pg.bubbles = pg.bubbles.filter(b => b.panel !== id); }
+  }
+  for (const id of now) if (!was.has(id) && box.has(id)) { pg.bubbles.push(...box.get(id)); box.delete(id); }
+  if (!pg.bubbles.some(b => b.id === ed.bubbleId)) ed.bubbleId = null;
+  notify('bubbles');
   pg.panels = list;
   if (!list.some(p => p.id === ed.panelId)) ed.panelId = list[0].id;
   for (const p of list) for (const l of [...p.layers, p.mask]) if (l && !prev.has(l)) l.dirty = true;
@@ -348,12 +371,24 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
     nl.dirty = true;
     return nl;
   };
+  // les bulles de la case source sont copiées dans la case cible, à la même place relative
+  const srcPg = project.pages[ed.pageIdx], sx = dst.x - src.x, sy = dst.y - src.y;
+  linkBubbles(srcPg);
+  const fresh = srcPg.bubbles.filter(b => b.panel === src.id).map(b => {
+    const nb = JSON.parse(JSON.stringify(b));
+    nb.id = uid(); nb.panel = dst.id; nb.x += sx; nb.y += sy;
+    if (nb.tail) nb.tail = { x: nb.tail.x + sx, y: nb.tail.y + sy };
+    if (nb.path) nb.path = nb.path.map(q => ({ x: q.x + sx, y: q.y + sy }));
+    return nb;
+  });
   const before = { layers: dst.layers, active: dst.active, mask: dst.mask };
   const layers = src.layers.map(clone), mask = src.mask && src.mask.data ? clone(src.mask) : null;
   const after = { layers, mask, active: layers[Math.max(0, src.layers.findIndex(l => l.id === src.active))].id };
   const set = st => {
     Object.assign(dst, st); for (const l of [...dst.layers, dst.mask]) if (l) l.dirty = true;
     if (samePage) { invalidate(dst); notify('layers'); }
+    pg.bubbles = pg.bubbles.filter(b => !fresh.includes(b)); if (st === after) pg.bubbles.push(...fresh);
+    if (samePage) { notify('bubbles'); requestRender(); }
     markChanged();
   };
   set(after);
@@ -406,9 +441,12 @@ export function mergePanels(aId, bId) {
   if (b.mask && b.mask.data) { if (!na.mask) { na.mask = newLayer('Masque', na.ew, na.eh); } paste(b.mask, na.mask); na.mask.dirty = true; }
   na.note = { plan: a.note.plan || b.note.plan, description: [a.note.description, b.note.description].filter(Boolean).join(' / ') };
   const after = before.filter(p => p !== b).map(p => (p === a ? na : p));
-  swapPanels(pg, after);
+  linkBubbles(pg);
+  const moved = pg.bubbles.filter(x => x.panel === b.id);   // les bulles de la case absorbée passent dans la case qui l'absorbe
+  const relink = id => moved.forEach(x => { x.panel = id; });
+  relink(na.id); swapPanels(pg, after);
   ed.panelId = na.id; notify('panel');
-  ed.undo.pushAction('Fusionner les cases', () => swapPanels(pg, before), () => { swapPanels(pg, after); ed.panelId = na.id; });
+  ed.undo.pushAction('Fusionner les cases', () => { swapPanels(pg, before); relink(b.id); }, () => { relink(na.id); swapPanels(pg, after); ed.panelId = na.id; });
   return true;
 }
 
@@ -627,6 +665,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
 
 export function addBubbleObj(b) {
   const pg = page();
+  if (!b.panel) b.panel = (panelOfPoint(pg.panels, b.x + b.w / 2, b.y + b.h / 2) || panel()).id;
   const apply = () => { pg.bubbles.push(b); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
   const unapply = () => { pg.bubbles.splice(pg.bubbles.indexOf(b), 1); ed.bubbleId = null; notify('bubbles'); requestRender(); markChanged(); };
   apply(); ed.undo.pushAction('Nouvelle bulle', unapply, apply);
@@ -652,6 +691,22 @@ export function addFreeBubble(points) {
   const b = newBubble('parole', r.x, r.y);
   Object.assign(b, { shape: 'libre', path, x: r.x, y: r.y, w: Math.max(120, r.w), h: Math.max(90, r.h), auto: false, tail: null });
   return addBubbleObj(b);
+}
+
+// Copie d'une bulle (même case, légèrement décalée), annulable.
+export function duplicateBubble(b = bubble()) {
+  if (!b) return null;
+  const d = Math.round(ed.project.dpi / 8), nb = clone(b);
+  nb.id = uid(); nb.seed = Math.floor(Math.random() * 1e6);
+  nb.x += d; nb.y += d;
+  if (nb.tail) nb.tail = { x: nb.tail.x + d, y: nb.tail.y + d };
+  if (nb.path) nb.path = nb.path.map(q => ({ x: q.x + d, y: q.y + d }));
+  delete nb.locked; delete nb.hidden;
+  const pg = page(), at = pg.bubbles.indexOf(b) + 1;
+  const apply = () => { pg.bubbles.splice(at, 0, nb); ed.bubbleId = nb.id; notify('bubbles'); requestRender(); markChanged(); };
+  const unapply = () => { pg.bubbles.splice(pg.bubbles.indexOf(nb), 1); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
+  apply(); ed.undo.pushAction('Dupliquer la bulle', unapply, apply);
+  return nb;
 }
 
 export function deleteBubble(b = bubble()) {
