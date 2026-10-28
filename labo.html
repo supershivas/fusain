@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#C0392B"/>
+<title>Labo — Fusain</title>
+<link rel="icon" href="favicon-labo.png" sizes="32x32" type="image/png"/>
+<link rel="icon" href="favicon-labo.svg" type="image/svg+xml"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.34.1/dist/tabler-icons.min.css"/>
+<link rel="stylesheet" href="css/style.css"/>
+<link rel="stylesheet" href="css/labo.css"/>
+<link rel="stylesheet" href="css/mobile.css"/>
+</head>
+<body class="labo-page">
+<!-- Écran à hauteur fixe (conventions, 8 ter) : en-tête, groupes, sujets à gauche, une variante à la fois -->
+<div class="lab">
+  <header class="topbar safe-top lab-head">
+    <a class="brand" href="./" aria-label="Fusain, retour à l'app">
+      <span class="brand-mark"><img src="favicon.svg" alt="" width="28" height="28"/></span>
+      <span class="brand-name">Fusain</span>
+    </a>
+    <span class="lab-badge">Labo</span>
+    <nav class="lab-tabs" id="tabs" aria-label="Groupes du labo"></nav>
+    <div class="topbar-actions">
+      <a class="icon-btn icon-only" href="./" aria-label="Retour à l'app" title="Retour à l'app"><i class="ti ti-arrow-left" aria-hidden="true"></i></a>
+    </div>
+  </header>
+  <nav class="lab-chips" id="chips" aria-label="Sujets du groupe"></nav>
+  <div class="lab-body">
+    <aside class="lab-side" id="side" aria-label="Sujets du groupe"></aside>
+    <main class="lab-stage" id="stage" tabindex="-1"></main>
+  </div>
+  <nav class="lab-bar" id="bar" aria-label="Variantes"></nav>
+</div>
+<script type="module" src="js/labo.js"></script>
+</body>
+</html>

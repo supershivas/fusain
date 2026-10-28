@@ -1,0 +1,106 @@
+{
+  "_comment": "SOURCE DE VÉRITÉ PARTAGÉE — identique à idee/design-tokens.json. Si tu modifies une valeur ici pour harmoniser les deux apps, reporte le même changement dans l'autre repo (et dans le CSS qui la consomme).",
+  "colors": {
+    "accentFixed": "#C0392B",
+    "accentFixedHover": "#9B2D22",
+    "accentFixedFg": "#ffffff",
+    "sidebarBg": "#1C1C1E",
+    "sidebarFg": "rgba(255,255,255,0.88)",
+    "sidebarMuted": "rgba(255,255,255,0.55)",
+    "sidebarIcon": "#8E8E93",
+    "sidebarHover": "rgba(255,255,255,0.07)",
+    "sidebarSelected": "rgba(192,57,43,0.22)",
+    "sidebarSelectedFg": "#E8887E",
+    "sidebarBorder": "rgba(196,201,209,0.18)"
+  },
+  "radii": {
+    "sm": "6px",
+    "md": "8px",
+    "lg": "12px",
+    "xl": "12px"
+  },
+  "fonts": {
+    "sans": "'Inter', sans-serif",
+    "title": "'Playfair Display', Georgia, serif",
+    "mono": "'DM Mono', monospace"
+  },
+  "sidebar": {
+    "widthDefault": 264,
+    "widthMin": 200,
+    "widthMax": 420
+  },
+  "content": {
+    "maxWidth": "680px"
+  },
+  "modal": {
+    "_comment": "Dialogues et confirmations. Valeurs relevées sur .modal-overlay / .modal-box de source (app/globals.css) et sur sa ConfirmModal. Objectif : qu'aucune app n'utilise window.confirm, dont le rendu ignore le thème, la typo et les cibles tactiles — et qui affiche le nom de domaine sur iOS.",
+    "overlayBackground": "rgba(0,0,0,0.40)",
+    "overlayZIndex": 50,
+    "maxWidth": "480px",
+    "maxWidthNarrow": "360px",
+    "maxHeight": "90vh",
+    "padding": "20px",
+    "borderRadius": "var(--radius-lg)",
+    "gap": "16px"
+  },
+  "sidebarButtonNew": {
+    "height": "40px",
+    "padding": "0 12px",
+    "fontSize": "0.875rem",
+    "fontWeight": 500,
+    "gap": "8px",
+    "borderRadius": "var(--radius-xl)"
+  },
+  "sidebarSearch": {
+    "height": "36px",
+    "wrapPadding": "8px 8px 8px",
+    "inputBackground": "rgba(255,255,255,0.10)",
+    "inputBorder": "rgba(255,255,255,0.10)"
+  },
+  "sidebarKbd": {
+    "fontSize": "10px",
+    "padding": "2px 6px",
+    "borderRadius": "4px",
+    "background": "rgba(255,255,255,0.20)",
+    "border": "rgba(255,255,255,0.30)",
+    "opacity": 0.6
+  },
+  "sidebarHeader": {
+    "minHeight": "52px",
+    "padding": "0 12px",
+    "iconButtonSize": "32px",
+    "iconButtonRadius": "8px",
+    "iconSize": "15px"
+  },
+  "sidebarNavRow": {
+    "padding": "8px 12px",
+    "fontSize": "0.875rem",
+    "fontWeight": 500,
+    "gap": "8px",
+    "iconSize": "15px",
+    "borderRadius": "6px"
+  },
+  "sidebarDivider": {
+    "thickness": "1px",
+    "margin": "4px 0",
+    "color": "rgba(196,201,209,0.18)",
+    "_comment": "Divider argent élégant — identique à colors.sidebarBorder, utilisé pour toutes les séparations horizontales/verticales de la sidebar dans les deux apps."
+  },
+  "sidebarScroll": {
+    "padding": "8px"
+  },
+  "sidebarResizer": {
+    "width": "4px",
+    "hoverColor": "var(--accent)"
+  },
+  "phoneFrame": {
+    "_comment": "Cadre téléphone affiché sur ordinateur par les apps uniquement mobiles (phone-frame.js).",
+    "width": 390,
+    "height": 844,
+    "radius": 55,
+    "bezel": 12,
+    "statusBar": 50,
+    "islandWidth": 120,
+    "islandHeight": 34
+  }
+}

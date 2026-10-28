@@ -1,0 +1,74 @@
+/* ─── Mobile / PWA UX — partagé entre toutes les apps ───────────────────────
+   Source de vérité : supershivas/design-system/mobile.css
+   Mis à jour par scripts/sync-design-system.sh dans chaque app qui l'utilise.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Désactive le pull-to-refresh natif (évite rechargement accidentel en PWA) */
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Empêche le bounce de scroll hors des conteneurs scrollables */
+.mobile-scroll-container {
+  overscroll-behavior: contain;
+}
+
+/* iOS : empêche le zoom auto quand focus sur un <input> (déclenché si font-size < 16px).
+   input:not([type]) est indispensable : un <input> sans attribut type (le cas le
+   plus courant en React/JSX) est bien du texte à l'affichage, mais ne matche PAS
+   le sélecteur [type="text"] — sans cette règle, la quasi-totalité des champs de
+   l'app (recherche, tags, renommer, déplacer vers…) échappait à la protection. */
+@media (max-width: 768px) {
+  input:not([type]),
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="number"],
+  textarea,
+  select {
+    /* !important : un font-size en ligne (style={{ fontSize }}) battrait la règle
+       et ramènerait le zoom iOS. */
+    font-size: 16px !important;
+  }
+}
+
+/* Tap feedback amélioré sur iOS (hover: none = écran tactile) */
+@media (hover: none) {
+  .mobile-row-hover:active,
+  button:active,
+  a:active {
+    opacity: 0.65;
+    transition: opacity 0.05s;
+  }
+}
+
+/* Safe area bottom pour la barre d'accueil iPhone */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Safe area top pour Dynamic Island / notch en mode standalone */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* iOS/iPadOS PWA — suppression du context menu natif
+   Empêche le menu natif iOS d'apparaître par-dessus les menus custom de l'app */
+.sidebar-item-hover,
+.sidebar-selected,
+[data-drag-handle],
+button,
+a {
+  -webkit-touch-callout: none;
+}
+
+/* Désactive la sélection de texte dans les éléments de navigation */
+nav,
+aside,
+[role="navigation"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
