@@ -12,11 +12,11 @@ const fig = (t, scale, w, h, label) => { const f = document.createElement('figur
 
 const grises = () => BUILTIN_TRAMAS.filter(t => t.group === 'Gris');
 
-function bubbleDemo(el, { lw, pt, tail }) {
+function bubbleDemo(el, { lw, pt, tail, extra = {} }) {
   const c = document.createElement('canvas'), dpi = 300;
   c.width = 1500; c.height = 700; c.style.cssText = 'width:100%;height:auto;image-rendering:auto';
   const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-  const base = { text: 'Encore dix marches…', pt, caps: true, auto: false };
+  const base = { text: 'Encore dix marches…', pt, caps: true, auto: false, ...extra };
   const kinds = [
     { ...base, kind: 'parole', x: 40, y: 40, w: 540, h: 280, tail: tail ? { x: 180, y: 470 } : null },
     { ...base, kind: 'pensee', x: 640, y: 40, w: 540, h: 280, text: 'Quelqu\'un a coupé le courant ?', tail: tail ? { x: 760, y: 430 } : null },
@@ -42,6 +42,12 @@ export const GROUPS = [
       { title: 'Trait fin', actuelle: true, say: 'Contour de 0,35 mm, texte de 9 pt : le trait classique de la BD franco-belge.', render: el => bubbleDemo(el, { lw: 1, pt: 9, tail: true }) },
       { title: 'Trait épais', say: 'Contour plus marqué, texte un peu plus gros : plus lisible à l\'écran, plus lourd sur la page.', render: el => bubbleDemo(el, { lw: 1.7, pt: 10, tail: true }) },
       { title: 'Sans queue', say: 'Bulles sans queue pour une lecture plus aérée quand le locuteur est évident.', render: el => bubbleDemo(el, { lw: 1, pt: 9, tail: false }) },
+    ] },
+    { id: 'polices', label: 'Polices', icon: 'typography', variants: [
+      { title: 'Comic Neue', actuelle: true, say: 'La police par défaut : lisible, proche du lettrage de BD, avec des capitales rondes.', render: el => bubbleDemo(el, { lw: 1, pt: 9, tail: true, extra: { font: 'comicneue' } }) },
+      { title: 'Patrick Hand SC', say: 'Capitales à la main, plus naturelles et moins régulières : l\'esprit du lettrage des albums classiques.', render: el => bubbleDemo(el, { lw: 1, pt: 10, tail: true, extra: { font: 'patrickhandsc' } }) },
+      { title: 'Bangers', say: 'Une police d\'action pour les cris et les onomatopées ; trop dense pour de longs dialogues.', render: el => bubbleDemo(el, { lw: 1, pt: 10, tail: true, extra: { font: 'bangers' } }) },
+      { title: 'Caveat', say: 'Une écriture manuscrite penchée, pour les pensées et les carnets.', render: el => bubbleDemo(el, { lw: 1, pt: 11, tail: true, extra: { font: 'caveat' } }) },
     ] },
   ] },
 ];

@@ -163,11 +163,7 @@ export function relayoutPage(layoutId) {
     if (!old) return newPanel(r);
     return resizedPanel(old, r);
   });
-  const apply = list => {
-    pg.panels = list; ed.panelId = list[0].id;
-    for (const l of pageLayers(pg)) l.dirty = true;   // les dimensions ont changé : tout est à réécrire
-    dropCaches(pg); invalidatePage(); notify('page'); markChanged();
-  };
+  const apply = list => swapPanels(pg, list);
   apply(after);
   ed.undo.pushAction('Disposition', () => apply(before), () => apply(after));
 }
@@ -186,6 +182,137 @@ function resizedPanel(old, r) {
   np.layers = old.layers.map(move); np.mask = move(old.mask);
   np.active = np.layers[Math.max(0, old.layers.findIndex(l => l.id === old.active))].id;
   return np;
+}
+
+
+// Remplace les cases de la page (disposition, gouttières) ; les calques des cases nouvelles ou restaurées sont à réécrire.
+function swapPanels(pg, list) {
+  const prev = new Set(pg.panels);
+  pg.panels = list;
+  if (!list.some(p => p.id === ed.panelId)) ed.panelId = list[0].id;
+  for (const p of list) if (!prev.has(p)) for (const l of [...p.layers, p.mask]) if (l) l.dirty = true;
+  dropCaches(pg); invalidatePage(); notify('page'); markChanged();
+}
+
+// Nouvelle case de rectangle `r` : le dessin reste à sa place sur la page, la case en révèle plus ou moins.
+function reshape(old, r) {
+  const np = { ...old, x: r.x, y: r.y, w: r.w, h: r.h };
+  const dx = old.x - r.x, dy = old.y - r.y;
+  const move = l => {
+    if (!l) return l;
+    const nl = { ...l, w: r.w, h: r.h, data: null, dirty: true, loaded: true };
+    if (l.data) {
+      nl.data = new Uint8Array(r.w * r.h);
+      const i0 = Math.max(0, -dx), i1 = Math.min(l.w, r.w - dx);
+      if (i1 > i0) for (let j = 0; j < l.h; j++) {
+        const nj = j + dy;
+        if (nj >= 0 && nj < r.h) nl.data.set(l.data.subarray(j * l.w + i0, j * l.w + i1), nj * r.w + i0 + dx);
+      }
+    }
+    return nl;
+  };
+  np.layers = old.layers.map(move); np.mask = move(old.mask);
+  return np;
+}
+
+// ───────────────────────── Gouttières : changer la taille des cases ─────────────────────────
+
+// Une poignée par gouttière (colonne ou ligne) : elle déplace d'un coup toutes les cases qui la bordent.
+export function gutterHandles() {
+  const ps = page().panels, gap = mmToPx(ed.project.gutter, ed.project.dpi), tol = Math.max(4, gap * 0.5), out = [];
+  for (const axis of ['v', 'h']) {
+    const v = axis === 'v', groups = [];
+    const pairs = [];
+    for (const a of ps) for (const c of ps) {
+      if (a === c) continue;
+      const aEnd = v ? a.x + a.w : a.y + a.h, cStart = v ? c.x : c.y;
+      if (Math.abs(aEnd + gap - cStart) > tol) continue;
+      const a0 = v ? a.y : a.x, a1 = a0 + (v ? a.h : a.w), c0 = v ? c.y : c.x, c1 = c0 + (v ? c.h : c.w);
+      if (Math.min(a1, c1) - Math.max(a0, c0) <= 0) continue;
+      pairs.push({ a, c, pos: (aEnd + cStart) / 2 });
+    }
+    for (const pr of pairs.sort((x, y) => x.pos - y.pos)) {
+      const g = groups.find(x => Math.abs(x.pos - pr.pos) <= tol);
+      if (g) { g.L.add(pr.a); g.R.add(pr.c); } else groups.push({ axis, pos: pr.pos, L: new Set([pr.a]), R: new Set([pr.c]) });
+    }
+    for (const g of groups) {
+      const all = [...g.L, ...g.R], s0 = Math.min(...all.map(p => v ? p.y : p.x)), s1 = Math.max(...all.map(p => v ? p.y + p.h : p.x + p.w));
+      out.push({ axis, pos: g.pos, span: [s0, s1], L: [...g.L].map(p => p.id), R: [...g.R].map(p => p.id) });
+    }
+  }
+  return out;
+}
+
+export function clampGutter(h, d) {
+  const { w, h: ph } = pageSize(ed.project), min = Math.round(Math.min(w, ph) * 0.1), v = h.axis === 'v';
+  const size = p => (v ? p.w : p.h), by = id => page().panels.find(p => p.id === id);
+  const lo = -(Math.min(...h.L.map(id => size(by(id)))) - min), hi = Math.min(...h.R.map(id => size(by(id)))) - min;
+  return Math.round(Math.max(lo, Math.min(hi, d)));
+}
+
+export function resizeGutter(h, d) {
+  d = clampGutter(h, d);
+  if (!d) return;
+  const pg = page(), before = pg.panels.slice(), v = h.axis === 'v';
+  const after = before.map(p => {
+    if (h.L.includes(p.id)) return reshape(p, v ? { x: p.x, y: p.y, w: p.w + d, h: p.h } : { x: p.x, y: p.y, w: p.w, h: p.h + d });
+    if (h.R.includes(p.id)) return reshape(p, v ? { x: p.x + d, y: p.y, w: p.w - d, h: p.h } : { x: p.x, y: p.y + d, w: p.w, h: p.h - d });
+    return p;
+  });
+  swapPanels(pg, after);
+  ed.undo.pushAction('Taille des cases', () => swapPanels(pg, before), () => swapPanels(pg, after));
+}
+
+// ───────────────────────── Copier le contenu d'une case dans une autre ─────────────────────────
+
+// Reporte des pixels d'une case dans une autre de taille différente : 'same' garde l'échelle (coin haut gauche), 'fit' ajuste.
+function transferPixels(data, sw, sh, dw, dh, mode) {
+  const out = new Uint8Array(dw * dh);
+  if (mode === 'fit') {
+    const k = Math.min(dw / sw, dh / sh), ox = (dw - sw * k) / 2, oy = (dh - sh * k) / 2;
+    for (let y = 0; y < dh; y++) {
+      const sy = Math.floor((y - oy) / k); if (sy < 0 || sy >= sh) continue;
+      for (let x = 0; x < dw; x++) { const sx = Math.floor((x - ox) / k); if (sx >= 0 && sx < sw) out[y * dw + x] = data[sy * sw + sx]; }
+    }
+  } else {
+    const w = Math.min(sw, dw);
+    for (let y = 0; y < Math.min(sh, dh); y++) out.set(data.subarray(y * sw, y * sw + w), y * dw);
+  }
+  return out;
+}
+
+// Remplace les calques de la case cible par une copie de ceux de la source. Sur la page affichée, c'est annulable.
+export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
+  const project = ed.project, pg = project.pages[pageIdx], samePage = pageIdx === ed.pageIdx;
+  if (!samePage) await loadPage(project, pg);
+  const dst = pg.panels.find(p => p.id === panelId);
+  if (!dst || dst === src) return false;
+  const clone = l => {
+    const nl = newLayer(l.name, dst.w, dst.h, { draft: l.draft });
+    nl.visible = l.visible;
+    if (l.data) nl.data = transferPixels(l.data, l.w, l.h, dst.w, dst.h, mode);
+    nl.dirty = true;
+    return nl;
+  };
+  const before = { layers: dst.layers, active: dst.active, mask: dst.mask };
+  const layers = src.layers.map(clone), mask = src.mask && src.mask.data ? clone(src.mask) : null;
+  const after = { layers, mask, active: layers[Math.max(0, src.layers.findIndex(l => l.id === src.active))].id };
+  const set = st => {
+    Object.assign(dst, st); for (const l of [...dst.layers, dst.mask]) if (l) l.dirty = true;
+    if (samePage) { invalidate(dst); notify('layers'); }
+    markChanged();
+  };
+  set(after);
+  if (samePage) ed.undo.pushAction('Copier le contenu de la case', () => set(before), () => set(after));
+  else { await saveNow(); unloadPage(pg); }
+  return true;
+}
+
+// Après le chargement d'une police, les bulles à taille automatique sont remesurées.
+export function refitAutoBubbles() {
+  let any = false;
+  for (const b of page().bubbles) if (b.auto) { autoSize(measureCtx(), b, ed.project.dpi); any = true; }
+  if (any) { requestRender(); markChanged(); }
 }
 
 // ───────────────────────── Calques ─────────────────────────

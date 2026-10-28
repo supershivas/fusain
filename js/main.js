@@ -10,6 +10,7 @@ import * as sync from './sync.js';
 import * as tools from './tools.js';
 import { closeAllModals, esc, icon, $ } from './ui-core.js';
 import { toast } from './toast.js';
+import { loadImportedFonts } from './fonts.js';
 
 const root = document.getElementById('app');
 let inEditor = false;
@@ -115,6 +116,7 @@ if ('serviceWorker' in navigator) {
   try { const mail = await sync.handleAuthRedirect(); if (mail) toast('Connecté : ' + mail); }
   catch (err) { toast(err.message, { type: 'error' }); }
   renderSyncDot();
+  loadImportedFonts().catch(() => {});
   sync.startAutoSync();
   await route();
 })();

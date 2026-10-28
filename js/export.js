@@ -1,7 +1,12 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
 import { pageSize } from './model.js';
 import { compositeRect } from './raster.js';
-import { drawBubble, lineWidth } from './bubbles.js';
+import { drawBubble, lineWidth, props } from './bubbles.js';
+import { loadFont } from './fonts.js';
+
+// Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
+export const ensureFonts = (project, pages) =>
+  Promise.all([...new Set(pages.flatMap(p => p.bubbles.map(b => props(b).font)))].map(loadFont));
 
 // Dessine la page (cases, cadres, bulles) sans brouillons ni aide visuelle.
 export function renderPage(project, page, scale = 1) {
@@ -67,6 +72,7 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
   text('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
 
   const pages = project.pages, n = pages.length;
+  await ensureFonts(project, pages);
   // numéros d'objets : 1 catalogue, 2 liste des pages, 3 info, puis par page : page, contenu, image
   const pageObj = i => 4 + i * 3, contentObj = i => 5 + i * 3, imageObj = i => 6 + i * 3;
   const obj = (num, body) => { offsets[num] = length; text(num + ' 0 obj\n' + body + '\nendobj\n'); };

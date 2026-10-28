@@ -1,13 +1,13 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter,
 } from './editor.js';
 import {
   stampDisc, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen } from './view.js';
+import { invalidate, setOverlay, toScreen, view } from './view.js';
 import { hitBubble } from './bubbles.js';
 import { toast } from './toast.js';
 
@@ -39,6 +39,7 @@ function flush(s) {
 export function down(pt) {
   if (session) return;
   if (ed.tool === 'bubble') { bubbleDown(pt); return; }
+  if (ed.tool === 'layout') { layoutDown(pt); return; }
   const p = panelAt(pt.x, pt.y);
   if (!p) return;
   selectPanel(p.id);
@@ -85,6 +86,10 @@ export function move(pt) {
   } else if (session.kind === 'shape') {
     setOverlay({ shape: { kind: ed.shapeKind, x0: session.x0, y0: session.y0, x1: pt.x, y1: pt.y } });
     session.x1 = pt.x; session.y1 = pt.y;
+  } else if (session.kind === 'gutter') {
+    const h = session.h, v = h.axis === 'v', d = clampGutter(h, (v ? pt.x - session.x0 : pt.y - session.y0));
+    session.d = d;
+    setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1] } });
   } else if (session.kind === 'free') {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
@@ -111,6 +116,9 @@ export function up() {
     ed.undo.commit();
     flush({ ctx, p });
     markChanged();
+  } else if (s.kind === 'gutter') {
+    setOverlay({ guide: null });
+    if (s.d) resizeGutter(s.h, s.d);
   } else if (s.kind === 'free') {
     setOverlay({ free: null });
     ed.bubbleDraw = false;
@@ -128,7 +136,22 @@ export function cancel() {
   if (s.kind === 'stroke') { ed.undo.rollback(); invalidate(s.p); }
   else if (s.kind === 'shape') setOverlay({ shape: null });
   else if (s.kind === 'free') setOverlay({ free: null });
+  else if (s.kind === 'gutter') setOverlay({ guide: null });
   else if (s.kind === 'bubble') { Object.keys(s.b).forEach(k => delete s.b[k]); Object.assign(s.b, s.before); selectBubble(s.b.id); }
+}
+
+// ───────────────────────── Gouttières ─────────────────────────
+
+// On attrape une gouttière n'importe où le long de son trait.
+function layoutDown(pt) {
+  const R = pt.type === 'touch' ? 28 : 18;
+  let best = null;
+  for (const h of gutterHandles()) {
+    const v = h.axis === 'v', along = v ? pt.y : pt.x, across = Math.abs((v ? pt.x : pt.y) - h.pos) * view.s;
+    if (along < h.span[0] - R / view.s || along > h.span[1] + R / view.s || across > R) continue;
+    if (!best || across < best.across) best = { h, across };
+  }
+  if (best) session = { kind: 'gutter', h: best.h, x0: pt.x, y0: pt.y, d: 0 };
 }
 
 // ───────────────────────── Bulles ─────────────────────────

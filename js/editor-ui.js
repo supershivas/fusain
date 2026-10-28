@@ -3,7 +3,9 @@ import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
+  copyPanelTo, refitAutoBubbles,
 } from './editor.js';
+import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { attach, fit, view, zoomAt, requestRender, resize } from './view.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize } from './model.js';
@@ -12,7 +14,7 @@ import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './b
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
 import { layoutSvg } from './home.js';
-import { buildPDF, renderPage, canvasToBlob, download, safeName } from './export.js';
+import { buildPDF, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
 
@@ -24,6 +26,7 @@ const TOOLS = [
   { id: 'shape', icon: 'square', label: 'Formes (S)', key: 's' },
   { id: 'mask', icon: 'mask', label: 'Masque (M)', key: 'm' },
   { id: 'bubble', icon: 'message-circle', label: 'Bulles (V)', key: 'v' },
+  { id: 'layout', icon: 'layout-board-split', label: 'Taille des cases (L)', key: 'l' },
   { id: 'pan', icon: 'hand-stop', label: 'Déplacer la vue (H)', key: 'h' },
 ];
 const SHAPES = [{ id: 'line', icon: 'slash', label: 'Ligne' }, { id: 'rect', icon: 'square', label: 'Rectangle' }, { id: 'ellipse', icon: 'circle', label: 'Ellipse' }];
@@ -202,6 +205,8 @@ export function renderOptbar() {
     html = ed.bubbleDraw
       ? `<span class="hint">Trace le contour de la bulle d'un seul geste.</span><button class="btn small" data-freebubble="0">Annuler</button>`
       : `<button class="btn small" data-freebubble="1">${icon('writing')} Dessiner une bulle</button><span class="hint">Touche une bulle pour la déplacer ; points rouges : taille et queue.</span>`;
+  } else if (t === 'layout') {
+    html = `<span class="hint">Fais glisser une tirette sur une gouttière : une case grandit, sa voisine rétrécit.</span>`;
   } else if (t === 'pan') {
     html = `<span class="hint">Fais glisser pour déplacer la page. Pincer pour zoomer.</span>`;
   }
@@ -317,20 +322,35 @@ function bubblesTab() {
     ${b ? bubbleProps(b) : ''}`;
 }
 
+// Curseurs numériques d'une bulle : identifiant → [propriété, libellé]
+const SLIDERS = {
+  'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
+  'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
+  'b-tailbend': ['tailBend', v => `Courbure : ${v > 0 ? '+' : ''}${v}`], 'b-tailtip': ['tailTip', v => `Pointe émoussée : ${v} %`],
+};
+const slider = (id, p, min, max, step = 1) => `<label class="field"><span>${SLIDERS[id][1](p[SLIDERS[id][0]])}</span><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${p[SLIDERS[id][0]]}"></label>`;
+
 function bubbleProps(b) {
   const p = props(b);
   return `<h3>Bulle sélectionnée</h3>
       <label class="field"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select>
-        <small>Un modèle règle d'un coup la forme, le trait et la queue ; chaque réglage reste modifiable.</small></label>
+        <small>Un modèle règle d'un coup la forme, le trait, la police et la queue ; chaque réglage reste modifiable.</small></label>
       <label class="field"><span>Texte</span><textarea id="b-text" rows="3">${esc(b.text)}</textarea></label>
+      <div class="field"><span>Police</span><button class="btn" data-act="pick-font" style="justify-content:flex-start">${icon('typography')} ${esc(fontName(p.font))}</button></div>
       <label class="field"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="24" step="0.5" value="${b.pt}"></label>
       <h3>Forme</h3>
       <label class="field"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
-      ${p.shape === 'rect' ? `<label class="field"><span>Angles arrondis : ${p.radius} %</span><input type="range" id="b-radius" min="0" max="100" step="5" value="${p.radius}"></label>` : ''}
-      <label class="field"><span>Marge intérieure : ${String(p.pad).replace('.', ',')} mm</span><input type="range" id="b-pad" min="0" max="10" step="0.5" value="${p.pad}"></label>
-      <label class="field"><span>Trait : ${p.stroke.toFixed(2).replace('.', ',')} mm</span><input type="range" id="b-stroke" min="0" max="2" step="0.05" value="${p.stroke}"></label>
-      <label class="field"><span>Queue</span><select id="b-tailstyle">${TAILS.map(x => `<option value="${x.id}" ${x.id === p.tailStyle ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
-        <small>Déplace le point rouge pour orienter la queue ou la flèche.</small></label>
+      ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
+      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-6px 0 14px">${icon('dice-3')} Autre tracé</button>` : ''}
+      ${slider('b-pad', p, 0, 10, 0.5)}
+      ${slider('b-stroke', p, 0, 2, 0.05)}
+      <h3>Queue</h3>
+      <label class="field"><span>Style</span><select id="b-tailstyle">${TAILS.map(x => `<option value="${x.id}" ${x.id === p.tailStyle ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
+        <small>Déplace le point rouge pour orienter la queue.</small></label>
+      ${p.tailStyle === 'pointe' ? slider('b-tailw', p, 4, 70) + slider('b-tailround', p, -100, 100, 5) + slider('b-tailbend', p, -100, 100, 5) + slider('b-tailtip', p, 0, 100, 5) : ''}
+      ${p.tailStyle === 'fleche' || p.tailStyle === 'bulles' ? slider('b-tailw', p, 4, 70) + slider('b-tailbend', p, -100, 100, 5) : ''}
+      <h3>Texte</h3>
       <label class="check"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
       <label class="check"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille automatique</label>
       <button class="btn small danger" data-act="del-bubble" style="margin-top:8px">${icon('trash')} Supprimer la bulle</button>`;
@@ -347,7 +367,9 @@ function caseTab() {
     <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:8px">Peins une zone avec l'outil Masque, puis choisis « Dans » ou « Hors » pour ne dessiner que dedans ou dehors.</p>
     <div class="row"><button class="btn small" data-act="mask-clear">Vider le masque</button><button class="btn small" data-act="mask-invert">Inverser</button></div>
     <h3>Image</h3>
-    <button class="btn small" data-act="dither">${icon('photo')} Importer une image tramée</button>`;
+    <button class="btn small" data-act="dither">${icon('photo')} Importer une image tramée</button>
+    <h3>Copie</h3>
+    <button class="btn small" data-act="copy-case">${icon('copy')} Copier le contenu vers une autre case</button>`;
 }
 
 // ───────────────────────── Événements du volet ─────────────────────────
@@ -398,6 +420,9 @@ async function onDock(e) {
     const restore = await deletePage();
     if (restore) toast('Page supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: restore });
   } else if (a === 'del-bubble') deleteBubble();
+  else if (a === 'pick-font') fontModal();
+  else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
+  else if (a === 'copy-case') copyModal();
   else if (a === 'free-bubble') { ed.tool = 'bubble'; ed.bubbleDraw = true; renderToolbar(); renderOptbar(); renderDock(); }
   else if (a === 'mask-clear') clearMask();
   else if (a === 'mask-invert') invertMask();
@@ -432,9 +457,11 @@ function onDockInput(e) {
     setTail(b, b.tailStyle !== 'none');
     refitBubble(b);
   } else if (id === 'b-shape') { b.shape = e.target.value; refitBubble(b); }
-  else if (id === 'b-radius') { b.radius = +e.target.value; e.target.previousElementSibling.textContent = `Angles arrondis : ${b.radius} %`; }
-  else if (id === 'b-pad') { b.pad = +e.target.value; e.target.previousElementSibling.textContent = `Marge intérieure : ${String(b.pad).replace('.', ',')} mm`; refitBubble(b); }
-  else if (id === 'b-stroke') { b.stroke = +e.target.value; e.target.previousElementSibling.textContent = `Trait : ${b.stroke.toFixed(2).replace('.', ',')} mm`; }
+  else if (SLIDERS[id]) {
+    const [key, label] = SLIDERS[id];
+    b[key] = +e.target.value; e.target.previousElementSibling.textContent = label(b[key]);
+    if (key === 'pad') refitBubble(b);
+  }
   else if (id === 'b-tailstyle') { b.tailStyle = e.target.value; setTail(b, b.tailStyle !== 'none'); }
   requestRender();
 }
@@ -555,6 +582,66 @@ function ditherModal() {
   });
 }
 
+// Choix de la police : chaque nom est écrit dans sa propre police.
+function fontModal() {
+  const b = bubble();
+  if (!b) return;
+  const cur = props(b).font;
+  const list = () => [...new Set(FONTS.map(f => f.group))].map(g => `<h3>${esc(g)}</h3>${FONTS.filter(f => f.group === g).map(f =>
+    `<button class="font-opt ${f.id === cur ? 'on' : ''}" data-font="${f.id}" style="font-family:'${f.family}',sans-serif;font-weight:${f.weight}">${esc(f.name)}<span>Bonjour, ça va ? 0123</span></button>`).join('')}`).join('');
+  const m = openModal({
+    title: 'Police de la bulle', wide: true,
+    body: `<div id="font-list">${list()}</div>
+      <div class="modal-sec"><h3>Importer une police</h3>
+        <input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2">
+        <small style="display:block;margin-top:6px;color:var(--text-muted)">Une police importée reste sur cet appareil : à réimporter sur les autres pour voir les mêmes lettres.</small></div>`,
+  });
+  FONTS.forEach(f => loadFont(f.id));   // pour que chaque nom s'affiche dans sa police
+  const apply = id => {
+    const before = snapshotBubble(b);
+    b.font = id;
+    loadFont(id).then(() => { refitAutoBubbles(); requestRender(); });
+    refitBubble(b); commitBubbleEdit(b, before); renderDock(); m.close();
+  };
+  m.el.addEventListener('click', e => { const f = e.target.closest('[data-font]'); if (f) apply(f.dataset.font); });
+  $('#font-file', m.el).addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try { apply(await importFont(file)); toast('Police importée.'); } catch (err) { toast(err.message, { type: 'error' }); }
+  });
+}
+
+// Copie le contenu de la case active dans une autre case, de cette page ou d'une autre.
+function copyModal() {
+  const src = panel(), srcIdx = page().panels.indexOf(src);
+  let pageIdx = ed.pageIdx, target = null, mode = 'same';
+  const m = openModal({
+    title: `Copier la case ${srcIdx + 1}`, wide: true,
+    body: `<label class="field"><span>Page de destination</span><select id="cp-page">${ed.project.pages.map((_, i) => `<option value="${i}" ${i === pageIdx ? 'selected' : ''}>Page ${i + 1}</option>`).join('')}</select></label>
+      <div class="field"><span>Case de destination</span><div id="cp-grid" style="max-width:240px"></div></div>
+      <div class="field"><span>Si les cases n'ont pas la même taille</span><div class="seg" id="cp-mode"><button type="button" data-m="same" class="on">Taille d'origine</button><button type="button" data-m="fit">Ajuster</button></div></div>
+      <small style="color:var(--text-muted)">Les calques de la case de destination sont remplacés. Les bulles ne sont pas copiées.</small>`,
+    actions: [{ label: 'Annuler' }, { label: 'Copier', kind: 'primary', onClick: async () => {
+      if (!target) { toast('Touche la case de destination.'); return false; }
+      const ok = await copyPanelTo(src, pageIdx, target, mode);
+      if (ok) toast(pageIdx === ed.pageIdx ? 'Contenu copié.' : `Contenu copié dans la page ${pageIdx + 1}.`);
+    } }],
+  });
+  const grid = () => {
+    const pg = ed.project.pages[pageIdx], { w, h } = pageSize(ed.project);
+    $('#cp-grid', m.el).innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;border:1px solid var(--border);background:#fff">${pg.panels.map(c => {
+      const isSrc = pageIdx === ed.pageIdx && c.id === src.id, on = c.id === target;
+      return `<rect data-p="${c.id}" x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" fill="${on ? 'rgba(192,57,43,.25)' : isSrc ? 'rgba(0,0,0,.12)' : 'transparent'}" stroke="${on ? '#C0392B' : '#000'}" stroke-width="${Math.round(w / (on ? 60 : 120))}" style="${isSrc ? '' : 'cursor:pointer'}"/>`;
+    }).join('')}</svg>`;
+  };
+  grid();
+  m.el.addEventListener('click', e => {
+    const r = e.target.closest('[data-p]'), md = e.target.closest('#cp-mode [data-m]');
+    if (r && !(pageIdx === ed.pageIdx && r.dataset.p === src.id)) { target = r.dataset.p; grid(); }
+    if (md) { mode = md.dataset.m; $$('#cp-mode button', m.el).forEach(x => x.classList.toggle('on', x === md)); }
+  });
+  $('#cp-page', m.el).addEventListener('change', e => { pageIdx = +e.target.value; target = null; grid(); });
+}
+
 // ───────────────────────── Menu du projet et exports ─────────────────────────
 
 export function projectMenu() {
@@ -593,6 +680,7 @@ async function exportPdf() {
 }
 
 async function exportPng() {
+  await ensureFonts(ed.project, [page()]);
   const blob = await canvasToBlob(renderPage(ed.project, page(), 1));
   download(blob, `${safeName(ed.project.title)}-page-${ed.pageIdx + 1}.png`);
 }

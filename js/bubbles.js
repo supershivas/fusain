@@ -1,5 +1,6 @@
 // Bulles et textes : dessinés en vectoriel sur la page (aperçu écran et export PDF partagent ce code).
-// Toutes les coordonnées sont en pixels de page ; marge intérieure et trait sont en millimètres.
+// Coordonnées en pixels de page ; marge intérieure et trait en millimètres ; le reste en pourcentages.
+import { fontSpec, touchFont, DEFAULT_FONT } from './fonts.js';
 
 export const BUBBLE_KINDS = [
   { id: 'parole', name: 'Parole', icon: 'message-circle' },
@@ -16,29 +17,32 @@ export const TAILS = [
   { id: 'pointe', name: 'Pointe' }, { id: 'fleche', name: 'Flèche' }, { id: 'bulles', name: 'Bulles de pensée' }, { id: 'none', name: 'Aucune' },
 ];
 
-// Réglages d'origine de chaque type ; ce que la bulle porte elle-même (shape, radius, pad, stroke, tailStyle) les remplace.
+// Réglages d'origine de chaque type ; ce que la bulle porte elle-même les remplace.
+//  wobble : imperfection du contour (0 = géométrique, 100 = très tremblé)
+//  tailW : largeur de la base de la queue, en % du petit côté ; tailRound : -100 creuse … +100 bombée ;
+//  tailBend : courbure d'ensemble (-100 … +100) ; tailTip : pointe émoussée (0 = aiguë)
+const BASE = { radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
 const PRESETS = {
-  parole: { shape: 'ellipse', tailStyle: 'pointe', radius: 0, pad: 2.5, stroke: 0.35 },
-  pensee: { shape: 'cloud', tailStyle: 'bulles', radius: 0, pad: 2.5, stroke: 0.35 },
-  narration: { shape: 'rect', tailStyle: 'none', radius: 0, pad: 2, stroke: 0.35 },
-  texte: { shape: 'none', tailStyle: 'none', radius: 0, pad: 0, stroke: 0.35 },
+  parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
+  pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
+  narration: { ...BASE, shape: 'rect', tailStyle: 'none', pad: 2, wobble: 12 },
+  texte: { ...BASE, shape: 'none', tailStyle: 'none', pad: 0, wobble: 0 },
 };
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
+const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle']);
 
 export function props(b) {
   const p = preset(b.kind);
-  for (const k of ['shape', 'tailStyle', 'radius', 'pad', 'stroke']) if (b[k] !== undefined) p[k] = b[k];
+  for (const k of KEYS) if (b[k] !== undefined) p[k] = b[k];
   if (!b.tail) p.tailStyle = 'none';
   return p;
 }
 
-const FONT = "600 %px 'Inter', 'Helvetica Neue', Arial, sans-serif";
 const mm = (v, dpi) => v / 25.4 * dpi;
-
 export const fontPx = (b, dpi) => b.pt / 72 * dpi;
 export const lineWidth = dpi => Math.max(2, Math.round(0.35 / 25.4 * dpi));
 
-function setFont(ctx, b, dpi) { ctx.font = FONT.replace('%', fontPx(b, dpi).toFixed(1)); }
+function setFont(ctx, b, dpi) { const p = props(b); touchFont(p.font); ctx.font = fontSpec(p.font, fontPx(b, dpi)); }
 const shown = b => (b.caps ? b.text.toLocaleUpperCase('fr') : b.text);
 const roundy = shape => shape === 'ellipse' || shape === 'cloud' || shape === 'libre';
 
@@ -85,8 +89,81 @@ export function pathBounds(path) {
   return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
 }
 
-// Tracé lissé et fermé passant au milieu des segments.
-function tracePath(ctx, pts) {
+// ───────────────────────── Imperfections ─────────────────────────
+
+// Bruit périodique sur [0, 1[ : somme de sinus dont les phases viennent de l'identifiant de la bulle,
+// donc le même contour à chaque affichage, et un autre pour chaque bulle (ou après « autre tracé »).
+function noiseFn(b) {
+  let h = 2166136261;
+  for (const ch of String(b.id || '') + ':' + (b.seed || 0)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) + 374761393 | 0) >>> 0) / 4294967296;
+  const waves = [[2, 1], [3, .8], [5, .55], [7, .4], [11, .25], [17, .15]].map(([k, a]) => [k, a, rnd() * Math.PI * 2]);
+  const norm = waves.reduce((s, w) => s + w[1], 0);
+  return t => waves.reduce((s, [k, a, ph]) => s + a * Math.sin(Math.PI * 2 * k * t + ph), 0) / norm;
+}
+
+// Contour sous forme de points, déformé selon `wobble` : sert au tracé et au calcul de l'attache de la queue.
+function outlinePoints(b, p) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2, small = Math.min(b.w, b.h);
+  const amp = p.wobble / 100 * small * 0.07, noise = noiseFn(b), pts = [];
+  if (p.shape === 'libre' && b.path && b.path.length > 2) return b.path.map(q => ({ x: q.x, y: q.y }));
+  if (p.shape === 'rect') {
+    const r = Math.min(p.radius / 100 * small / 2, small / 2), step = Math.max(small / 7, 12);
+    const corner = (ox, oy, a0) => Array.from({ length: r > 0 ? 9 : 1 }, (_, i) => {
+      const a = a0 + (r > 0 ? i / 8 : 0) * Math.PI / 2;
+      return { x: ox + Math.cos(a) * r, y: oy + Math.sin(a) * r };
+    });
+    const edge = (a, c) => {
+      const n = Math.max(1, Math.round(Math.hypot(c.x - a.x, c.y - a.y) / step)), out = [];
+      for (let i = 1; i < n; i++) out.push({ x: a.x + (c.x - a.x) * i / n, y: a.y + (c.y - a.y) * i / n });
+      return out;
+    };
+    const corners = [corner(b.x + b.w - r, b.y + r, -Math.PI / 2), corner(b.x + b.w - r, b.y + b.h - r, 0),
+      corner(b.x + r, b.y + b.h - r, Math.PI / 2), corner(b.x + r, b.y + r, Math.PI)];
+    for (let i = 0; i < 4; i++) {
+      const cur = corners[i], nxt = corners[(i + 1) % 4];
+      pts.push(...cur, ...edge(cur[cur.length - 1], nxt[0]));
+    }
+  } else {
+    const n = p.shape === 'cloud' ? 96 : 72;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      pts.push({ x: cx + Math.cos(a) * rx * (p.shape === 'cloud' ? 1.08 : 1), y: cy + Math.sin(a) * ry * (p.shape === 'cloud' ? 1.08 : 1) });
+    }
+  }
+  if (amp <= 0) return pts;
+  // déplacement le long de la normale (vers l'extérieur du centre), selon l'abscisse curviligne
+  let total = 0; const cum = [0];
+  for (let i = 1; i <= pts.length; i++) { const a = pts[i - 1], c = pts[i % pts.length]; total += Math.hypot(c.x - a.x, c.y - a.y); cum.push(total); }
+  return pts.map((q, i) => {
+    const a = pts[(i + pts.length - 1) % pts.length], c = pts[(i + 1) % pts.length];
+    let nx = c.y - a.y, ny = -(c.x - a.x);
+    if (nx * (q.x - cx) + ny * (q.y - cy) < 0) { nx = -nx; ny = -ny; }
+    const len = Math.hypot(nx, ny) || 1, d = amp * noise(cum[i] / total);
+    return { x: q.x + nx / len * d, y: q.y + ny / len * d };
+  });
+}
+
+// Premier point où le rayon centre → cible sort du contour (le plus éloigné), avec le sens du bord.
+function rayHit(pts, cx, cy, tx, ty) {
+  const dx = tx - cx, dy = ty - cy, n = pts.length;
+  let best = null;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], c = pts[(i + 1) % n], ex = c.x - a.x, ey = c.y - a.y, den = dx * ey - dy * ex;
+    if (!den) continue;
+    const u = ((a.x - cx) * ey - (a.y - cy) * ex) / den, w = ((a.x - cx) * dy - (a.y - cy) * dx) / den;
+    if (u > 0 && w >= 0 && w <= 1 && (!best || u > best.u)) {
+      const len = Math.hypot(ex, ey) || 1;
+      best = { u, x: cx + dx * u, y: cy + dy * u, edge: { x: ex / len, y: ey / len } };
+    }
+  }
+  return best;
+}
+
+// ───────────────────────── Tracés ─────────────────────────
+
+// Courbe fermée passant au milieu des segments (ellipse, nuage, bulle dessinée).
+function smooth(ctx, pts) {
   const mid = (a, c) => ({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 });
   const n = pts.length, m0 = mid(pts[n - 1], pts[0]);
   ctx.moveTo(m0.x, m0.y);
@@ -94,85 +171,75 @@ function tracePath(ctx, pts) {
   ctx.closePath();
 }
 
-function traceCloud(ctx, b, lw) {
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2;
+function polygon(ctx, pts) {
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+}
+
+function traceCloud(ctx, b, p, lw) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2, noise = noiseFn(b);
   const n = Math.max(10, Math.round((rx + ry) / (Math.max(lw, 2) * 4)));
+  const bump = i => 1.16 + p.wobble / 100 * 0.14 * noise((i + 0.5) / n);
   for (let i = 0; i < n; i++) {
-    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2;
+    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2, k = bump(i);
     if (i === 0) ctx.moveTo(cx + Math.cos(a0) * rx, cy + Math.sin(a0) * ry);
-    ctx.quadraticCurveTo(cx + Math.cos(am) * rx * 1.16, cy + Math.sin(am) * ry * 1.16, cx + Math.cos(a1) * rx, cy + Math.sin(a1) * ry);
+    ctx.quadraticCurveTo(cx + Math.cos(am) * rx * k, cy + Math.sin(am) * ry * k, cx + Math.cos(a1) * rx, cy + Math.sin(a1) * ry);
   }
   ctx.closePath();
 }
 
-function traceShape(ctx, b, p, lw) {
+function traceShape(ctx, b, p, pts, lw) {
   ctx.beginPath();
-  if (p.shape === 'rect') {
-    const r = p.radius / 100 * Math.min(b.w, b.h) / 2;
-    if (r > 0 && ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, r); else ctx.rect(b.x, b.y, b.w, b.h);
-  } else if (p.shape === 'cloud') traceCloud(ctx, b, lw);
-  else if (p.shape === 'libre' && b.path && b.path.length > 2) tracePath(ctx, b.path);
+  if (p.shape === 'cloud') traceCloud(ctx, b, p, lw);
+  else if (p.shape === 'rect') {
+    if (p.wobble > 0) polygon(ctx, pts);
+    else { const r = p.radius / 100 * Math.min(b.w, b.h) / 2; if (r > 0 && ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, r); else ctx.rect(b.x, b.y, b.w, b.h); }
+  } else if (p.shape === 'libre') smooth(ctx, pts);
+  else if (p.wobble > 0) smooth(ctx, pts);
   else ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
 }
 
-// Point du contour dans la direction de la queue, et sens du bord (pour la base de la queue).
-function anchor(b, p, t) {
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2;
-  if (p.shape === 'libre' && b.path && b.path.length > 2) {
-    // contour dessiné : le point d'attache est la dernière intersection du rayon centre → queue avec le tracé
-    const dx = t.x - cx, dy = t.y - cy, n = b.path.length;
-    let best = null;
-    for (let i = 0; i < n; i++) {
-      const a = b.path[i], c = b.path[(i + 1) % n], ex = c.x - a.x, ey = c.y - a.y;
-      const den = dx * ey - dy * ex;
-      if (!den) continue;
-      const u = ((a.x - cx) * ey - (a.y - cy) * ex) / den, w = ((a.x - cx) * dy - (a.y - cy) * dx) / den;
-      if (u > 0 && u <= 1 && w >= 0 && w <= 1 && (!best || u > best.u)) {
-        const len = Math.hypot(ex, ey) || 1;
-        best = { u, x: cx + dx * u, y: cy + dy * u, edge: { x: ex / len, y: ey / len }, ellipse: false };
-      }
-    }
-    if (best) return best;
-  }
-  if (p.shape === 'rect') {
-    const dx = t.x - cx, dy = t.y - cy;
-    const kx = dx ? rx / Math.abs(dx) : Infinity, ky = dy ? ry / Math.abs(dy) : Infinity, k = Math.min(kx, ky);
-    return { x: cx + dx * k, y: cy + dy * k, edge: ky <= kx ? { x: 1, y: 0 } : { x: 0, y: 1 }, ellipse: false };
-  }
-  const a = Math.atan2((t.y - cy) / ry, (t.x - cx) / rx);
-  return { x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, angle: a, ellipse: true };
-}
+// ───────────────────────── Queue ─────────────────────────
 
-function drawTail(ctx, b, p, lw) {
-  const t = b.tail, cx = b.x + b.w / 2, cy = b.y + b.h / 2, A = anchor(b, p, t);
-  const toward = q => ({ x: q.x + (cx - q.x) * 0.07, y: q.y + (cy - q.y) * 0.07 });
+function drawTail(ctx, b, p, pts, lw) {
+  const t = b.tail, cx = b.x + b.w / 2, cy = b.y + b.h / 2, small = Math.min(b.w, b.h);
+  const A = rayHit(pts, cx, cy, t.x, t.y);
+  if (!A) return;
+  const len = Math.hypot(t.x - A.x, t.y - A.y) || 1, ux = (t.x - A.x) / len, uy = (t.y - A.y) / len, nx = -uy, ny = ux;
+  const half = p.tailW / 100 * small / 2;
+
   if (p.tailStyle === 'pointe') {
-    let p1, p2;
-    if (A.ellipse) {
-      const d = 0.32, rx = b.w / 2, ry = b.h / 2;
-      p1 = { x: cx + Math.cos(A.angle - d) * rx, y: cy + Math.sin(A.angle - d) * ry };
-      p2 = { x: cx + Math.cos(A.angle + d) * rx, y: cy + Math.sin(A.angle + d) * ry };
-    } else {
-      const hw = Math.min(b.w, b.h) * 0.14;
-      p1 = { x: A.x + A.edge.x * hw, y: A.y + A.edge.y * hw }; p2 = { x: A.x - A.edge.x * hw, y: A.y - A.edge.y * hw };
-    }
-    ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y); ctx.lineTo(t.x, t.y); ctx.lineTo(p2.x, p2.y);
-    ctx.lineTo(toward(p2).x, toward(p2).y); ctx.lineTo(toward(p1).x, toward(p1).y); ctx.closePath();
-    ctx.fill();
-    if (lw > 0) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(t.x, t.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+    // les deux coins de la base sont ramenés sur le contour, quelle que soit sa forme
+    const hit = s => rayHit(pts, cx, cy, A.x + nx * half * s, A.y + ny * half * s) || A;
+    const B1 = hit(1), B2 = hit(-1);
+    const round = Math.max(-half * 0.45, p.tailRound / 100 * len * 0.22), bend = p.tailBend / 100 * len * 0.4;
+    const C1 = { x: (B1.x + t.x) / 2 + nx * (round + bend), y: (B1.y + t.y) / 2 + ny * (round + bend) };
+    const C2 = { x: (B2.x + t.x) / 2 - nx * (round - bend), y: (B2.y + t.y) / 2 - ny * (round - bend) };
+    const tw = p.tailTip / 100 * half * 0.9, T1 = { x: t.x + nx * tw, y: t.y + ny * tw }, T2 = { x: t.x - nx * tw, y: t.y - ny * tw };
+    const inward = q => { const k = Math.min(0.5, (small * 0.06 + lw * 2) / (Math.hypot(cx - q.x, cy - q.y) || 1)); return { x: q.x + (cx - q.x) * k, y: q.y + (cy - q.y) * k }; };
+    const edges = () => {
+      ctx.moveTo(B1.x, B1.y); ctx.quadraticCurveTo(C1.x, C1.y, T1.x, T1.y);
+      if (tw > 0) ctx.quadraticCurveTo(t.x + ux * tw * 1.2, t.y + uy * tw * 1.2, T2.x, T2.y);
+      ctx.quadraticCurveTo(C2.x, C2.y, B2.x, B2.y);
+    };
+    ctx.beginPath(); edges(); ctx.lineTo(inward(B2).x, inward(B2).y); ctx.lineTo(inward(B1).x, inward(B1).y); ctx.closePath(); ctx.fill();
+    if (lw > 0) { ctx.beginPath(); edges(); ctx.stroke(); }
   } else if (p.tailStyle === 'fleche') {
-    const w = Math.max(lw, 2), ang = Math.atan2(t.y - A.y, t.x - A.x), head = Math.max(w * 5, Math.min(b.w, b.h) * 0.16);
-    ctx.save(); ctx.lineWidth = w * 1.3;
-    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(t.x, t.y);
+    const w = Math.max(lw, 2) * 1.3, bend = p.tailBend / 100 * len * 0.4, head = Math.max(w * 5, p.tailW / 100 * small * 0.7);
+    const C = { x: (A.x + t.x) / 2 + nx * bend, y: (A.y + t.y) / 2 + ny * bend };
+    const ang = Math.atan2(t.y - C.y, t.x - C.x);
+    ctx.save(); ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.quadraticCurveTo(C.x, C.y, t.x, t.y);
     ctx.moveTo(t.x, t.y); ctx.lineTo(t.x - Math.cos(ang - 0.45) * head, t.y - Math.sin(ang - 0.45) * head);
     ctx.moveTo(t.x, t.y); ctx.lineTo(t.x - Math.cos(ang + 0.45) * head, t.y - Math.sin(ang + 0.45) * head);
     ctx.stroke(); ctx.restore();
   } else if (p.tailStyle === 'bulles') {
-    const sx = A.x + (A.x - cx) * 0.2, sy = A.y + (A.y - cy) * 0.2;
-    [0.3, 0.62, 0.92].forEach((k, i) => {
-      const r = Math.max(lw * 1.5, Math.min(b.w, b.h) * (0.08 - i * 0.02));
-      ctx.beginPath(); ctx.arc(sx + (t.x - sx) * k, sy + (t.y - sy) * k, r, 0, Math.PI * 2); ctx.fill(); if (lw > 0) ctx.stroke();
+    const sx = A.x + (A.x - cx) * 0.1, sy = A.y + (A.y - cy) * 0.1, k = p.tailW / 24;
+    [0.3, 0.62, 0.92].forEach((s, i) => {
+      const r = Math.max(lw * 1.5, small * (0.08 - i * 0.02) * k);
+      const bend = Math.sin(s * Math.PI) * p.tailBend / 100 * len * 0.4;
+      ctx.beginPath(); ctx.arc(sx + (t.x - sx) * s + nx * bend, sy + (t.y - sy) * s + ny * bend, r, 0, Math.PI * 2); ctx.fill(); if (lw > 0) ctx.stroke();
     });
   }
 }
@@ -184,9 +251,10 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(lw, 0.001);
   const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const pts = outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p);
 
-  if (p.shape !== 'none') { traceShape(ctx, b, p, lw); ctx.fill(); if (lw > 0) ctx.stroke(); }
-  if (b.tail && p.tailStyle !== 'none') drawTail(ctx, b, p, lw);
+  if (p.shape !== 'none') { traceShape(ctx, b, p, pts, lw); ctx.fill(); if (lw > 0) ctx.stroke(); }
+  if (b.tail && p.tailStyle !== 'none') drawTail(ctx, b, p, pts, lw);
 
   if (b.text) {
     setFont(ctx, b, dpi);

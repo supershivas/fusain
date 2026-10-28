@@ -1,18 +1,19 @@
 // Vue : une seule toile affiche la page (papier, cases, bulles, aides). Chaque case garde son propre
 // canevas, recomposé seulement là où on a dessiné.
-import { ed, page } from './editor.js';
+import { ed, page, gutterHandles } from './editor.js';
 import { pageSize } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawBubble, lineWidth } from './bubbles.js';
 
 export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1 };
 let canvas, ctx, raf = 0;
-const overlay = { cursor: null, shape: null, free: null };
+const overlay = { cursor: null, shape: null, free: null, guide: null };
 const caches = new WeakMap();
 
 export function attach(el) {
   canvas = el; ctx = canvas.getContext('2d');
   new ResizeObserver(resize).observe(canvas.parentElement);
+  if (document.fonts) document.fonts.addEventListener('loadingdone', requestRender);   // une police de bulle vient d'arriver
   resize();
 }
 
@@ -170,6 +171,7 @@ export function render() {
   if (ed.showNotes) drawNotes(pg);
   drawBubbleSelection(pg, accent);
   drawShapePreview(accent);
+  if (ed.tool === 'layout') drawGutters(pg, accent);
   if (overlay.free && overlay.free.length > 1) {
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath();
     overlay.free.forEach((q, i) => { const a = toScreen(q.x, q.y); i ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); });
@@ -222,6 +224,23 @@ function drawShapePreview(accent) {
   else if (sh.kind === 'rect') ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
   else ctx.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
   ctx.stroke(); ctx.setLineDash([]);
+}
+
+// Poignées des gouttières : un trait le long de chaque gouttière et une tirette en son milieu.
+function drawGutters(pg, accent) {
+  const g = overlay.guide;
+  for (const h of gutterHandles()) {
+    const v = h.axis === 'v', a = toScreen(v ? h.pos : h.span[0], v ? h.span[0] : h.pos), b = toScreen(v ? h.pos : h.span[1], v ? h.span[1] : h.pos);
+    ctx.strokeStyle = accent; ctx.globalAlpha = 0.35; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.globalAlpha = 1;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, w = v ? 16 : 44, hh = v ? 44 : 16;
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(mx - w / 2, my - hh / 2, w, hh, 8); ctx.fill();
+    ctx.fillStyle = '#fff';
+    for (const k of [-1, 0, 1]) { ctx.beginPath(); ctx.arc(v ? mx : mx + k * 10, v ? my + k * 10 : my, 2, 0, Math.PI * 2); ctx.fill(); }
+  }
+  if (g) {
+    const v = g.axis === 'v', a = toScreen(v ? g.pos : g.s0, v ? g.s0 : g.pos), b = toScreen(v ? g.pos : g.s1, v ? g.s1 : g.pos);
+    ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+  }
 }
 
 export const canvasEl = () => canvas;
