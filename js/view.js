@@ -5,7 +5,8 @@ import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
 
-export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1, moved: false };   // moved : l'utilisateur a zoomé ou déplacé la page
+// r : rotation de la page à l'écran (radians, autour de l'origine ox, oy) ; moved : l'utilisateur a zoomé, tourné ou déplacé la page
+export const view = { s: 1, ox: 0, oy: 0, r: 0, w: 0, h: 0, dpr: 1, moved: false };
 let canvas, ctx, raf = 0;
 const overlay = { cursor: null, shape: null, free: null, guide: null };
 const caches = new WeakMap();
@@ -33,17 +34,30 @@ export const pageDims = () => pageSize(ed.project);
 export function fit() {
   if (!ed.project || !view.w) return;
   const { w, h } = pageDims(), pad = view.w < 700 ? 8 : 24;
-  view.moved = false;
+  view.moved = false; view.r = 0;
   view.s = Math.min((view.w - pad * 2) / w, (view.h - pad * 2) / h);
   view.ox = (view.w - w * view.s) / 2; view.oy = (view.h - h * view.s) / 2;
   requestRender();
 }
 
-export const toPage = (sx, sy) => ({ x: (sx - view.ox) / view.s, y: (sy - view.oy) / view.s });
-export const toScreen = (px, py) => ({ x: px * view.s + view.ox, y: py * view.s + view.oy });
+export const toPage = (sx, sy) => {
+  const dx = (sx - view.ox) / view.s, dy = (sy - view.oy) / view.s;
+  if (!view.r) return { x: dx, y: dy };
+  const c = Math.cos(view.r), s = Math.sin(view.r);
+  return { x: dx * c + dy * s, y: -dx * s + dy * c };
+};
+export const toScreen = (px, py) => {
+  if (!view.r) return { x: px * view.s + view.ox, y: py * view.s + view.oy };
+  const c = Math.cos(view.r), s = Math.sin(view.r);
+  return { x: (px * c - py * s) * view.s + view.ox, y: (px * s + py * c) * view.s + view.oy };
+};
 
 export function clampView() {
   const { w, h } = pageDims(), m = 80;
+  if (view.r) {   // page tournée : on garde seulement son centre dans la zone
+    const c = toScreen(w / 2, h / 2), dx = Math.min(view.w - m, Math.max(m, c.x)) - c.x, dy = Math.min(view.h - m, Math.max(m, c.y)) - c.y;
+    view.ox += dx; view.oy += dy; return;
+  }
   view.ox = Math.min(view.w - m, Math.max(m - w * view.s, view.ox));
   view.oy = Math.min(view.h - m, Math.max(m - h * view.s, view.oy));
 }
@@ -56,9 +70,20 @@ export function zoomAt(sx, sy, factor) {
   clampView(); requestRender();
 }
 
+// Tourne la page d'un quart de tour (ou de `rad`) autour du centre de la zone ; sans argument, remet la page droite.
+export function rotateView(rad) {
+  const cx = view.w / 2, cy = view.h / 2, p = toPage(cx, cy);
+  let r = rad === undefined ? 0 : view.r + rad;
+  r = ((r + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  const c = Math.cos(r), s = Math.sin(r);
+  view.r = r; view.ox = cx - (p.x * c - p.y * s) * view.s; view.oy = cy - (p.x * s + p.y * c) * view.s; view.moved = true;
+  clampView(); requestRender();
+}
+
 export function panBy(dx, dy) { view.ox += dx; view.oy += dy; view.moved = true; clampView(); requestRender(); }
-export function setView(s, ox, oy) {
+export function setView(s, ox, oy, r = view.r) {
   const { w } = pageDims(), minS = Math.min(view.w / w, 0.5) * 0.4;
+  view.r = r;
   view.s = Math.max(minS, Math.min(16, s)); view.ox = ox; view.oy = oy; view.moved = true; clampView(); requestRender();
 }
 
@@ -142,7 +167,8 @@ export function render() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   if (!ed.project) return;
   const pg = page(), { w, h } = pageDims(), s = view.s, dpr = view.dpr;
-  ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * view.ox, dpr * view.oy);
+  const cr = Math.cos(view.r), sr = Math.sin(view.r);
+  ctx.setTransform(dpr * s * cr, dpr * s * sr, -dpr * s * sr, dpr * s * cr, dpr * view.ox, dpr * view.oy);
 
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14 * dpr / s; ctx.shadowOffsetY = 3 * dpr / s;
@@ -166,9 +192,10 @@ export function render() {
   const accent = css('--accent') || '#C0392B';
   const active = pg.panels.find(p => p.id === ed.panelId);
   if (active && ed.tool !== 'bubble') {
-    const a = toScreen(active.x, active.y);
+    const m = toScreen(active.x + active.w / 2, active.y + active.h / 2);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([]);
-    ctx.strokeRect(a.x - 3, a.y - 3, active.w * s + 6, active.h * s + 6);
+    ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(view.r);
+    ctx.strokeRect(-active.w * s / 2 - 3, -active.h * s / 2 - 3, active.w * s + 6, active.h * s + 6); ctx.restore();
   }
   if (ed.showNotes) drawNotes(pg);
   drawBubbleSelection(pg, accent);
@@ -207,17 +234,17 @@ export function bubbleCross(b) { const c = bubbleToPage(b, b.x + b.w, b.y), q = 
 // Coin bas droit (taille) et poignée de rotation (au-dessus du milieu du bord haut, dans l'axe de la bulle), en pixels d'écran.
 export function bubbleCorner(b) { const c = bubbleToPage(b, b.x + b.w, b.y + b.h); return toScreen(c.x, c.y); }
 export function bubbleRotHandle(b) {
-  const c = bubbleToPage(b, b.x + b.w / 2, b.y), q = toScreen(c.x, c.y), a = (b.rot || 0) * Math.PI / 180;
+  const c = bubbleToPage(b, b.x + b.w / 2, b.y), q = toScreen(c.x, c.y), a = (b.rot || 0) * Math.PI / 180 + view.r;
   return { x: q.x + Math.sin(a) * 34, y: q.y - Math.cos(a) * 34 };
 }
 
 function drawBubbleSelection(pg, accent) {
   const b = pg.bubbles.find(x => x.id === ed.bubbleId);
   if (!b || b.hidden || pg.bubblesHidden) return;
-  const tl = toScreen(b.x, b.y), br = toScreen(b.x + b.w, b.y + b.h), mc = toScreen(b.x + b.w / 2, b.y + b.h / 2);
+  const mc = toScreen(b.x + b.w / 2, b.y + b.h / 2), sw = b.w * view.s, sh = b.h * view.s;
   ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
-  ctx.save(); ctx.translate(mc.x, mc.y); ctx.rotate((b.rot || 0) * Math.PI / 180);
-  ctx.strokeRect(tl.x - mc.x - 4, tl.y - mc.y - 4, br.x - tl.x + 8, br.y - tl.y + 8); ctx.restore(); ctx.setLineDash([]);
+  ctx.save(); ctx.translate(mc.x, mc.y); ctx.rotate((b.rot || 0) * Math.PI / 180 + view.r);
+  ctx.strokeRect(-sw / 2 - 4, -sh / 2 - 4, sw + 8, sh + 8); ctx.restore(); ctx.setLineDash([]);
   const handle = (p, icon) => {
     ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
@@ -244,11 +271,12 @@ function drawBubbleSelection(pg, accent) {
 function drawShapePreview(accent) {
   const sh = overlay.shape;
   if (!sh) return;
-  const a = toScreen(sh.x0, sh.y0), b = toScreen(sh.x1, sh.y1);
   ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath();
-  if (sh.kind === 'line') { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
-  else if (sh.kind === 'rect') ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
-  else ctx.ellipse((a.x + b.x) / 2, (a.y + b.y) / 2, Math.abs(b.x - a.x) / 2, Math.abs(b.y - a.y) / 2, 0, 0, Math.PI * 2);
+  const pts = [];   // contour en coordonnées de page, tracé en pixels d'écran (la page peut être tournée)
+  if (sh.kind === 'line') pts.push([sh.x0, sh.y0], [sh.x1, sh.y1]);
+  else if (sh.kind === 'rect') pts.push([sh.x0, sh.y0], [sh.x1, sh.y0], [sh.x1, sh.y1], [sh.x0, sh.y1], [sh.x0, sh.y0]);
+  else for (let i = 0; i <= 48; i++) { const t = i / 48 * Math.PI * 2; pts.push([(sh.x0 + sh.x1) / 2 + Math.cos(t) * (sh.x1 - sh.x0) / 2, (sh.y0 + sh.y1) / 2 + Math.sin(t) * (sh.y1 - sh.y0) / 2]); }
+  pts.forEach(([x, y], i) => { const q = toScreen(x, y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); });
   ctx.stroke(); ctx.setLineDash([]);
 }
 

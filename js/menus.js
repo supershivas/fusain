@@ -21,7 +21,7 @@ const menus = () => {
       ...TOOLS.map(t => ['tool:' + t.id, t.label.replace(/ \(.\)$/, ''), t.icon, t.key.toUpperCase()]), null,
       ['lib-brushes', 'Bibliothèque de pinceaux…', 'brush'], ['lib-tramas', 'Bibliothèque de trames…', 'texture'], ['lib-bubbles', 'Modèles de bulles…', 'message-circle']]],
     ['Image', [
-      ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
+      ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['rot-view', 'Tourner la page de 90°', 'rotate-clockwise'], ['rot-reset', 'Remettre la page droite', 'rotate-2'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
       ['tool-layout', 'Taille des cases', 'layout-board-split', 'L'], ['relayout', 'Disposition des cases…', 'layout-grid'], ['frame', `Trait du cadre (case ${idx + 1})`, 'border-style'], ['dither', 'Image tramée…', 'photo']]],
     ['Calque', [
       ['add-ink', 'Nouveau calque d\'encre', 'plus'], ['add-tram', 'Nouveau calque de trame', 'plus'], ['add-draft', 'Nouveau brouillon', 'plus'], null,

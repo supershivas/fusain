@@ -7,7 +7,7 @@ import {
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
-import { attach, fit, view, zoomAt, requestRender, resize, invalidate } from './view.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateView } from './view.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
@@ -1101,6 +1101,7 @@ const COMMANDS = {
   frame: () => { secState.cf = true; showDock('page'); },
   dither: ditherModal,
   'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
+  'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
   'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
   'solo-layer': () => setSolo(activeLayer().id),
