@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.0 — 2026-10-28
+- Le pot de peinture remplit même si le contour n'est pas tout à fait fermé (trous jusqu'à 2,5 mm)
+- Curseur de tolérance dans la barre du haut, réglé au maximum par défaut
+
 ## 1.10.4 — 2026-10-28
 - Le double tape du stylet ne change plus d’outil (le bouton du flanc le fait toujours)
 

@@ -225,6 +225,8 @@ const vToSize = v => {
   const mm = 0.05 * Math.pow(600, v / 100);
   return +(mm < 1 ? Math.round(mm / 0.05) * 0.05 : mm < 5 ? Math.round(mm / 0.1) * 0.1 : Math.round(mm / 0.5) * 0.5).toFixed(2);
 };
+// Remplissage : tolérance aux contours ouverts (0 = fermés seulement).
+const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" min="0" max="100" value="${ed.fillGap}" aria-label="Tolérance aux trous du contour"><span class="unit" id="o-gap-v">${ed.fillGap} %</span></span>`;
 // Taille : un seul curseur et un champ en millimètres.
 function sizeControl() {
   return `<span class="opt size"><input type="range" id="o-size" min="0" max="100" value="${sizeToV(ed.sizeMm)}" aria-label="Taille du trait">
@@ -250,7 +252,7 @@ export function renderOptbar() {
   }
   else if (t === 'eraser') html = brushControl() + sizeControl() + pressureControl() + popBtn('brush');
   else if (t === 'texture') html = tramaControl() + sizeControl() + pressureControl() + inkControl() + popBtn('trama');
-  else if (t === 'fill') html = tramaControl() + inkControl() + popBtn('trama');
+  else if (t === 'fill') html = tramaControl() + gapControl() + inkControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
@@ -328,6 +330,7 @@ function onOptInput(e) {
   const id = e.target.id;
   if (id === 'o-size') { setSizeMm(vToSize(+e.target.value)); showSize('o-size'); }
   else if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); showSize('o-mm'); } }
+  else if (id === 'o-gap') { ed.fillGap = +e.target.value; const v = $('#o-gap-v', root); if (v) v.textContent = ed.fillGap + ' %'; savePrefs(); }
   else if (id === 'o-filled') { ed.shapeFilled = e.target.checked; savePrefs(); }
 }
 

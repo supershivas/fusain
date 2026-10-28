@@ -94,7 +94,7 @@ function begin(p, pt) {
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
     stampBrush(session.ctx, lx, ly, d); flush(session);
   } else if (tool === 'fill') {
-    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly);
+    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
     if (!region) return;
     ed.undo.begin('Remplir');
     const ctx = makeCtx(p, layer, { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
@@ -107,6 +107,9 @@ function begin(p, pt) {
     setOverlay({ shape: { kind: ed.shapeKind, x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y } });
   }
 }
+
+// Trou toléré dans un contour : le curseur (0–100) va jusqu'à 2,5 mm.
+const fillGapPx = () => Math.round(ed.fillGap / 100 * 2.5 / 25.4 * ed.project.dpi);
 
 export function move(pt) {
   if (!session) return;

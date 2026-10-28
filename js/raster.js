@@ -375,10 +375,13 @@ export function drawEllipse(ctx, x0, y0, x1, y1, d, filled) {
 
 // Région connexe du « même type » que le point de départ : encre (1) ou non-encre (0 ou 2).
 // src : valeurs composées de la case (0/1/2), w × h. Renvoie { mask, x0, y0, x1, y1 } ou null.
-export function floodRegion(src, w, h, sx, sy) {
+// gap : largeur en pixels des trous d'un contour qu'on accepte de traverser (0 = contour fermé exigé).
+export function floodRegion(src, w, h, sx, sy, gap = 0) {
   if (sx < 0 || sy < 0 || sx >= w || sy >= h) return null;
   const isInk = v => v === INK ? 1 : 0;
   const target = isInk(src[sy * w + sx]);
+  const r = Math.floor(gap / 2);
+  if (r > 0 && !target) return floodClosed(src, w, h, sx, sy, r);
   const mask = new Uint8Array(w * h);
   const stack = [sx, sy];
   let x0 = sx, x1 = sx, y0 = sy, y1 = sy;
@@ -400,6 +403,56 @@ export function floodRegion(src, w, h, sx, sy) {
     }
   }
   return { mask, x0, y0, x1, y1 };
+}
+
+// Dilatation carrée de rayon r d'un masque 0/1 (fenêtre glissante, une passe par axe).
+function dilate(m, w, h, r) {
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let n = 0; const o = y * w;
+    for (let x = 0; x < Math.min(r, w); x++) n += m[o + x];
+    for (let x = 0; x < w; x++) {
+      if (x + r < w) n += m[o + x + r];
+      if (x - r - 1 >= 0) n -= m[o + x - r - 1];
+      tmp[o + x] = n > 0 ? 1 : 0;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let y = 0; y < Math.min(r, h); y++) n += tmp[y * w + x];
+    for (let y = 0; y < h; y++) {
+      if (y + r < h) n += tmp[(y + r) * w + x];
+      if (y - r - 1 >= 0) n -= tmp[(y - r - 1) * w + x];
+      out[y * w + x] = n > 0 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+// Remplissage qui traverse les trous : l'encre est épaissie de r pour boucher les contours ouverts, on remplit la zone libre
+// atteinte, puis on la regonfle de r (sans entrer dans l'encre) pour qu'elle rejoigne les traits.
+function floodClosed(src, w, h, sx, sy, r) {
+  const ink = new Uint8Array(w * h);
+  for (let i = 0; i < ink.length; i++) ink[i] = src[i] === INK ? 1 : 0;
+  const wall = dilate(ink, w, h, r);
+  let seed = sy * w + sx;
+  if (wall[seed]) {   // le clic est tout près d'un trait : on part du point libre le plus proche
+    let best = -1, bd = Infinity;
+    for (let y = Math.max(0, sy - 3 * r); y <= Math.min(h - 1, sy + 3 * r); y++) for (let x = Math.max(0, sx - 3 * r); x <= Math.min(w - 1, sx + 3 * r); x++) {
+      const d = (x - sx) ** 2 + (y - sy) ** 2;
+      if (!wall[y * w + x] && d < bd) { bd = d; best = y * w + x; }
+    }
+    if (best < 0) return floodRegion(src, w, h, sx, sy, 0);
+    seed = best;
+  }
+  const core = floodRegion(wall.map(v => v ? INK : 0), w, h, seed % w, (seed / w) | 0, 0);
+  const grown = dilate(core.mask, w, h, r);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (grown[i] && !ink[i]) { grown[i] = 1; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } else grown[i] = 0;
+  }
+  return x1 < 0 ? null : { mask: grown, x0, y0, x1, y1 };
 }
 
 export function applyRegion(ctx, region) {

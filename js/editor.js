@@ -13,7 +13,7 @@ export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null,
   tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
-  shapeKind: 'rect', shapeFilled: false,
+  shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
   fingerDraws: false, palm: 'strong', pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
@@ -28,7 +28,7 @@ export const TOOL_DEFAULTS = {
   pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
   texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3, brushId: 'stylo', brushParams: null },
-  fill: { ink: 1, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, maskErase: false },
 };
