@@ -1,7 +1,7 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect } from './raster.js';
-import { drawBubble, props } from './bubbles.js';
+import { drawPageBubble, props } from './bubbles.js';
 import { loadFont } from './fonts.js';
 
 // Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
@@ -25,7 +25,7 @@ export function renderPage(project, page, scale = 1) {
     const bw = mmToPx(panelStroke(p), project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
-  if (!page.bubblesHidden) for (const b of page.bubbles) if (!b.hidden) drawBubble(ctx, b, project.dpi);
+  if (!page.bubblesHidden) for (const b of page.bubbles) if (!b.hidden) drawPageBubble(ctx, b, project.dpi, page.panels);
   return c;
 }
 

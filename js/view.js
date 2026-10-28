@@ -3,7 +3,7 @@
 import { ed, page, gutterHandles } from './editor.js';
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
-import { drawBubble, tailOrigin } from './bubbles.js';
+import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
 
 export const view = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1, moved: false };   // moved : l'utilisateur a zoomé ou déplacé la page
 let canvas, ctx, raf = 0;
@@ -159,7 +159,7 @@ export function render() {
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
-  if (!pg.bubblesHidden) for (const b of pg.bubbles) if (!b.hidden) drawBubble(ctx, b, ed.project.dpi);
+  if (!pg.bubblesHidden) for (const b of pg.bubbles) if (!b.hidden) drawPageBubble(ctx, b, ed.project.dpi, pg.panels);
 
   // aides, en pixels d'écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -203,20 +203,31 @@ function drawNotes(pg) {
 }
 
 // Position écran de la croix de suppression d'une bulle : au-dessus de son coin haut droit.
-export function bubbleCross(b) { const q = toScreen(b.x + b.w, b.y); return { x: q.x + 4, y: q.y - 22 }; }
+export function bubbleCross(b) { const c = bubbleToPage(b, b.x + b.w, b.y), q = toScreen(c.x, c.y); return { x: q.x + 4, y: q.y - 22 }; }
+// Coin bas droit (taille) et poignée de rotation (au-dessus du milieu du bord haut, dans l'axe de la bulle), en pixels d'écran.
+export function bubbleCorner(b) { const c = bubbleToPage(b, b.x + b.w, b.y + b.h); return toScreen(c.x, c.y); }
+export function bubbleRotHandle(b) {
+  const c = bubbleToPage(b, b.x + b.w / 2, b.y), q = toScreen(c.x, c.y), a = (b.rot || 0) * Math.PI / 180;
+  return { x: q.x + Math.sin(a) * 34, y: q.y - Math.cos(a) * 34 };
+}
 
 function drawBubbleSelection(pg, accent) {
   const b = pg.bubbles.find(x => x.id === ed.bubbleId);
   if (!b || b.hidden || pg.bubblesHidden) return;
-  const tl = toScreen(b.x, b.y), br = toScreen(b.x + b.w, b.y + b.h);
+  const tl = toScreen(b.x, b.y), br = toScreen(b.x + b.w, b.y + b.h), mc = toScreen(b.x + b.w / 2, b.y + b.h / 2);
   ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
-  ctx.strokeRect(tl.x - 4, tl.y - 4, br.x - tl.x + 8, br.y - tl.y + 8); ctx.setLineDash([]);
+  ctx.save(); ctx.translate(mc.x, mc.y); ctx.rotate((b.rot || 0) * Math.PI / 180);
+  ctx.strokeRect(tl.x - mc.x - 4, tl.y - mc.y - 4, br.x - tl.x + 8, br.y - tl.y + 8); ctx.restore(); ctx.setLineDash([]);
   const handle = (p, icon) => {
     ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
     if (icon) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill(); }
   };
-  handle(br, true);
+  handle(bubbleCorner(b), true);
+  const rh = bubbleRotHandle(b), top = toScreen(...Object.values(bubbleToPage(b, b.x + b.w / 2, b.y)));   // poignée de rotation, reliée au bord haut
+  ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(rh.x, rh.y); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(rh.x, rh.y, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(rh.x, rh.y, 4.5, -2.4, 1.2); ctx.stroke();
   if (b.tail) handle(toScreen(b.tail.x, b.tail.y), true);
   const x = bubbleCross(b);   // petite croix : supprimer la bulle
   ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2;

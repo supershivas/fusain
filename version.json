@@ -1,8 +1,8 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "date": "2026-10-28",
   "changes": [
-    "Le pinceau trame utilise les pinceaux du crayon (pression du stylet, départ effilé, grain, stabilisation…)",
-    "Taille jusqu'à 50 mm pour les trames"
+    "Bulles : rotation (poignée sur la page ou curseur « Rotation » dans Forme)",
+    "Taille du texte jusqu'à 200 pt, avec l'option « Rogner à la case » pour qu'une bulle ne sorte pas du cadre"
   ]
 }

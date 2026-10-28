@@ -7,8 +7,8 @@ import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, gutterPlus } from './view.js';
-import { hitBubble, tailOrigin } from './bubbles.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, gutterPlus } from './view.js';
+import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 
 let session = null, hinted = null;   // hinted : dernier calque signalé par un toast de redirection
@@ -229,7 +229,8 @@ function bubbleDown(pt) {
   if (sel && !sel.hidden) {
     if (near(at, bubbleCross(sel), R)) { deleteBubble(sel); return; }
     if (sel.locked) { /* verrouillée : sélectionnable, pas déplaçable */ }
-    else if (near(at, toScreen(sel.x + sel.w, sel.y + sel.h), R)) { start(sel, 'resize', pt); return; }
+    else if (near(at, bubbleRotHandle(sel), R)) { start(sel, 'rotate', pt); return; }
+    else if (near(at, bubbleCorner(sel), R)) { start(sel, 'resize', pt); return; }
     if (!sel.locked && sel.tail && near(at, toScreen(sel.tail.x, sel.tail.y), R)) { start(sel, 'tail', pt); return; }
     const o = sel.locked ? null : tailOrigin(sel);
     if (o && near(at, toScreen(o.x, o.y), R)) { start(sel, 'origin', pt); return; }
@@ -253,10 +254,23 @@ function bubbleMove(pt) {
     if (o.tail) b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
     if (o.path) b.path = o.path.map(q => ({ x: Math.round(q.x + dx), y: Math.round(q.y + dy) }));
   } else if (s.mode === 'resize') {
-    b.w = Math.max(80, Math.round(o.w + dx)); b.h = Math.max(60, Math.round(o.h + dy)); b.auto = false;
-    if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(o.x + (q.x - o.x) * kx), y: Math.round(o.y + (q.y - o.y) * ky) })); }
+    // le déplacement se mesure dans l'axe de la bulle tournée ; le centre bouge de moitié, donc on recale x, y pour garder le coin haut gauche en place
+    const a = (o.rot || 0) * Math.PI / 180, ld = { x: dx * Math.cos(a) + dy * Math.sin(a), y: -dx * Math.sin(a) + dy * Math.cos(a) };
+    b.w = Math.max(80, Math.round(o.w + ld.x)); b.h = Math.max(60, Math.round(o.h + ld.y)); b.auto = false;
+    if (a) {
+      const dw = b.w - o.w, dh = b.h - o.h, cs = Math.cos(a), sn = Math.sin(a);
+      b.x = Math.round(o.x + (dw / 2) * (cs - 1) - (dh / 2) * sn); b.y = Math.round(o.y + (dw / 2) * sn + (dh / 2) * (cs - 1));
+    }
+    if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(b.x + (q.x - o.x) * kx), y: Math.round(b.y + (q.y - o.y) * ky) })); }
+  } else if (s.mode === 'rotate') {
+    let deg = Math.atan2(pt.y - (o.y + o.h / 2), pt.x - (o.x + o.w / 2)) * 180 / Math.PI + 90;
+    deg = ((Math.round(deg) % 360) + 360) % 360;
+    const snap = Math.round(deg / 15) * 15;
+    if (Math.abs(deg - snap) <= 3) deg = snap % 360;   // aimante aux multiples de 15°
+    b.rot = deg || undefined; if (!b.rot) delete b.rot;
   } else if (s.mode === 'origin') {
-    b.tailAngle = Math.round(((Math.atan2(pt.y - (b.y + b.h / 2), pt.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
+    const q = bubbleToLocal(b, pt.x, pt.y);
+    b.tailAngle = Math.round(((Math.atan2(q.y - (b.y + b.h / 2), q.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
   } else if (s.mode === 'tail') b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
   setOverlay({});
 }

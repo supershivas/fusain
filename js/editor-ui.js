@@ -568,6 +568,7 @@ function pagesTab() {
 const SLIDERS = {
   'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
   'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-rot': ['rot', v => `Rotation : ${v}°`],
   'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
   'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
   'b-tailbend': ['tailBend', v => `Courbure : ${v > 0 ? '+' : ''}${v}`], 'b-tailtip': ['tailTip', v => `Pointe émoussée : ${v} %`],
@@ -579,7 +580,7 @@ function bubbleText(b) {
   return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
       <textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
       <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
-      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="24" step="0.5" value="${b.pt}"></label>
+      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}"></label>
       <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
         <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
 }
@@ -588,7 +589,8 @@ function bubbleShape(b) {
   return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
       ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}${slider('b-stroke', p, 0, 2, 0.05)}`;
+      ${slider('b-pad', p, 0, 10, 0.5)}${slider('b-stroke', p, 0, 2, 0.05)}${slider('b-rot', p, 0, 359)}
+      <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>`;
 }
 function bubbleTail(b) {
   const p = props(b);
@@ -778,11 +780,13 @@ function onDockInput0(e) {
   else if (SLIDERS[id]) {
     const [key, label] = SLIDERS[id];
     b[key] = +e.target.value; e.target.previousElementSibling.textContent = label(b[key]);
+    if (key === 'rot' && !b.rot) delete b.rot;
     if (key === 'pad') refitBubble(b);
   }
+  else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else delete b.clip; }
   else if (id === 'b-origin-auto') {
     if (e.target.checked) delete b.tailAngle;
-    else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
+    else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) - (b.rot || 0) + 720) % 360);
   } else if (id === 'b-tailstyle') { b.tailStyle = e.target.value; setTail(b, b.tailStyle !== 'none'); }
   requestRender();
 }

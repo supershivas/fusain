@@ -35,8 +35,18 @@ export function props(b) {
   const p = preset(b.kind);
   for (const k of KEYS) if (b[k] !== undefined && b[k] !== null) p[k] = b[k];
   if (!b.tail) p.tailStyle = 'none';
+  p.rot = b.rot || 0;
   return p;
 }
+
+// Rotation d'une bulle (degrés, autour de son centre) : on dessine la bulle tournée, la pointe de la queue reste à sa place sur la page.
+const spin = (b, x, y, deg) => {
+  const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = x - cx, dy = y - cy;
+  return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+};
+export const bubbleToPage = (b, x, y) => b.rot ? spin(b, x, y, b.rot) : { x, y };
+export const bubbleToLocal = (b, x, y) => b.rot ? spin(b, x, y, -b.rot) : { x, y };
+const localBubble = b => b.rot && b.tail ? { ...b, tail: bubbleToLocal(b, b.tail.x, b.tail.y) } : b;
 
 const mm = (v, dpi) => v / 25.4 * dpi;
 export const fontPx = (b, dpi) => b.pt / 72 * dpi;
@@ -215,10 +225,11 @@ function tailAnchor(pts, b, p) {
 
 // Origine actuelle de la queue (pour la poignée d'édition).
 export function tailOrigin(b) {
+  b = localBubble(b);
   const p = props(b);
   if (!b.tail || p.tailStyle === 'none') return null;
   const A = tailAnchor(outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p), b, p);
-  return A ? { x: A.x, y: A.y } : null;
+  return A ? bubbleToPage(b, A.x, A.y) : null;
 }
 
 function drawTail(ctx, b, p, pts, lw) {
@@ -265,11 +276,13 @@ function drawTail(ctx, b, p, pts, lw) {
 
 // lwOverride : épaisseur du trait en pixels (le Labo compare des épaisseurs).
 export function drawBubble(ctx, b, dpi, lwOverride) {
+  b = localBubble(b);
   const p = props(b), lw = lwOverride !== undefined ? lwOverride : mm(p.stroke, dpi);
   ctx.save();
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (b.rot) { ctx.translate(cx, cy); ctx.rotate(b.rot * Math.PI / 180); ctx.translate(-cx, -cy); }
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(lw, 0.001);
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const pts = outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p);
 
   if (p.shape !== 'none') { traceShape(ctx, b, p, pts, lw); ctx.fill(); if (lw > 0) ctx.stroke(); }
@@ -287,6 +300,18 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
   ctx.restore();
 }
 
+// Dessine une bulle sur la page ; avec `clip`, elle est rognée au cadre de la case où se trouve son centre.
+export function drawPageBubble(ctx, b, dpi, panels) {
+  if (!b.clip) { drawBubble(ctx, b, dpi); return; }
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const p = panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
+    || panels.find(q => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y);
+  if (!p) { drawBubble(ctx, b, dpi); return; }
+  ctx.save(); ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
+  drawBubble(ctx, b, dpi); ctx.restore();
+}
+
 export function hitBubble(b, x, y) {
+  ({ x, y } = bubbleToLocal(b, x, y));
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 }

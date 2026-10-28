@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.13.0 — 2026-10-28
+- Bulles : rotation (poignée sur la page ou curseur « Rotation » dans Forme)
+- Taille du texte jusqu'à 200 pt, avec l'option « Rogner à la case » pour qu'une bulle ne sorte pas du cadre
+
 ## 1.12.0 — 2026-10-28
 - Le pinceau trame utilise les pinceaux du crayon (pression du stylet, départ effilé, grain, stabilisation…)
 - Taille jusqu'à 50 mm pour les trames
