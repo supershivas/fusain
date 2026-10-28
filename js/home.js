@@ -122,7 +122,7 @@ async function duplicateProject(rec) {
   syncSoon();
 }
 
-function newProjectModal() {
+export function newProjectModal() {
   let layoutId = '2x2', dpi = 300;
   const m = openModal({
     title: 'Nouveau projet', wide: false,
@@ -149,7 +149,7 @@ function newProjectModal() {
   });
 }
 
-function decoupageModal() {
+export function decoupageModal() {
   const m = openModal({
     title: 'Importer un découpage', wide: true,
     body: `<p>Un découpage est un fichier JSON (pages, cases, plans, dialogues) préparé hors de l'app. Fusain crée les pages, annote chaque case et pose les bulles ; il n'écrit aucune image.</p>

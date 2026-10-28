@@ -33,7 +33,8 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - `index.html`, `labo.html`, `css/` (`style.css`, `labo.css`, `mobile.css` synchronisé), `sw.js`, `manifest.webmanifest`.
 - `js/model.js` — document (projet, page, case, calque, bulle), formats, dispositions. Pixels d'un calque : octets 0 = transparent, 1 = encre, 2 = blanc.
 - Types de calques `kind` : `ink`, `tram`, `draft`. Chaque outil vise le calque de sa sorte (`targetLayer` / `peekTarget`, `editor.js`) : encre → `ink` (ou `draft` s'il est actif), trame → `tram`, gomme → calque actif ; un calque manquant est créé. Bulles : `hidden`, `locked`, et `bubblesHidden` par page (non exportées si masquées).
-- Volet de droite : sections `<details>` (`sec()` dans `editor-ui.js`, état gardé dans `fusain:sections`) ; tout contrôle fermé par défaut doit s'ouvrir avant d'être testé.
+- Réglages de l'outil : uniquement dans la barre du haut (`renderOptbar`, `editor-ui.js`). Le détail passe par une fenêtre flottante `#pop` (`popId` : `brush`, `trama`, `btext`, `bshape`, `btail`), qui ne se reconstruit pas si son HTML n'a pas changé (`syncPop`), pour ne pas perdre un toucher. Volet de droite = 3 onglets : **Calques** (calques, bulles, propriétés du calque), **Bibliothèque** (Pinceaux | Trames, selon l'outil), **Page** (pages, notes, cadre, masque, image, copie). Sections `<details>` (`sec()`, état dans `fusain:sections`) ; tout contrôle fermé par défaut doit s'ouvrir avant d'être testé.
+- Menus de l'en-tête : `js/menus.js` (Fichier, Édition, Image, Calque, Page, Affichage ; un seul bouton « Menu » ≤ 768 px). Chaque entrée est une commande de `COMMANDS` dans `editor-ui.js` (`runCommand`) ; ajouter une entrée = une ligne dans `menus()` + une commande.
 - Calques : `opacity`, `locked`, `color` (brouillon). `compositeRect` mélange en alpha à l'écran ; à l'export (`opts.export`) l'opacité d'un calque d'encre devient un gris tramé Bayer 8 × 8, un brouillon n'est jamais exporté.
 - Pinceaux : un pinceau = des paramètres (`BRUSH_DEFAULTS`, `BUILTIN_BRUSHES` dans `raster.js` ; forme, pression, effilage, grain, dispersion, stabilisation). `stampBrush` / `strokeSegment` les rendent ; `tools.js` fournit pression, vitesse, départ effilé et stabilisation. Pinceaux perso, taille par pinceau et réglages de trame : `localStorage` (`fusain:prefs`) ; bibliothèque de trames globale : IndexedDB (`tramaLib`).
 - `js/raster.js` — moteur 1-bit : undo **par différences de tuiles 64 px** (`UndoStack`), pinceau, formes, remplissage, composition.
@@ -46,7 +47,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - `js/view.js` (rendu et zoom), `input.js` (Pointer Events, rejet de la paume, pincer), `tools.js` (outils au pointeur), `editor.js` (état et actions annulables).
 - `js/shell.js` — plein écran (Safari iPad seulement, pas iPhone), détection iOS / installé, garde-fous contre la sélection, le menu de pression longue, le zoom de page et le double toucher (avec le CSS de `style.css`). Les champs de saisie gardent `user-select: text`, sinon Safari ne les laisse plus taper.
 - `js/store.js` (IndexedDB, PNG 2 bits via `png.js`), `sync.js` (Supabase par `fetch`), `portable.js` (export/import JSON, découpage).
-- `js/home.js`, `editor-ui.js`, `settings.js`, `ui-core.js`, `toast.js`, `main.js` (routage `#/p/<id>`), `app-update.js` (copié du design system).
+- `js/home.js`, `editor-ui.js`, `menus.js`, `settings.js`, `ui-core.js`, `toast.js`, `main.js` (routage `#/p/<id>`), `app-update.js` (copié du design system).
 
 ## Exceptions aux conventions
 

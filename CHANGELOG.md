@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.0 — 2026-10-28
+- Les réglages de l'outil sont uniquement dans la barre du haut (fenêtre « Réglages » pour le pinceau, la trame et les bulles)
+- Volet de droite réduit à trois onglets : Calques, Bibliothèque (pinceaux et trames), Page
+- Nouveau menu dans l'en-tête : Fichier, Édition, Image, Calque, Page, Affichage
+
 ## 1.7.1 — 2026-10-28
 - Rejet de la paume renforcé : les doigts sont ignorés 1,6 s après le stylet, ainsi que les contacts larges
 - Réglage « Rejet de la paume » (fort, normal, désactivé) dans les Réglages
