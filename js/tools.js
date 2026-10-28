@@ -88,7 +88,7 @@ function begin(p, pt) {
       : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque }
       : { v: ed.ink };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
-    const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
+    const sp = tool === 'pencil' || tool === 'eraser' || tool === 'texture' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };

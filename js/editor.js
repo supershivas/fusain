@@ -26,7 +26,7 @@ export const notify = what => subs.forEach(fn => fn(what));
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
   pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
-  texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  texture: { sizeMm: 3, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3, brushId: 'stylo', brushParams: null },
   fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
@@ -49,9 +49,10 @@ export const currentBrush = () => allBrushes().find(b => b.id === ed.brushId) ||
 
 // Choisir un pinceau reprend la dernière taille réglée pour lui.
 export function selectBrush(id) {
-  ed.brushSizes[ed.brushId] = ed.sizeMm;
+  const key = i => (ed.tool === 'texture' ? 't:' : '') + i;
+  ed.brushSizes[key(ed.brushId)] = ed.sizeMm;
   ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
-  setSizeMm(ed.brushSizes[id] ?? ed.brushParams.sizeMm);
+  setSizeMm(ed.brushSizes[key(id)] ?? (ed.tool === 'texture' ? Math.max(ed.brushParams.sizeMm, 3) : ed.brushParams.sizeMm));
 }
 export function resetBrush() { ed.brushParams = brushSpec(ed.brushId, ed.customBrushes); }
 export function saveBrushAs(name) {
@@ -69,7 +70,9 @@ export function deleteBrush(id) {
 }
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
 export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
-export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(30, mm)); syncSize(); }
+// Plus grosse taille : 50 mm pour les trames (aplats), 30 mm pour le reste.
+export const maxSizeMm = () => ed.tool === 'texture' ? 50 : 30;
+export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(maxSizeMm(), mm)); syncSize(); }
 
 export const page = () => ed.project.pages[ed.pageIdx];
 export const panel = () => page().panels.find(p => p.id === ed.panelId) || page().panels[0];

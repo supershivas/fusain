@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.12.0 — 2026-10-28
+- Le pinceau trame utilise les pinceaux du crayon (pression du stylet, départ effilé, grain, stabilisation…)
+- Taille jusqu'à 50 mm pour les trames
+
 ## 1.11.0 — 2026-10-28
 - Le pot de peinture remplit même si le contour n'est pas tout à fait fermé (trous jusqu'à 2,5 mm)
 - Curseur de tolérance dans la barre du haut, réglé au maximum par défaut

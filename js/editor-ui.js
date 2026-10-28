@@ -3,7 +3,7 @@ import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -220,9 +220,10 @@ function onZoombar(e) {
 // ───────────────────────── Options de l'outil ─────────────────────────
 
 const fmtMm = v => String(+v.toFixed(2)).replace('.', ',');
-const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(600));
+const sizeSpan = () => maxSizeMm() / 0.05;
+const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(sizeSpan()));
 const vToSize = v => {
-  const mm = 0.05 * Math.pow(600, v / 100);
+  const mm = 0.05 * Math.pow(sizeSpan(), v / 100);
   return +(mm < 1 ? Math.round(mm / 0.05) * 0.05 : mm < 5 ? Math.round(mm / 0.1) * 0.1 : Math.round(mm / 0.5) * 0.5).toFixed(2);
 };
 // Remplissage : tolérance aux contours ouverts (0 = fermés seulement).
@@ -230,7 +231,7 @@ const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" 
 // Taille : un seul curseur et un champ en millimètres.
 function sizeControl() {
   return `<span class="opt size"><input type="range" id="o-size" min="0" max="100" value="${sizeToV(ed.sizeMm)}" aria-label="Taille du trait">
-    <input type="number" id="o-mm" class="num" min="0.05" max="30" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span>`;
+    <input type="number" id="o-mm" class="num" min="0.05" max="${maxSizeMm()}" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span>`;
 }
 // Interrupteur de la pression du stylet, à côté de la taille.
 const pressureControl = () => `<button class="icon-btn icon-only" data-opt="pressure" aria-pressed="${ed.pressure}" title="Pression du stylet : ${ed.pressure ? 'active' : 'désactivée'}" aria-label="Pression du stylet">${icon('gauge')}</button>`;
@@ -251,7 +252,7 @@ export function renderOptbar() {
     html = brushControl() + sizeControl() + pressureControl() + inkControl() + popBtn('brush');
   }
   else if (t === 'eraser') html = brushControl() + sizeControl() + pressureControl() + popBtn('brush');
-  else if (t === 'texture') html = tramaControl() + sizeControl() + pressureControl() + inkControl() + popBtn('trama');
+  else if (t === 'texture') html = brushControl() + tramaControl() + sizeControl() + pressureControl() + inkControl() + popBtn('brush') + popBtn('trama');
   else if (t === 'fill') html = tramaControl() + gapControl() + inkControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
@@ -293,7 +294,7 @@ export function renderOptbar() {
 
 const POP_BTN = { brush: ['adjustments-horizontal', 'Réglages'], trama: ['adjustments-horizontal', 'Réglages'], btext: ['typography', 'Texte'], bshape: ['shape', 'Forme'], btail: ['message-circle-plus', 'Queue'] };
 const popBtn = id => id === 'brush' || id === 'trama'
-  ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="Réglages" aria-label="Réglages">${icon('adjustments-horizontal')}</button>`
+  ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="${id === 'brush' ? 'Réglages du pinceau' : 'Réglages de la trame'}" aria-label="${id === 'brush' ? 'Réglages du pinceau' : 'Réglages de la trame'}">${icon('adjustments-horizontal')}</button>`
   : `<button class="btn small ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}">${icon(POP_BTN[id][0])} ${POP_BTN[id][1]}</button>`;
 
 function paintSwatches(scope) {
