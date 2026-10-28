@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.1 — 2026-10-28
+- Firefox : plus de barre « Rechercher dans la page » en tapant « / » ou « ' », et plus de sélection de texte au toucher long
+
 ## 1.10.0 — 2026-10-28
 - Double tape du bout du stylet : bascule plume et gomme (aussi le bouton du flanc ; le bout gomme du stylet gomme)
 - Rejet de la paume assoupli : seul le déplacement ou le trait d'un doigt isolé près du stylet est ignoré, zoom et annuler restent libres

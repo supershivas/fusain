@@ -37,6 +37,10 @@ export function installGuards() {
   document.addEventListener('contextmenu', e => { if (!editable(e.target)) e.preventDefault(); });
   document.addEventListener('selectstart', e => { if (!editable(e.target)) e.preventDefault(); });
   document.addEventListener('dragstart', e => { if (!editable(e.target)) e.preventDefault(); });
+  // Firefox : « / » et « ' » ouvrent la recherche rapide (Rechercher dans la page) dès qu'on tape hors d'un champ
+  document.addEventListener('keydown', e => {
+    if ((e.key === '/' || e.key === "'" || e.key === '\u2019') && !e.ctrlKey && !e.metaKey && !editable(e.target)) e.preventDefault();
+  });
   // Safari : pas de zoom de la page au pincement (l'app zoome sa propre vue) ni au double toucher
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(n => document.addEventListener(n, e => e.preventDefault()));
   document.addEventListener('touchmove', e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });

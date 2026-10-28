@@ -62,8 +62,8 @@
 html, body { height: 100%; }
 /* Outil de dessin : rien du navigateur par-dessus (sélection, loupe, menu de pression longue, zoom, rebond de page). */
 html { touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
-input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+body { -moz-user-select: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+input, textarea, select, [contenteditable="true"] { -moz-user-select: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 img, svg, canvas { -webkit-user-drag: none; -webkit-touch-callout: none; }
 .home, .dock-body, .modal-body, .lab-stage, .lab-side { overscroll-behavior: contain; }
 body {
@@ -200,7 +200,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; min-height: 32px; 
 .toolbar .sep { width: 28px; height: 1px; background: var(--border); margin: 4px 0; flex: none; }
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--stage-bg); display: flex; flex-direction: column; }
 .canvas-wrap { position: relative; flex: 1; min-height: 0; }
-.canvas-wrap > canvas { position: absolute; inset: 0; display: block; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.canvas-wrap > canvas { position: absolute; inset: 0; display: block; touch-action: none; -moz-user-select: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .optbar { flex: none; z-index: 3; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 6px 10px; }
 .optbar label.opt { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-secondary); }
 .optbar input[type=range] { width: 120px; }
