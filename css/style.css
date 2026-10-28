@@ -369,3 +369,19 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
   .menubar .menu-btn span { display: inline; }
   .brand-name { display: none; }
 }
+
+/* ── Barre contextuelle : une seule ligne, défilement si l'écran est étroit ── */
+.optbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; gap: 6px 12px; }
+.optbar::-webkit-scrollbar { display: none; }
+.optbar > *, .optbar .size > * { flex: none; }
+.optbar .size { flex-wrap: nowrap; flex: 1 1 auto; min-width: 150px; max-width: 360px; }
+.optbar .size input[type=range] { flex: 1 1 90px; width: auto; min-width: 70px; }
+.optbar .size > * { flex: none; }
+.optbar .size input[type=range] { flex: 1 1 90px; }
+.optbar .unit { font-size: .8rem; color: var(--text-muted); }
+.optbar .row.nowrap { flex-wrap: nowrap; }
+.optbar .hint { white-space: nowrap; }
+.swatch-btn { padding: 0 4px; }
+.swatch-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.lib-body .brush-row, .pop .brush-row { width: 100%; }
+@media (max-width: 768px) { .optbar .size input[type=range] { width: auto; } }

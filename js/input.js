@@ -13,9 +13,8 @@ try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préfé
 
 // Rejet de la paume : tant qu'un stylet vient d'être vu, les doigts sont ignorés (délai réglable dans les Réglages).
 const palmMs = () => ({ off: 0, normal: 700, strong: 1600 }[ed.palm] ?? 1600);
+const penStuck = () => penDown && performance.now() - lastPen > 3000;   // un « stylet levé » perdu ne doit jamais bloquer les doigts
 const penRecent = () => penSeen && !ed.fingerDraws && palmMs() > 0 && performance.now() - lastPen < palmMs();
-// Un contact large (paume, tranche de la main) n'est pas un doigt.
-const bigContact = e => palmMs() > 0 && Math.max(e.width || 0, e.height || 0) > 40;
 
 const touchCount = () => [...pointers.values()].filter(p => p.type === 'touch').length;
 
@@ -40,7 +39,8 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
         gesture = null; stopPan();
       }
     }
-    if (e.pointerType === 'touch' && (penDown || penRecent() || bigContact(e))) return;   // paume
+    if (penStuck()) penDown = false;
+    if (e.pointerType === 'touch' && (penDown || penRecent())) return;   // paume
     e.preventDefault();
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     el.setPointerCapture(e.pointerId);
@@ -62,7 +62,8 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
   });
 
   el.addEventListener('pointermove', e => {
-    if (e.pointerType === 'pen') lastPen = performance.now();   // y compris le survol du stylet, avant qu'il touche
+    if (e.pointerType === 'pen' && penDown) lastPen = performance.now();
+    if (penStuck()) penDown = false;
     if (e.pointerType === 'touch' && (penDown || penRecent())) return;
     const rec = pointers.get(e.pointerId);
     if (!rec) { hover(e, el); return; }

@@ -241,7 +241,14 @@ function drawShapePreview(accent) {
   ctx.stroke(); ctx.setLineDash([]);
 }
 
-// Poignées des gouttières : un trait le long de chaque gouttière et une tirette en son milieu.
+// Bouton « + » d'une gouttière (ajoute une case) : à côté de la tirette, en pixels d'écran.
+export function gutterPlus(h) {
+  const v = h.axis === 'v', a = toScreen(v ? h.pos : h.span[0], v ? h.span[0] : h.pos), b = toScreen(v ? h.pos : h.span[1], v ? h.span[1] : h.pos);
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  return { x: v ? mx : mx + 40, y: v ? my + 40 : my, r: 15 };
+}
+
+// Poignées des gouttières : un trait le long de chaque gouttière, une tirette en son milieu et un « + » pour ajouter une case.
 function drawGutters(pg, accent) {
   const g = overlay.guide;
   for (const h of gutterHandles()) {
@@ -251,6 +258,10 @@ function drawGutters(pg, accent) {
     ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(mx - w / 2, my - hh / 2, w, hh, 8); ctx.fill();
     ctx.fillStyle = '#fff';
     for (const k of [-1, 0, 1]) { ctx.beginPath(); ctx.arc(v ? mx : mx + k * 10, v ? my + k * 10 : my, 2, 0, Math.PI * 2); ctx.fill(); }
+    const pl = gutterPlus(h);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pl.x - 6, pl.y); ctx.lineTo(pl.x + 6, pl.y); ctx.moveTo(pl.x, pl.y - 6); ctx.lineTo(pl.x, pl.y + 6); ctx.stroke();
+    ctx.fillStyle = '#fff';
   }
   if (g) {
     const v = g.axis === 'v', a = toScreen(v ? g.pos : g.s0, v ? g.s0 : g.pos), b = toScreen(v ? g.pos : g.s1, v ? g.s1 : g.pos);

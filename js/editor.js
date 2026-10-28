@@ -27,7 +27,7 @@ export const notify = what => subs.forEach(fn => fn(what));
 export const TOOL_DEFAULTS = {
   pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
   texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
-  eraser: { sizeMm: 3 },
+  eraser: { sizeMm: 3, brushId: 'stylo', brushParams: null },
   fill: { ink: 1, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, maskErase: false },
@@ -407,6 +407,27 @@ export function mergePanels(aId, bId) {
   ed.panelId = na.id; notify('panel');
   ed.undo.pushAction('Fusionner les cases', () => swapPanels(pg, before), () => { swapPanels(pg, after); ed.panelId = na.id; });
   return true;
+}
+
+// Ajoute une case en coupant en deux chaque case de `ids` (axis 'v' : côte à côte, 'h' : l'une sous l'autre) ; la nouvelle prend la moitié du côté de la gouttière.
+export function addCase(ids, axis) {
+  const pg = page(), before = pg.panels.slice(), gap = mmToPx(ed.project.gutter, ed.project.dpi), v = axis === 'v';
+  const { w: pw, h: ph } = pageSize(ed.project), min = Math.round(Math.min(pw, ph) * 0.1);
+  const targets = before.filter(p => ids.includes(p.id));
+  if (!targets.length || targets.some(p => (v ? p.w : p.h) < 2 * min + gap)) return null;
+  const fresh = [];
+  const after = before.flatMap(p => {
+    if (!targets.includes(p)) return [p];
+    const s1 = Math.floor(((v ? p.w : p.h) - gap) / 2);
+    const a = v ? { x: p.x, y: p.y, w: s1, h: p.h } : { x: p.x, y: p.y, w: p.w, h: s1 };
+    const b = v ? { x: p.x + s1 + gap, y: p.y, w: p.w - s1 - gap, h: p.h } : { x: p.x, y: p.y + s1 + gap, w: p.w, h: p.h - s1 - gap };
+    const np = newPanel(b); fresh.push(np);
+    return [reshape(p, a), np];
+  });
+  const prevId = ed.panelId;
+  swapPanels(pg, after); ed.panelId = fresh[0].id; notify('panel');
+  ed.undo.pushAction('Ajouter une case', () => { swapPanels(pg, before); ed.panelId = before.some(p => p.id === prevId) ? prevId : before[0].id; }, () => { swapPanels(pg, after); ed.panelId = fresh[0].id; });
+  return fresh[0];
 }
 
 export function deletePanel() {

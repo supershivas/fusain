@@ -1,6 +1,6 @@
 // Barre de menus de l'en-tête (Fichier, Édition, Image, Calque, Page, Affichage) ; un seul bouton « Menu » sur téléphone.
 import { ed, page, panel, activeLayer, bubble } from './editor.js';
-import { runCommand } from './editor-ui.js';
+import { runCommand, TOOLS } from './editor-ui.js';
 import { openSettings } from './settings.js';
 import { esc, icon, $ } from './ui-core.js';
 import { canFullscreen, isFullscreen } from './shell.js';
@@ -17,6 +17,9 @@ const menus = () => {
       ['undo', 'Annuler', 'arrow-back-up', 'Ctrl+Z', !ed.undo.canUndo], ['redo', 'Rétablir', 'arrow-forward-up', 'Ctrl+Maj+Z', !ed.undo.canRedo], null,
       ['clear-layer', 'Vider le calque', 'eraser'], ['copy-case', 'Copier la case vers…', 'copy'], null,
       ['del-case', 'Supprimer la case', 'trash', '', pg.panels.length < 2], ['del-bubble', 'Supprimer la bulle', 'message-circle-off', 'Suppr', !bubble()]]],
+    ['Outils', [
+      ...TOOLS.map(t => ['tool:' + t.id, t.label.replace(/ \(.\)$/, ''), t.icon, t.key.toUpperCase()]), null,
+      ['lib-brushes', 'Bibliothèque de pinceaux…', 'brush'], ['lib-tramas', 'Bibliothèque de trames…', 'texture'], ['lib-bubbles', 'Modèles de bulles…', 'message-circle']]],
     ['Image', [
       ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
       ['tool-layout', 'Taille des cases', 'layout-board-split', 'L'], ['relayout', 'Disposition des cases…', 'layout-grid'], ['frame', `Trait du cadre (case ${idx + 1})`, 'border-style'], ['dither', 'Image tramée…', 'photo']]],

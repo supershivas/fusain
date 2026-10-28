@@ -1,13 +1,13 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, addCase, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross } from './view.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, gutterPlus } from './view.js';
 import { hitBubble, tailOrigin } from './bubbles.js';
 import { toast } from './toast.js';
 
@@ -88,7 +88,7 @@ function begin(p, pt) {
       : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque }
       : { v: ed.ink };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
-    const sp = tool === 'pencil' ? ed.brushParams : null;
+    const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
@@ -195,7 +195,15 @@ export function cancel() {
 
 // On attrape une gouttière n'importe où le long de son trait.
 function layoutDown(pt) {
-  const R = pt.type === 'touch' ? 28 : 18;
+  const R = pt.type === 'touch' ? 28 : 18, at = toScreen(pt.x, pt.y);
+  for (const h of gutterHandles()) {   // le « + » d'une gouttière ajoute une case
+    const pl = gutterPlus(h);
+    if (Math.hypot(at.x - pl.x, at.y - pl.y) <= pl.r + (pt.type === 'touch' ? 10 : 4)) {
+      if (addCase(h.L, h.axis)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+      else toast('Les cases sont trop petites pour en ajouter une.');
+      return;
+    }
+  }
   let best = null;
   for (const h of gutterHandles()) {
     const v = h.axis === 'v', along = v ? pt.y : pt.x, across = Math.abs((v ? pt.x : pt.y) - h.pos) * view.s;

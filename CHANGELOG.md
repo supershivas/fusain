@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.0 — 2026-10-28
+- Barre contextuelle sur une seule ligne : forme du pinceau (sans texte, ouvre la bibliothèque), un seul curseur de taille, réglages en une icône ; la gomme a aussi des formes de pinceau
+- La bibliothèque quitte le volet de droite : liste déroulante dans la barre, et fenêtre depuis le nouveau menu Outils (pinceaux, trames, bulles)
+- Outil des cases : boutons + dans les gouttières et « Ajouter à côté / dessous » pour créer une case
+- Gestes des doigts rétablis (zoom, annuler, rétablir)
+
 ## 1.8.0 — 2026-10-28
 - Les réglages de l'outil sont uniquement dans la barre du haut (fenêtre « Réglages » pour le pinceau, la trame et les bulles)
 - Volet de droite réduit à trois onglets : Calques, Bibliothèque (pinceaux et trames), Page
