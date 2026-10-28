@@ -47,6 +47,7 @@ export function loadPrefs() {
     const p = JSON.parse(localStorage.getItem(prefsKey)) || {};
     if (typeof p.fingerDraws === 'boolean') ed.fingerDraws = p.fingerDraws;
     if (typeof p.pressure === 'boolean') ed.pressure = p.pressure;
+    if (typeof p.pressureGamma === 'number') ed.pressureGamma = p.pressureGamma;
     if (typeof p.showNotes === 'boolean') ed.showNotes = p.showNotes;
     if (p.toolSettings && typeof p.toolSettings === 'object') ed.toolSettings = p.toolSettings;
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
@@ -61,7 +62,7 @@ export function loadPrefs() {
 export function savePrefs() {
   storeToolSettings();
   try {
-    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, showNotes: ed.showNotes,
+    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
       customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets }));
   } catch { /* */ }
@@ -84,7 +85,7 @@ export function mountEditor(el) {
     <aside class="dock" id="dock" ${dockOpen ? '' : 'hidden'}></aside>
   </div>`;
   attach($('#view', root));
-  attachInput($('#view', root), { onUndo: undo, onRedo: redo });
+  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer });
   fit();
   renderAll();
 
@@ -92,6 +93,10 @@ export function mountEditor(el) {
   $('#zoombar', root).onclick = onZoombar;
   $('#optbar', root).addEventListener('click', onOptbar);
   $('#optbar', root).addEventListener('input', onOptInput);
+  $('#dock', root).addEventListener('pointerdown', swipeDown);
+  $('#dock', root).addEventListener('pointermove', swipeMove);
+  $('#dock', root).addEventListener('pointerup', swipeUp);
+  $('#dock', root).addEventListener('pointercancel', swipeUp);
   $('#dock', root).addEventListener('click', onDock);
   $('#dock', root).addEventListener('toggle', onSecToggle, true);
   $('#dock', root).addEventListener('input', onDockInput);
@@ -141,6 +146,13 @@ function updateUndo() {
   for (const [sel, ok] of [['[data-act=undo]', ed.undo.canUndo], ['[data-act=redo]', ed.undo.canRedo]]) {
     $$(sel, root).forEach(b => { b.disabled = !ok; });
   }
+}
+
+// Trois doigts qui frottent : vide le calque actif, avec « Annuler » pendant quelques secondes.
+function clearActiveLayer() {
+  const name = activeLayer().name, r = clearLayer();
+  if (r === 'ok') toast(`Calque « ${name} » vidé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo });
+  else if (r === 'locked') toast(`Le calque « ${name} » est verrouillé.`);
 }
 
 export function undo() { ed.undo.undo(); markChanged(); requestRender(); }
@@ -209,6 +221,8 @@ function sizeControl() {
     <select id="o-nib" class="nib" aria-label="Tailles courantes"><option value="">Plumes</option>${NIBS.map(n => `<option value="${n}" ${n === +ed.sizeMm.toFixed(2) ? 'selected' : ''}>${fmtMm(n)} mm</option>`).join('')}</select>
     <span class="val" id="o-size-val">${ed.size} px</span></span>`;
 }
+// Interrupteur de la pression du stylet, à côté de la taille.
+const pressureControl = () => `<button class="icon-btn icon-only" data-opt="pressure" aria-pressed="${ed.pressure}" title="Pression du stylet : ${ed.pressure ? 'active' : 'désactivée'}" aria-label="Pression du stylet">${icon('gauge')}</button>`;
 const inkControl = () => `<span class="row tight" role="group" aria-label="Encre">
   <button class="ink-btn ${ed.ink === 1 ? 'on' : ''}" data-ink="1" style="background:#000" aria-label="Encre noire" aria-pressed="${ed.ink === 1}"></button>
   <button class="ink-btn ${ed.ink === 2 ? 'on' : ''}" data-ink="2" style="background:#fff" aria-label="Encre blanche" aria-pressed="${ed.ink === 2}"></button></span>`;
@@ -222,10 +236,10 @@ export function renderOptbar() {
   let html = '';
   if (t === 'pencil') {
     html = `<button class="swatch-btn" data-opt="brushes" aria-label="Choisir le pinceau, actuel : ${esc(currentBrush().name)}"><canvas width="64" height="30" data-bprev="1" style="width:64px"></canvas>${esc(currentBrush().name)}</button>`
-      + sizeControl() + inkControl();
+      + sizeControl() + pressureControl() + inkControl();
   }
-  else if (t === 'eraser') html = sizeControl();
-  else if (t === 'texture') html = sizeControl() + tramaControl() + inkControl();
+  else if (t === 'eraser') html = sizeControl() + pressureControl();
+  else if (t === 'texture') html = sizeControl() + pressureControl() + tramaControl() + inkControl();
   else if (t === 'fill') html = tramaControl() + inkControl();
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
@@ -276,6 +290,7 @@ function onOptbar(e) {
   else if (b.dataset.delpanel) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); }
   else if (b.dataset.freebubble) { ed.bubbleDraw = b.dataset.freebubble === '1'; renderOptbar(); }
   else if (b.dataset.maskpen) { ed.maskErase = b.dataset.maskpen === '1'; savePrefs(); renderOptbar(); }
+  else if (b.dataset.opt === 'pressure') { ed.pressure = !ed.pressure; savePrefs(); renderOptbar(); toast(ed.pressure ? 'Pression du stylet activée.' : 'Pression du stylet désactivée.', { duration: 1500 }); }
   else if (b.dataset.opt === 'brushes') { dockOpen = true; $('#dock', root).hidden = false; renderToolbar(); dockTabTo('brushes'); setTimeout(resize, 0); }
   else if (b.dataset.opt === 'trames') { dockOpen = true; $('#dock', root).hidden = false; renderToolbar(); dockTabTo('tramas'); setTimeout(resize, 0); }
 }
@@ -306,6 +321,37 @@ let secState = {};
 try { secState = JSON.parse(localStorage.getItem(SEC_KEY)) || {}; } catch { /* */ }
 const sec = (id, title, body, def = true, extra = '') =>
   `<details class="sec" data-sec="${id}" ${(secState[id] ?? def) ? 'open' : ''}><summary><span>${title}</span>${extra}</summary><div class="sec-body">${body}</div></details>`;
+// Glisser une ligne de calque (ou de bulle) vers la gauche découvre « Dupliquer » et « Supprimer », comme dans Procreate.
+let swipeGest = null, swipeJustDone = false;
+function swipeDown(e) {
+  const row = e.target.closest('.swipe > .layer');
+  if (!row || e.button > 0) return;
+  $$('.swipe.open', root).forEach(x => { if (x !== row.parentElement) x.classList.remove('open'); });
+  swipeGest = { row, wrap: row.parentElement, x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId, width: row.parentElement.querySelector('.swipe-actions').offsetWidth };
+}
+function swipeMove(e) {
+  const g = swipeGest;
+  if (!g || e.pointerId !== g.id) return;
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  if (!g.on) {
+    if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { swipeGest = null; return; }   // c'est un défilement vertical
+    if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return;
+    g.on = true; g.row.setPointerCapture(e.pointerId); g.wrap.classList.add('dragging');
+  }
+  const base = g.wrap.classList.contains('open') ? -g.width : 0;
+  g.dx = Math.max(-g.width - 20, Math.min(0, base + dx));
+  g.row.style.transform = `translateX(${g.dx}px)`;
+}
+function swipeUp(e) {
+  const g = swipeGest;
+  if (!g || e.pointerId !== g.id) return;
+  swipeGest = null;
+  if (!g.on) return;
+  g.wrap.classList.remove('dragging'); g.row.style.transform = '';
+  g.wrap.classList.toggle('open', g.dx < -g.width * 0.45);
+  swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);   // le relâchement ne doit pas compter comme un toucher
+}
+
 function onSecToggle(e) {
   const el = e.target;
   if (!el.matches || !el.matches('details[data-sec]')) return;
@@ -339,16 +385,18 @@ function layersTab() {
   const target = role ? peekTarget(p, role) : null;
   const dot = l => l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', narration: 'square', texte: 'typography' };
-  const bubRows = pg.bubbles.map(b => `<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
+  const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
+  const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
       <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
       <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
-      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`).join('');
-  const rows = [...p.layers].reverse().map(l => `<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
+      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
+  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
       ${dot(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
-      <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`).join('');
+      <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
+    `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`)).join('');
   const acts = `<div class="tools-row">
       <button class="btn small" data-act="add-layer">${icon('plus')} Encre</button>
       <button class="btn small" data-act="add-tram">${icon('plus')} Trame</button>
@@ -509,6 +557,7 @@ function caseTab() {
 // ───────────────────────── Événements du volet ─────────────────────────
 
 async function onDock(e) {
+  if (swipeJustDone) { e.preventDefault(); return; }
   const tab = e.target.closest('[data-tab]');
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   const br = e.target.closest('[data-brush]');
@@ -542,6 +591,12 @@ async function onDock(e) {
   else if (a === 'bub-lock') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'locked', !bb.locked); }
   else if (a === 'bub-del') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); deleteBubble(bb); }
   else if (a === 'bub-select') { selectBubble(e.target.closest('[data-bub]').dataset.bub); if (ed.tool !== 'bubble') setTool('bubble'); }
+  else if (a === 'swipe-del') {
+    const l = panel().layers.find(x => x.id === act.dataset.for);
+    if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
+  }
+  else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
   else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
   else if (a === 'del-layer') { if (!deleteLayer()) toast('Une case garde au moins un calque.'); }
   else if (a === 'up') moveLayer(1);
@@ -550,7 +605,7 @@ async function onDock(e) {
   else if (a === 'add-draft') addLayer('draft');
   else if (a === 'dup-layer') duplicateLayer();
   else if (a === 'merge') { if (!mergeDown()) toast('Pas de calque en dessous.'); }
-  else if (a === 'clear') clearLayer();
+  else if (a === 'clear') clearActiveLayer();
   else if (a === 'rename') {
     const l = activeLayer(), name = await promptModal({ title: 'Renommer le calque', label: 'Nom', value: l.name });
     if (name) renameLayer(l.id, name);

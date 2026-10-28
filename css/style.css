@@ -323,3 +323,17 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .brush-row canvas { width: 100px; height: 26px; }
 .blist button { min-height: 38px; margin-bottom: 4px; }
 .page-btn { min-height: 56px; margin-bottom: 4px; }
+
+/* Glisser une ligne vers la gauche : actions de la ligne (geste de Procreate) */
+.swipe { position: relative; overflow: hidden; border-radius: var(--radius-md); margin-bottom: 4px; }
+.swipe > .layer { position: relative; z-index: 1; margin: 0; background: var(--card-bg); transition: transform .16s ease; touch-action: pan-y; }
+.swipe > .layer.on { background: var(--card-bg) linear-gradient(var(--accent-soft), var(--accent-soft)); }
+.swipe-actions { visibility: hidden; }
+.swipe.open .swipe-actions, .swipe.dragging .swipe-actions { visibility: visible; }
+.swipe.dragging > .layer { transition: none; }
+.swipe.open > .layer { transform: translateX(-132px); }
+.swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
+.swipe-actions button { min-width: 66px; padding: 0 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
+.swipe-actions button.danger { background: var(--accent); }
+.swipe-actions button:only-child { min-width: 132px; }
+.swipe-actions .ti { font-size: 1.1rem; }

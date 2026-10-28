@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0 — 2026-10-28
+- Glisser un calque ou une bulle vers la gauche propose Dupliquer / Supprimer
+- Pression du stylet : active par défaut sur les pinceaux, interrupteur dans la barre d'outils, courbe et zone d'essai dans les Réglages
+- Trois doigts qui frottent ou tournent vident le calque actif (annulable)
+
 ## 1.6.0 — 2026-10-28
 - Les outils visent le bon calque : l'encrage dans un calque d'encre, les trames dans un calque de trame (créé au besoin)
 - Bulles et textes listés dans les calques (masquer, verrouiller), croix pour supprimer une bulle, volet de droite compact en sections repliables

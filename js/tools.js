@@ -28,7 +28,9 @@ function makeCtx(p, layer, paint, useMask = true) {
   return { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null };
 }
 
-const diameter = pt => Math.max(1, Math.round(ed.size * (pt.type === 'pen' && ed.pressure ? 0.4 + 1.2 * pt.pressure : 1)));
+// Pression du stylet après la courbe réglée dans les Réglages (gamma < 1 : plus sensible au toucher léger).
+export const pressureOf = pt => Math.pow(Math.max(0.02, Math.min(1, pt.pressure)), ed.pressureGamma);
+const diameter = pt => Math.max(1, Math.round(ed.size * (pt.type === 'pen' && ed.pressure ? 0.4 + 1.2 * pressureOf(pt) : 1)));
 
 // Taille du tampon selon le pinceau : pression du stylet, vitesse du geste et départ effilé.
 function brushDiameter(pt, s, step) {
@@ -36,11 +38,12 @@ function brushDiameter(pt, s, step) {
   if (!sp) return diameter(pt);
   s.travel += step; s.speed = s.speed * 0.6 + step * 0.4;
   const pen = pt.type === 'pen' && ed.pressure;
+  s.pr = s.pr === undefined ? pressureOf(pt) : s.pr * 0.5 + pressureOf(pt) * 0.5;   // pressions lissées : pas de saccades de largeur
   let f = 1;
-  if (pen && sp.press > 0) f *= (1 - sp.press) + sp.press * (sp.pressMin + (1.6 - sp.pressMin) * pt.pressure);
+  if (pen && sp.press > 0) f *= (1 - sp.press) + sp.press * (sp.pressMin + (1.6 - sp.pressMin) * s.pr);
   if (sp.speed > 0) f *= Math.max(0.25, 1 - sp.speed * Math.min(1, s.speed / (ed.size * 2.5)) * (pen && sp.press > 0 ? 0.4 : 1));
   if (sp.start > 0) f *= Math.min(1, 0.3 + s.travel / (ed.size * sp.start));
-  s.ctx.brush.pr = pt.pressure;
+  s.ctx.brush.pr = s.pr;
   return Math.max(1, Math.round(ed.size * f));
 }
 
@@ -88,7 +91,7 @@ function begin(p, pt) {
     const sp = tool === 'pencil' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
-    if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pt.pressure };
+    if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
     stampBrush(session.ctx, lx, ly, d); flush(session);
   } else if (tool === 'fill') {
     const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly);

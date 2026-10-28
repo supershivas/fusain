@@ -14,6 +14,8 @@ const STATUS_TEXT = {
   idle: 'Synchronisée.', syncing: 'Synchronisation en cours…', error: 'Erreur de synchronisation.', offline: 'Hors ligne : la synchronisation reprendra seule.',
 };
 
+const gammaLabel = g => g < 0.9 ? 'douce' : g > 1.1 ? 'ferme' : 'normale';
+
 export function syncDotClass(st) {
   return st.status === 'idle' ? 'ok' : st.status === 'syncing' ? 'busy' : st.status === 'error' ? 'err' : '';
 }
@@ -29,6 +31,12 @@ export async function openSettings({ onImported } = {}) {
       <label class="check"><input type="checkbox" id="s-finger" ${ed.fingerDraws ? 'checked' : ''}> Le doigt dessine aussi
         </label><small style="color:var(--text-muted)">Désactivé, le doigt déplace la vue dès qu'un stylet a été détecté (la paume ne laisse aucune trace).</small>
       <label class="check"><input type="checkbox" id="s-pressure" ${ed.pressure ? 'checked' : ''}> Sensibilité à la pression du stylet</label>
+      <label class="field" style="margin-bottom:6px"><span>Courbe de pression : <span id="s-gamma-v">${gammaLabel(ed.pressureGamma)}</span></span>
+        <input type="range" id="s-gamma" min="0.4" max="2.2" step="0.1" value="${ed.pressureGamma}" aria-label="Courbe de pression"></label>
+      <div id="s-pad" style="border:1px dashed var(--border);border-radius:var(--radius-md);min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;touch-action:none;padding:8px">
+        <span id="s-pad-t" style="font-size:.85rem;color:var(--text-secondary)">Zone d'essai : pose le stylet ici</span>
+        <div style="width:80%;height:10px;border-radius:5px;background:var(--hover-bg);overflow:hidden"><div id="s-pad-bar" style="height:100%;width:0;background:var(--accent)"></div></div>
+      </div>
     </section>
     <section class="modal-sec"><h3>Affichage</h3>
       ${canFullscreen() ? `<button class="btn" id="s-fs">${icon('arrows-maximize')} ${isFullscreen() ? 'Quitter le plein écran' : 'Passer en plein écran'}</button>` : ''}
@@ -61,6 +69,14 @@ export async function openSettings({ onImported } = {}) {
   });
 
   const box = m.el;
+  const pad = $('#s-pad', box);   // zone d'essai : montre le type de pointeur et la pression reçue
+  const probe = e => {
+    const pr = e.pointerType === 'pen' ? Math.pow(Math.max(0.02, e.pressure), ed.pressureGamma) : null;
+    $('#s-pad-t', box).textContent = e.pointerType === 'pen' ? `Stylet · pression ${Math.round(e.pressure * 100)} % → trait ${Math.round(pr * 100)} %` : `${e.pointerType === 'touch' ? 'Doigt' : 'Souris'} : pas de pression`;
+    $('#s-pad-bar', box).style.width = (pr === null ? 0 : pr * 100) + '%';
+  };
+  ['pointerdown', 'pointermove'].forEach(n => pad.addEventListener(n, probe));
+  pad.addEventListener('pointerup', () => { $('#s-pad-bar', box).style.width = '0'; });
   const renderStatus = () => {
     const st = sync.getStatus();
     $('#s-status', box).innerHTML = `${st.status === 'off' ? '' : `<span class="sync-dot ${syncDotClass(st)}" style="position:static;display:inline-block;border-color:var(--card-bg)"></span>`} ${esc(STATUS_TEXT[st.status] || '')}${st.lastError ? `<br><small style="color:var(--accent)">${esc(st.lastError)}</small>` : ''}`;
@@ -87,6 +103,7 @@ export async function openSettings({ onImported } = {}) {
   box.addEventListener('change', e => {
     if (e.target.id === 's-finger') { ed.fingerDraws = e.target.checked; savePrefs(); }
     else if (e.target.id === 's-pressure') { ed.pressure = e.target.checked; savePrefs(); }
+    else if (e.target.id === 's-gamma') { ed.pressureGamma = +e.target.value; $('#s-gamma-v', box).textContent = gammaLabel(ed.pressureGamma); savePrefs(); }
     else if (e.target.id === 's-import-file') doImport(e.target.files[0]);
   });
   box.addEventListener('click', async e => {

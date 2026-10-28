@@ -15,7 +15,7 @@ export const ed = {
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
-  fingerDraws: false, pressure: true, showNotes: true,
+  fingerDraws: false, pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
 };
 
@@ -542,14 +542,17 @@ export function renameLayer(id, name) {
   if (l && name.trim()) { l.name = name.trim(); notify('layers'); markChanged(); }
 }
 
+// Vide le calque actif (annulable). Renvoie 'locked' / 'empty' si rien n'a été fait.
 export function clearLayer() {
   const l = activeLayer();
-  if (!l.data || l.locked) return;
+  if (l.locked) return 'locked';
+  if (!l.data || !l.data.some(v => v)) return 'empty';
   ed.undo.begin('Vider le calque');
   ed.undo.touch(l, 0, 0, l.w, l.h);
   ensureData(l).fill(0);
   ed.undo.commit();
   invalidate(panel()); markChanged();
+  return 'ok';
 }
 
 export function mergeDown() {
