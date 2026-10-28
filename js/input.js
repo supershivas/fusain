@@ -7,23 +7,25 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null, lastTap = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
-// Rejet de la paume : tant qu'un stylet vient d'être vu, les doigts sont ignorés (délai réglable dans les Réglages).
+// Rejet de la paume : seul le déplacement dû à la paume est évité. Un doigt posé pendant ou juste après le stylet est « paume » :
+// il ne dessine ni ne déplace la vue, et ne compte pas dans les gestes. Les gestes à deux ou trois doigts restent libres.
+// Délai réglable dans les Réglages.
 const palmMs = () => ({ off: 0, normal: 700, strong: 1600 }[ed.palm] ?? 1600);
 const penStuck = () => penDown && performance.now() - lastPen > 3000;   // un « stylet levé » perdu ne doit jamais bloquer les doigts
 const penRecent = () => penSeen && !ed.fingerDraws && palmMs() > 0 && performance.now() - lastPen < palmMs();
 
-const touchCount = () => [...pointers.values()].filter(p => p.type === 'touch').length;
+const touchCount = () => [...pointers.values()].filter(p => p.type === 'touch' && !p.palm).length;
 
 function point(e, el) {
   const r = el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top, p = toPage(sx, sy);
   return { x: p.x, y: p.y, sx, sy, pressure: e.pointerType === 'pen' ? Math.max(0.02, e.pressure) : 0.5, type: e.pointerType, shift: e.shiftKey };
 }
 
-export function attachInput(el, { onUndo, onRedo, onClear }) {
+export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser }) {
   el.style.touchAction = 'none';
   el.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -31,20 +33,29 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
     if (e.pointerType === 'pen') {
       penSeen = true; penDown = true; lastPen = performance.now();
       try { localStorage.setItem('fusain:pen', '1'); } catch { /* */ }
-      // le stylet se pose : tout ce que des doigts avaient commencé (déplacement, geste, trait) était une paume
+      // le stylet se pose : le trait ou le déplacement commencé au doigt était une paume (les gestes à plusieurs doigts restent)
       if (!ed.fingerDraws && palmMs() > 0) {
         if (drawingId !== null && pointers.get(drawingId) && pointers.get(drawingId).type === 'touch') { tools.cancel(); drawingId = null; }
         if (pending) { clearTimeout(pending.timer); pending = null; }
-        for (const [id, r] of [...pointers]) if (r.type === 'touch') pointers.delete(id);
-        gesture = null; stopPan();
+        if (!gesture) for (const r of pointers.values()) if (r.type === 'touch') r.palm = true;
+        stopPan();
       }
+      penInfo = null;
+      // bouton du stylet (flanc) : change d'outil ; gomme au bout du stylet : gomme le temps du trait
+      if (e.buttons & 2 && onPenToggle) { e.preventDefault(); onPenToggle(); penDown = false; return; }
+      if (e.buttons & 32 && onPenEraser) { onPenEraser(true); penInfo = { erase: true }; }
+      penInfo = Object.assign(penInfo || {}, { t: performance.now(), x: e.clientX, y: e.clientY, max: 0, ptr: ed.undo.ptr });
     }
     if (penStuck()) penDown = false;
-    if (e.pointerType === 'touch' && (penDown || penRecent())) return;   // paume
+    // un second doigt, même tout juste après le stylet, fait un vrai geste : seul un doigt isolé est suspect
+    const alone = ![...pointers.values()].some(r => r.type === 'touch');
+    const palm = e.pointerType === 'touch' && (penDown || (penRecent() && alone));
+    if (e.pointerType === 'touch' && !palm) for (const r of pointers.values()) if (r.type === 'touch') r.palm = false;
     e.preventDefault();
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     el.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType, palm });
+    if (palm) return;
 
     if (e.pointerType === 'touch') {
       const n = touchCount();
@@ -64,14 +75,15 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
   el.addEventListener('pointermove', e => {
     if (e.pointerType === 'pen' && penDown) lastPen = performance.now();
     if (penStuck()) penDown = false;
-    if (e.pointerType === 'touch' && (penDown || penRecent())) return;
     const rec = pointers.get(e.pointerId);
     if (!rec) { hover(e, el); return; }
     rec.x = e.clientX; rec.y = e.clientY;
+    if (rec.palm) return;
+    if (e.pointerType === 'pen' && penInfo && penInfo.t) penInfo.max = Math.max(penInfo.max, Math.hypot(e.clientX - penInfo.x, e.clientY - penInfo.y));
     if (gesture && rec.type === 'touch') {
       e.preventDefault();
       // trois doigts : on ne zoome plus ; un frottement ou une rotation vide le calque (geste de Procreate)
-      if (touchCount() >= 3) { if (!gesture.cleared && !(penSeen && performance.now() - lastPen < 4000) && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
+      if (touchCount() >= 3) { if (!gesture.cleared && !penRecent() && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
       moveGesture(); return;
     }
     if (panning && panning.id === e.pointerId) {
@@ -94,6 +106,18 @@ export function attachInput(el, { onUndo, onRedo, onClear }) {
     if (pending && pending.e.pointerId === e.pointerId) { flushPending(el); }
     pointers.delete(e.pointerId);
     if (drawingId === e.pointerId) { tools.up(); drawingId = null; }
+    if (e.pointerType === 'pen' && e.type === 'pointerup' && penInfo) {
+      const info = penInfo; penInfo = null;
+      if (info.erase && onPenEraser) onPenEraser(false);
+      // double tape du bout du stylet (sans tracer) : bascule plume ↔ gomme ; les deux points posés sont défaits
+      if (info.t && info.max < 8 && performance.now() - info.t < 300 && onPenToggle) {
+        const now = performance.now();
+        if (lastTap && now - lastTap.t < 500 && Math.hypot(info.x - lastTap.x, info.y - lastTap.y) < 30) {
+          while (ed.undo.ptr > lastTap.ptr && ed.undo.canUndo) ed.undo.undo();
+          lastTap = null; onPenToggle(true);
+        } else lastTap = { t: now, x: info.x, y: info.y, ptr: info.ptr };
+      } else lastTap = null;
+    }
     if (panning && panning.id === e.pointerId) stopPan();
     if (gesture && rec.type === 'touch' && touchCount() === 0) {
       const tap = !gesture.moved && performance.now() - gesture.t0 < 350 && e.type === 'pointerup';

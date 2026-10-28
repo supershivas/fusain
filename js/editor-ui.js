@@ -82,7 +82,7 @@ export function mountEditor(el) {
     <aside class="dock" id="dock" ${dockOpen ? '' : 'hidden'}></aside>
   </div>`;
   attach($('#view', root));
-  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer });
+  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser });
   fit();
   renderAll();
 
@@ -145,6 +145,19 @@ function updateUndo() {
   for (const [sel, ok] of [['[data-act=undo]', ed.undo.canUndo], ['[data-act=redo]', ed.undo.canRedo]]) {
     $$(sel, root).forEach(b => { b.disabled = !ok; });
   }
+}
+
+// Stylet : bascule plume ↔ gomme (double tape ou bouton du flanc) ; le bout gomme du stylet gomme le temps d'un trait.
+let penBefore = null;
+function penToggle(fromTap) {
+  if (fromTap) { markChanged(); requestRender(); }
+  if (!['pencil', 'eraser'].includes(ed.tool) && !(fromTap && ed.tool === 'texture')) { if (fromTap) return; setTool('pencil'); return; }
+  const to = ed.tool === 'eraser' ? 'pencil' : 'eraser';
+  setTool(to); toast(to === 'eraser' ? 'Gomme' : 'Crayon', { duration: 900 });
+}
+function penEraser(on) {
+  if (on) { if (ed.tool !== 'eraser') { penBefore = ed.tool; setTool('eraser'); } }
+  else if (penBefore) { setTool(penBefore); penBefore = null; }
 }
 
 // Trois doigts qui frottent : vide le calque actif, avec « Annuler » pendant quelques secondes.

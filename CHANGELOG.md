@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.0 — 2026-10-28
+- Double tape du bout du stylet : bascule plume et gomme (aussi le bouton du flanc ; le bout gomme du stylet gomme)
+- Rejet de la paume assoupli : seul le déplacement ou le trait d'un doigt isolé près du stylet est ignoré, zoom et annuler restent libres
+
 ## 1.9.0 — 2026-10-28
 - Barre contextuelle sur une seule ligne : forme du pinceau (sans texte, ouvre la bibliothèque), un seul curseur de taille, réglages en une icône ; la gomme a aussi des formes de pinceau
 - La bibliothèque quitte le volet de droite : liste déroulante dans la barre, et fenêtre depuis le nouveau menu Outils (pinceaux, trames, bulles)
