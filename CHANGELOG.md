@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.20.1 — 2026-10-29
+- Les boutons Dupliquer / Supprimer du glissé vers la gauche s'adaptent à la longueur de leur texte
+
 ## 1.20.0 — 2026-10-29
 - Les calques se déplacent en glisser-déposer par la poignée à gauche de chaque ligne (annulable)
 

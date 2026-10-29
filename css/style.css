@@ -333,7 +333,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swipe.dragging > .layer { transition: none; }
 .swipe.open > .layer { transform: translateX(-132px); }
 .swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
-.swipe-actions button { min-width: 66px; padding: 0 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
+.swipe-actions button { flex: 0 0 auto; width: max-content; min-width: 76px; padding: 0 12px; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
 .swipe-actions button.danger { background: var(--accent); }
 .swipe-actions button:only-child { min-width: 132px; }
 .swipe-actions .ti { font-size: 1.1rem; }
