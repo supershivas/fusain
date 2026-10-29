@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.23.0 — 2026-10-29
+- Labo : cinq idées interactives pour l'ergonomie de l'outil Bulle (barre flottante, queue tirée du bord, panneau à vignettes, tracer pour créer)
+
 ## 1.22.0 — 2026-10-29
 - Bulles nuage : plus d'artefacts dans les creux, et de vrais réglages (nombre de lobes, bombé, creux arrondis)
 - Bulles éclair : creux et pointes arrondis réglables ; nouveaux modèles « Nuage doux » et « Éclair arrondi »

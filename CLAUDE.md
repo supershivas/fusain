@@ -54,7 +54,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 
 - **Temps réel** : entre onglets par `BroadcastChannel` ; entre appareils par sondage (au retour au premier plan et toutes les 60 s),
   pas par Supabase Realtime.
-- **Atelier** (section 8 quater) : non créé, il n'a pas été demandé (l'app est elle-même un atelier). **Labo** : `labo.html`, sujets Trames et Bulles.
+- **Atelier** (section 8 quater) : non créé, il n'a pas été demandé (l'app est elle-même un atelier). **Labo** : `labo.html`, sujets Trames et Bulles (dont « Outil Bulle » : 5 bancs d'essai interactifs de l'ergonomie, `bubbleLab` dans `labo.js`).
 - **Parité visuelle** : pas de barre latérale comme Idée et Source ; en-tête, boutons, modales et toasts suivent les tokens.
 - Les trames personnalisées sont stockées **par projet** (dans `data.tramas`), pas dans une bibliothèque globale.
 
