@@ -7,7 +7,7 @@ import {
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
-import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateView } from './view.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
@@ -78,12 +78,16 @@ export function mountEditor(el) {
       <div class="optwrap"><div class="optbar" id="optbar"></div><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div></div>
       <div class="canvas-wrap">
         <canvas id="view" aria-label="Page de BD"></canvas>
+        <div class="bfloat" id="bfloat" hidden></div>
+        <textarea class="bedit" id="bedit" hidden aria-label="Texte de la bulle"></textarea>
         <div class="zoombar" id="zoombar"></div>
       </div>
     </section>
     <aside class="dock" id="dock" ${dockOpen ? '' : 'hidden'}></aside>
   </div>`;
   attach($('#view', root));
+  hooks.afterRender = placeBubbleUI;
+  initBubbleUI();
   attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser });
   fit();
   renderAll();
@@ -112,7 +116,7 @@ export function mountEditor(el) {
     else if (what === 'layers') renderDock();
     else if (what === 'bubbles') { renderDock(); if (ed.tool === 'bubble') renderOptbar(); }
     else if (what === 'tool') { renderOptbar(); renderDock(); }
-    else if (what === 'bubble-added') { popId = 'btext'; renderOptbar(); renderPop(); renderDock(); }
+    else if (what === 'bubble-added') { renderOptbar(); renderDock(); setTimeout(openBubbleEdit, 0); }
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
@@ -276,8 +280,8 @@ export function renderOptbar() {
       : `<button class="swatch-btn tpl-btn ${popId === 'lib-bubble' ? 'on' : ''}" data-pop="lib-bubble" aria-expanded="${popId === 'lib-bubble'}" title="Modèle de bulle : ${esc(currentTemplate().name)}" aria-label="Choisir le modèle de bulle, actuel : ${esc(currentTemplate().name)}">${icon((BUBBLE_KINDS.find(k => k.id === currentTemplate().kind) || BUBBLE_KINDS[0]).icon)} <span>${esc(currentTemplate().name)}</span>${icon('chevron-down')}</button>
         <span class="row tight">
           <button class="icon-btn icon-only" data-freebubble="1" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></span>`
-        + (b ? popBtn('btext') + popBtn('bshape') + popBtn('btail') + `<button class="icon-btn icon-only" data-dupbubble="1" title="Dupliquer la bulle" aria-label="Dupliquer la bulle">${icon('copy')}</button><button class="icon-btn icon-only" data-delbubble="1" title="Supprimer la bulle" aria-label="Supprimer la bulle">${icon('trash')}</button>`
-          : `<span class="hint">Touche une case pour y poser une bulle, une bulle pour la régler ; points rouges : taille, rotation et queue.</span>`);
+        + (b ? `<span class="hint">Barre sur la bulle : écrire, forme, queue, réglages.</span>`
+          : `<span class="hint">Touche une case pour y poser une bulle, une bulle pour la régler.</span>`);
   } else if (t === 'layout') {
     const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
     const pv = ed.addPreview && ed.addPreview.panelId === pn.id ? ed.addPreview : null;
@@ -768,6 +772,7 @@ async function onDock(e) {
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
   else if (a === 'tpl-save') {
+    bfMenu = false; placeBubbleUI();
     const b = bubble();
     if (!b) { toast('Sélectionne d\'abord une bulle.'); return; }
     const name = await promptModal({ title: 'Enregistrer le modèle de bulle', label: 'Nom', value: 'Ma bulle' });
@@ -807,6 +812,84 @@ function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
   ed.bubbleDefaults[b.kind] = d; savePrefs();
+}
+
+// ───────────── Barre flottante de la bulle sélectionnée et saisie du texte sur la bulle ─────────────
+
+const SHAPE_ORDER = [['ellipse', 'circle', 'Ellipse'], ['rect', 'square-rounded', 'Rectangle'], ['cloud', 'cloud', 'Nuage'], ['eclair', 'bolt', 'Éclair']];
+const tailMemory = new Map();
+let bfMenu = false, editBefore = null;
+const editingBubble = () => { const e = $('#bedit', root); return e && !e.hidden; };
+
+function initBubbleUI() {
+  const fl = $('#bfloat', root), ta = $('#bedit', root);
+  fl.addEventListener('click', e => { if (e.target.closest('[data-act]')) onDock(e); });
+  fl.addEventListener('click', e => {
+    const t = e.target.closest('[data-bf], [data-bfpop]'), b = bubble();
+    if (!t || !b) return;
+    if (t.dataset.bfpop) { popId = t.dataset.bfpop; bfMenu = false; renderOptbar(); renderPop(); placeBubbleUI(); return; }
+    const a = t.dataset.bf;
+    if (a === 'text') { bfMenu = false; openBubbleEdit(); return; }
+    if (a === 'more') { bfMenu = !bfMenu; placeBubbleUI(); return; }
+    bfMenu = false;
+    if (a === 'shape') {
+      const cur = props(b).shape, i = SHAPE_ORDER.findIndex(s => s[0] === cur), next = SHAPE_ORDER[(i + 1) % SHAPE_ORDER.length];
+      const before = snapshotBubble(b); b.shape = next[0]; refitBubble(b); commitBubbleEdit(b, before); rememberBubble(b); toast(next[2], { duration: 900 });
+    } else if (a === 'tail') {
+      const before = snapshotBubble(b);
+      if (b.tail) { tailMemory.set(b.id, b.tail); setTail(b, false); }
+      else { setTail(b, true); if (tailMemory.has(b.id)) b.tail = tailMemory.get(b.id); if (b.tailStyle === 'none') delete b.tailStyle; }
+      commitBubbleEdit(b, before); rememberBubble(b);
+    } else if (a === 'dup') duplicateBubble(b);
+    else if (a === 'del') { deleteBubble(b); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); }
+    placeBubbleUI();
+  });
+  ta.addEventListener('input', () => { const b = bubble(); if (!b) return; b.text = ta.value; refitBubble(b); markChanged(); requestRender(); });
+  ta.addEventListener('blur', () => {
+    const b = bubble();
+    ta.hidden = true;
+    if (b && editBefore) commitBubbleEdit(b, editBefore);
+    editBefore = null; renderDock(); placeBubbleUI();
+  });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); ta.blur(); } });
+}
+
+function openBubbleEdit() {
+  const b = bubble(), ta = $('#bedit', root);
+  if (!b || !ta) return;
+  editBefore = snapshotBubble(b);
+  ta.value = b.text || ''; ta.hidden = false; placeBubbleUI(); ta.focus(); ta.select();
+}
+
+// Posé après chaque image : la barre au-dessus de la poignée de rotation (en dessous si elle sortirait de l'écran), le champ de saisie sur la bulle.
+function placeBubbleUI() {
+  const fl = $('#bfloat', root), ta = $('#bedit', root);
+  if (!fl || !ta) return;
+  const b = ed.tool === 'bubble' && !ed.bubbleDraw ? bubble() : null;
+  if (!b || b.hidden) { fl.hidden = true; if (!ta.hidden) { ta.hidden = true; } return; }
+  const k = view.s, c = toScreen(b.x + b.w / 2, b.y + b.h / 2);
+  if (!ta.hidden) {
+    const tw = Math.max(b.w * k, 170), th = Math.max(b.h * k, 76);   // champ assez grand pour taper même si la bulle est petite
+    ta.style.width = tw + 'px'; ta.style.height = th + 'px'; ta.style.left = c.x - tw / 2 + 'px'; ta.style.top = c.y - th / 2 + 'px';
+    ta.style.transform = `rotate(${(b.rot || 0) * Math.PI / 180 + view.r}rad)`;
+  }
+  const cur = props(b).shape, sh = SHAPE_ORDER.find(s => s[0] === cur) || SHAPE_ORDER[0], locked = !!b.locked;
+  const html = `<button data-bf="text" title="Écrire" aria-label="Écrire le texte">${icon('typography')}</button>
+    <button data-bf="shape" title="Forme : ${sh[2]} (touche pour changer)" aria-label="Changer la forme, actuelle : ${sh[2]}">${icon(sh[1])}</button>
+    <button data-bf="tail" class="${b.tail ? 'on' : ''}" title="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-label="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-pressed="${!!b.tail}">${icon(b.tail ? 'message-circle' : 'message-circle-off')}</button>
+    <button data-bf="more" class="${bfMenu ? 'on' : ''}" title="Réglages" aria-label="Réglages de la bulle" aria-expanded="${bfMenu}">${icon('adjustments-horizontal')}</button>
+    <button data-bf="dup" title="Dupliquer" aria-label="Dupliquer la bulle">${icon('copy')}</button>
+    <button data-bf="del" title="Supprimer" aria-label="Supprimer la bulle">${icon('trash')}</button>
+    ${bfMenu ? `<div class="bfmenu"><button data-bfpop="btext">${icon('typography')} Texte, police, taille…</button><button data-bfpop="bshape">${icon('shape')} Forme et trait…</button>
+      <button data-bfpop="btail">${icon('message-circle-plus')} Queue…</button><button data-act="tpl-save">${icon('device-floppy')} Enregistrer comme modèle…</button></div>` : ''}`;
+  if (fl._html !== html) { fl._html = html; fl.innerHTML = html; }
+  fl.hidden = ta.hidden === false || locked;
+  if (fl.hidden) return;
+  const w = fl.offsetWidth || 300, barH = 52, rh = bubbleRotHandle(b);
+  let top = rh.y - 20 - barH;
+  if (top < 6) { const bottom = toScreen(b.x + b.w / 2, b.y + b.h); top = Math.min(view.h - barH - 6, bottom.y + 44); }
+  const left = Math.max(w / 2 + 6, Math.min(view.w - w / 2 - 6, rh.x));
+  fl.style.left = left + 'px'; fl.style.top = Math.max(6, top) + 'px';
 }
 
 let bubbleBefore = null;
@@ -1150,7 +1233,7 @@ function libraryModal(mode) {
     if (add || free) {
       m.close();
       if (ed.tool !== 'bubble') setTool('bubble');
-      if (add) { ed.bubbleTemplate = add.dataset.addtpl; savePrefs(); addTemplateBubble(); popId = 'btext'; } else ed.bubbleDraw = true;
+      if (add) { ed.bubbleTemplate = add.dataset.addtpl; savePrefs(); addTemplateBubble(); setTimeout(openBubbleEdit, 0); } else ed.bubbleDraw = true;
       renderOptbar(); renderPop(); return;
     }
     const closes = e.target.closest('[data-brush],[data-trama]');

@@ -233,8 +233,8 @@ export const GROUPS = [
       { title: 'Sans queue', say: 'Bulles sans queue pour une lecture plus aérée quand le locuteur est évident.', render: el => bubbleDemo(el, { lw: 1, pt: 9, tail: false }) },
     ] },
     { id: 'ergonomie', label: 'Outil Bulle', icon: 'hand-click', variants: [
-      { title: 'Barre et fenêtres', actuelle: true, say: 'Le fonctionnement actuel : une barre, puis une fenêtre par famille de réglages (Texte, Forme, Queue). Retirer la queue = Queue → Style → Aucune.', render: el => bubbleLab(el, 'A') },
-      { title: 'Barre flottante sur la bulle', say: 'Les gestes courants sont sur la bulle elle-même : écrire, changer de forme (une touche), queue marche / arrêt, copie, corbeille. Le reste est derrière « Réglages ».', render: el => bubbleLab(el, 'B') },
+      { title: 'Barre et fenêtres', ancienne: true, say: 'Le fonctionnement actuel : une barre, puis une fenêtre par famille de réglages (Texte, Forme, Queue). Retirer la queue = Queue → Style → Aucune.', render: el => bubbleLab(el, 'A') },
+      { title: 'Barre flottante sur la bulle', actuelle: true, retenue: true, say: 'Les gestes courants sont sur la bulle elle-même : écrire, changer de forme (une touche), queue marche / arrêt, copie, corbeille. Le reste est derrière « Réglages ».', render: el => bubbleLab(el, 'B') },
       { title: 'Queue tirée du bord', say: 'Plus de réglage pour la queue : on la sort du bord de la bulle en tirant, on la retire en ramenant sa pointe dedans. Double toucher pour écrire.', render: el => bubbleLab(el, 'C') },
       { title: 'Panneau à vignettes', say: 'Un seul panneau : on choisit forme et queue sur des vignettes plutôt que dans des listes ; les curseurs sont repliés.', render: el => bubbleLab(el, 'D') },
       { title: 'Tracer pour créer', say: 'On trace dans la case la taille de la bulle : elle est créée du type choisi, avec une queue, et la saisie du texte s\'ouvre aussitôt.', render: el => bubbleLab(el, 'E') },
@@ -278,7 +278,7 @@ function draw() {
     <button class="icon-btn icon-only" data-step="1" aria-label="Variante suivante"><i class="ti ti-chevron-right" aria-hidden="true"></i></button>
     <span class="ttl">${esc(v.title)}</span>`;
   const stage = $('#stage');
-  stage.innerHTML = `<article class="variant"><h2><span>${LET[vi]} · ${esc(v.title)}</span>${v.actuelle ? '<span class="tag cur">actuelle</span>' : ''}${v.retenue ? '<span class="tag cur">retenue</span>' : ''}</h2><p class="say">${esc(v.say)}</p><div class="demo" id="demo"></div></article>`;
+  stage.innerHTML = `<article class="variant"><h2><span>${LET[vi]} · ${esc(v.title)}</span>${v.actuelle ? '<span class="tag cur">actuelle</span>' : ''}${v.retenue ? '<span class="tag cur">retenue</span>' : ''}${v.ancienne ? '<span class="tag">ancienne</span>' : ''}</h2><p class="say">${esc(v.say)}</p><div class="demo" id="demo"></div></article>`;
   v.render($('#demo'));
   document.title = `Labo — Fusain`;
 }

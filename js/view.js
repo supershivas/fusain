@@ -160,7 +160,10 @@ export function requestRender() {
 
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-export function render() {
+// Éléments HTML posés sur la page (barre flottante des bulles, saisie du texte) : repositionnés après chaque image.
+export const hooks = {};
+export function render() { renderFrame(); if (hooks.afterRender) hooks.afterRender(); }
+function renderFrame() {
   if (!ctx) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = css('--stage-bg') || '#e9e7e2';

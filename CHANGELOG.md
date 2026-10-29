@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.24.0 — 2026-10-29
+- Outil Bulle : barre flottante sur la bulle (écrire, forme en une touche, queue marche / arrêt, réglages, copie, corbeille) et saisie du texte directement sur la bulle
+- La barre du haut ne garde que le modèle et le tracé à la main
+
 ## 1.23.0 — 2026-10-29
 - Labo : cinq idées interactives pour l'ergonomie de l'outil Bulle (barre flottante, queue tirée du bord, panneau à vignettes, tracer pour créer)
 
