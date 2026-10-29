@@ -1,9 +1,7 @@
 {
-  "version": "1.21.0",
+  "version": "1.21.1",
   "date": "2026-10-29",
   "changes": [
-    "Outil Bulle : un toucher dans une case y pose une bulle du modèle choisi dans la liste (Parole, Pensée, Cri, Narration, Texte, Mon style BD… et tes modèles enregistrés)",
-    "Nouvelle forme Éclair / explosion (nombre de pointes, profondeur, irrégularité) et type Cri",
-    "Outil Cases : bouton Fusionner dans la case voisine ; boutons Enregistrer dans les listes de pinceaux, gommes, trames et bulles"
+    "Bulles : quand la base de la queue est à droite de sa pointe, la courbure s'inverse automatiquement (queue en miroir)"
   ]
 }

@@ -259,12 +259,14 @@ function drawTail(ctx, b, p, pts, lw) {
   if (!A) return;
   const len = Math.hypot(t.x - A.x, t.y - A.y) || 1, ux = (t.x - A.x) / len, uy = (t.y - A.y) / len, nx = -uy, ny = ux;
   const half = p.tailW / 100 * small / 2;
+  // courbure : si la base de la queue est à droite de sa pointe, le sens s'inverse (la queue est le miroir de celle qui part vers la droite)
+  const tb = A.x > t.x ? -p.tailBend : p.tailBend;
 
   if (p.tailStyle === 'pointe') {
     // les deux coins de la base sont ramenés sur le contour, quelle que soit sa forme
     const hit = s => rayHit(pts, cx, cy, A.x + nx * half * s, A.y + ny * half * s) || A;
     const B1 = hit(1), B2 = hit(-1);
-    const round = Math.max(-half * 0.45, p.tailRound / 100 * len * 0.22), bend = p.tailBend / 100 * len * 0.4;
+    const round = Math.max(-half * 0.45, p.tailRound / 100 * len * 0.22), bend = tb / 100 * len * 0.4;
     const C1 = { x: (B1.x + t.x) / 2 + nx * (round + bend), y: (B1.y + t.y) / 2 + ny * (round + bend) };
     const C2 = { x: (B2.x + t.x) / 2 - nx * (round - bend), y: (B2.y + t.y) / 2 - ny * (round - bend) };
     const tw = p.tailTip / 100 * half * 0.9, T1 = { x: t.x + nx * tw, y: t.y + ny * tw }, T2 = { x: t.x - nx * tw, y: t.y - ny * tw };
@@ -277,7 +279,7 @@ function drawTail(ctx, b, p, pts, lw) {
     ctx.beginPath(); edges(); ctx.lineTo(inward(B2).x, inward(B2).y); ctx.lineTo(inward(B1).x, inward(B1).y); ctx.closePath(); ctx.fill();
     if (lw > 0) { ctx.beginPath(); edges(); ctx.stroke(); }
   } else if (p.tailStyle === 'fleche') {
-    const w = Math.max(lw, 2) * 1.3, bend = p.tailBend / 100 * len * 0.4, head = Math.max(w * 5, p.tailW / 100 * small * 0.7);
+    const w = Math.max(lw, 2) * 1.3, bend = tb / 100 * len * 0.4, head = Math.max(w * 5, p.tailW / 100 * small * 0.7);
     const C = { x: (A.x + t.x) / 2 + nx * bend, y: (A.y + t.y) / 2 + ny * bend };
     const ang = Math.atan2(t.y - C.y, t.x - C.x);
     ctx.save(); ctx.lineWidth = w;
@@ -289,7 +291,7 @@ function drawTail(ctx, b, p, pts, lw) {
     const sx = A.x + (A.x - cx) * 0.1, sy = A.y + (A.y - cy) * 0.1, k = p.tailW / 24;
     [0.3, 0.62, 0.92].forEach((s, i) => {
       const r = Math.max(lw * 1.5, small * (0.08 - i * 0.02) * k);
-      const bend = Math.sin(s * Math.PI) * p.tailBend / 100 * len * 0.4;
+      const bend = Math.sin(s * Math.PI) * tb / 100 * len * 0.4;
       ctx.beginPath(); ctx.arc(sx + (t.x - sx) * s + nx * bend, sy + (t.y - sy) * s + ny * bend, r, 0, Math.PI * 2); ctx.fill(); if (lw > 0) ctx.stroke();
     });
   }

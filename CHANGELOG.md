@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.21.1 — 2026-10-29
+- Bulles : quand la base de la queue est à droite de sa pointe, la courbure s'inverse automatiquement (queue en miroir)
+
 ## 1.21.0 — 2026-10-29
 - Outil Bulle : un toucher dans une case y pose une bulle du modèle choisi dans la liste (Parole, Pensée, Cri, Narration, Texte, Mon style BD… et tes modèles enregistrés)
 - Nouvelle forme Éclair / explosion (nombre de pointes, profondeur, irrégularité) et type Cri
