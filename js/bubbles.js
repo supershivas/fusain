@@ -6,12 +6,13 @@ import { fontSpec, touchFont, DEFAULT_FONT } from './fonts.js';
 export const BUBBLE_KINDS = [
   { id: 'parole', name: 'Parole', icon: 'message-circle' },
   { id: 'pensee', name: 'Pensée', icon: 'cloud' },
+  { id: 'cri', name: 'Cri (éclair)', icon: 'bolt' },
   { id: 'narration', name: 'Narration', icon: 'square' },
   { id: 'texte', name: 'Texte libre', icon: 'typography' },
 ];
 
 export const SHAPES = [
-  { id: 'ellipse', name: 'Ellipse' }, { id: 'rect', name: 'Rectangle' }, { id: 'cloud', name: 'Nuage' },
+  { id: 'ellipse', name: 'Ellipse' }, { id: 'rect', name: 'Rectangle' }, { id: 'cloud', name: 'Nuage' }, { id: 'eclair', name: 'Éclair / explosion' },
   { id: 'libre', name: 'Dessinée à la main' }, { id: 'none', name: 'Sans contour' },
 ];
 export const TAILS = [
@@ -22,13 +23,22 @@ export const TAILS = [
 //  wobble : imperfection du contour (0 = géométrique, 100 = très tremblé)
 //  tailW : largeur de la base de la queue, en % du petit côté ; tailRound : -100 creuse … +100 bombée ;
 //  tailBend : courbure d'ensemble (-100 … +100) ; tailTip : pointe émoussée (0 = aiguë)
-const BASE = { radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
+const BASE = { spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
 const PRESETS = {
   parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
   pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
+  cri: { ...BASE, shape: 'eclair', tailStyle: 'pointe', wobble: 30, stroke: 0.5, tailW: 20 },
   narration: { ...BASE, shape: 'rect', tailStyle: 'none', pad: 2, wobble: 12 },
   texte: { ...BASE, shape: 'none', tailStyle: 'none', pad: 0, wobble: 0 },
 };
+// Modèles proposés dans la liste de l'outil Bulle : un type de bulle + un style. `mon-style` reprend le style préféré de l'auteur.
+export const BUBBLE_TEMPLATES = [
+  { id: 'parole', name: 'Parole', kind: 'parole' }, { id: 'pensee', name: 'Pensée', kind: 'pensee' }, { id: 'cri', name: 'Cri (éclair)', kind: 'cri' },
+  { id: 'narration', name: 'Narration', kind: 'narration' }, { id: 'texte', name: 'Texte libre', kind: 'texte' },
+  { id: 'mon-style', name: 'Mon style BD', kind: 'parole', style: { shape: 'rect', radius: 10, wobble: 45, pad: 6, sameStroke: true, clip: true, noFrame: true,
+    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: true, auto: false } },
+  { id: 'eclair-fort', name: 'Cri très pointu', kind: 'cri', style: { spikes: 18, depth: 42, wobble: 45, stroke: 0.6 } },
+];
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
 const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle']);
 
@@ -55,7 +65,7 @@ export const lineWidth = dpi => Math.max(2, Math.round(0.35 / 25.4 * dpi));
 
 function setFont(ctx, b, dpi) { const p = props(b); touchFont(p.font); ctx.font = fontSpec(p.font, fontPx(b, dpi)); }
 const shown = b => (b.caps ? b.text.toLocaleUpperCase('fr') : b.text);
-const roundy = shape => shape === 'ellipse' || shape === 'cloud' || shape === 'libre';
+const roundy = shape => shape === 'ellipse' || shape === 'cloud' || shape === 'libre' || shape === 'eclair';
 
 // Coupe le texte en lignes qui tiennent dans maxW.
 export function wrapText(ctx, text, maxW) {
@@ -135,6 +145,15 @@ function outlinePoints(b, p) {
       const cur = corners[i], nxt = corners[(i + 1) % 4];
       pts.push(...cur, ...edge(cur[cur.length - 1], nxt[0]));
     }
+  } else if (p.shape === 'eclair') {
+    // étoile à pointes irrégulières : pointes sur l'ellipse, creux à `depth` % vers le centre ; wobble = irrégularité des longueurs
+    const n = Math.max(4, Math.round(p.spikes)), j = p.wobble / 100;
+    for (let i = 0; i < n * 2; i++) {
+      const a = i / (n * 2) * Math.PI * 2 - Math.PI / 2, z = noise(i / (n * 2)), tip = i % 2 === 0;
+      const f = tip ? 1 + j * 0.22 * z : 1 - p.depth / 100 * (1 + j * 0.5 * z);
+      pts.push({ x: cx + Math.cos(a) * rx * f, y: cy + Math.sin(a) * ry * f });
+    }
+    return pts;
   } else {
     const n = p.shape === 'cloud' ? 96 : 72;
     for (let i = 0; i < n; i++) {
@@ -203,6 +222,7 @@ function traceCloud(ctx, b, p, lw) {
 function traceShape(ctx, b, p, pts, lw) {
   ctx.beginPath();
   if (p.shape === 'cloud') traceCloud(ctx, b, p, lw);
+  else if (p.shape === 'eclair') polygon(ctx, pts);
   else if (p.shape === 'rect') {
     if (p.wobble > 0) polygon(ctx, pts);
     else { const r = p.radius / 100 * Math.min(b.w, b.h) / 2; if (r > 0 && ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, r); else ctx.rect(b.x, b.y, b.w, b.h); }

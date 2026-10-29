@@ -1,13 +1,13 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls } from './view.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
 import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
@@ -223,6 +223,11 @@ function layoutDown(pt) {
     if (near(pc.handle, pc.handle.r)) { session = { kind: 'ratio', ap, side: pc.side, horiz: pc.horiz, off: (pc.horiz ? pt.x : pt.y) - pc.line }; return; }
     cancelAdd(); return;   // un toucher ailleurs abandonne l'aperçu sans rien faire d'autre
   }
+  if (ap && !pc) for (const m of mergeButtons(ap)) {   // bouton de fusion posé dans la case voisine : la case active l'absorbe
+    if (Math.hypot(at.x - m.x, at.y - m.y) > m.r + (pt.type === 'touch' ? 8 : 3)) continue;
+    if (mergePanels(ap.id, m.id)) toast('Cases fusionnées.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+    notify('tool'); setOverlay({}); return;
+  }
   if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : montre la future case (réglée ensuite par sa poignée)
     if (Math.hypot(at.x - pl.x, at.y - pl.y) > pl.r + (pt.type === 'touch' ? 10 : 4)) continue;
     if (!splitRects(ap, pl.side, ed.addRatio / 100)) { toast('Cette case est trop petite pour être coupée de ce côté.'); return; }
@@ -262,6 +267,8 @@ function bubbleDown(pt) {
     if (bb.hidden || pg.bubblesHidden) continue;
     if (hitBubble(bb, pt.x, pt.y)) { selectBubble(bb.id); if (!bb.locked) start(bb, 'move', pt); return; }
   }
+  const into = panelAt(pt.x, pt.y);
+  if (into) { selectPanel(into.id); addTemplateBubble({ x: pt.x, y: pt.y }); notify('bubble-added'); return; }   // un toucher dans une case y pose une bulle du modèle choisi
   selectBubble(null);
 }
 

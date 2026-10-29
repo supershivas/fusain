@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.21.0 — 2026-10-29
+- Outil Bulle : un toucher dans une case y pose une bulle du modèle choisi dans la liste (Parole, Pensée, Cri, Narration, Texte, Mon style BD… et tes modèles enregistrés)
+- Nouvelle forme Éclair / explosion (nombre de pointes, profondeur, irrégularité) et type Cri
+- Outil Cases : bouton Fusionner dans la case voisine ; boutons Enregistrer dans les listes de pinceaux, gommes, trames et bulles
+
 ## 1.20.1 — 2026-10-29
 - Les boutons Dupliquer / Supprimer du glissé vers la gauche s'adaptent à la longueur de leur texte
 

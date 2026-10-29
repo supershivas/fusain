@@ -1,7 +1,7 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
-  clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
+  clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
@@ -52,6 +52,8 @@ export function loadPrefs() {
     if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
     if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
+    if (Array.isArray(p.bubbleTemplates)) ed.bubbleTemplates = p.bubbleTemplates;
+    if (typeof p.bubbleTemplate === 'string') ed.bubbleTemplate = p.bubbleTemplate;
     if (typeof p.tool === 'string') ed.tool = p.tool === 'bubble' || p.tool === 'layout' ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
@@ -61,7 +63,7 @@ export function savePrefs() {
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
-      customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets }));
+      customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets, bubbleTemplates: ed.bubbleTemplates, bubbleTemplate: ed.bubbleTemplate }));
   } catch { /* */ }
 }
 
@@ -110,6 +112,7 @@ export function mountEditor(el) {
     else if (what === 'layers') renderDock();
     else if (what === 'bubbles') { renderDock(); if (ed.tool === 'bubble') renderOptbar(); }
     else if (what === 'tool') { renderOptbar(); renderDock(); }
+    else if (what === 'bubble-added') { popId = 'btext'; renderOptbar(); renderPop(); renderDock(); }
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
@@ -270,10 +273,11 @@ export function renderOptbar() {
     const b = bubble();
     html = ed.bubbleDraw
       ? `<span class="hint">Trace le contour de la bulle d'un seul geste.</span><button class="btn small" data-freebubble="0">Annuler</button>`
-      : `<span class="row tight" role="group" aria-label="Ajouter une bulle">${BUBBLE_KINDS.map(k => `<button class="icon-btn icon-only" data-addb="${k.id}" title="Ajouter : ${k.name}" aria-label="Ajouter : ${k.name}">${icon(k.icon)}</button>`).join('')}
+      : `<button class="swatch-btn tpl-btn ${popId === 'lib-bubble' ? 'on' : ''}" data-pop="lib-bubble" aria-expanded="${popId === 'lib-bubble'}" title="Modèle de bulle : ${esc(currentTemplate().name)}" aria-label="Choisir le modèle de bulle, actuel : ${esc(currentTemplate().name)}">${icon((BUBBLE_KINDS.find(k => k.id === currentTemplate().kind) || BUBBLE_KINDS[0]).icon)} <span>${esc(currentTemplate().name)}</span>${icon('chevron-down')}</button>
+        <span class="row tight">
           <button class="icon-btn icon-only" data-freebubble="1" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></span>`
         + (b ? popBtn('btext') + popBtn('bshape') + popBtn('btail') + `<button class="icon-btn icon-only" data-dupbubble="1" title="Dupliquer la bulle" aria-label="Dupliquer la bulle">${icon('copy')}</button><button class="icon-btn icon-only" data-delbubble="1" title="Supprimer la bulle" aria-label="Supprimer la bulle">${icon('trash')}</button>`
-          : `<span class="hint">Touche une bulle pour la régler ; points rouges : taille et queue.</span>`);
+          : `<span class="hint">Touche une case pour y poser une bulle, une bulle pour la régler ; points rouges : taille, rotation et queue.</span>`);
   } else if (t === 'layout') {
     const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
     const pv = ed.addPreview && ed.addPreview.panelId === pn.id ? ed.addPreview : null;
@@ -442,13 +446,24 @@ export function renderDock() {
   renderPop();
 }
 
+// Liste déroulante de l'outil Bulle : modèles du programme puis « Mes modèles » ; un toucher sur la page y pose une bulle de ce modèle.
+function bubbleTplList() {
+  const all = allBubbleTemplates(), cust = all.filter(t => t.id.startsWith('bt')), std = all.filter(t => !t.id.startsWith('bt'));
+  const ic = t => icon((BUBBLE_KINDS.find(k => k.id === t.kind) || BUBBLE_KINDS[0]).icon);
+  const row = t => `<div class="row tight" style="margin-bottom:4px"><button class="btn ${t.id === ed.bubbleTemplate ? 'primary' : ''}" data-tpl="${t.id}" style="flex:1;justify-content:flex-start">${ic(t)} ${esc(t.name)}</button>${t.id.startsWith('bt') ? `<button class="icon-btn icon-only" data-tpldel="${t.id}" aria-label="Supprimer le modèle ${esc(t.name)}">${icon('trash')}</button>` : ''}</div>`;
+  return std.map(row).join('')
+    + (cust.length ? sec('btpl', 'Mes modèles', cust.map(row).join(''), true) : '')
+    + `<div class="row tight" style="margin:8px 0 2px"><button class="btn small primary" data-act="tpl-save" ${bubble() ? '' : 'disabled'}>${icon('device-floppy')} Enregistrer la bulle sélectionnée…</button></div>
+       <small class="note">Touche une case avec l'outil Bulle pour y poser une bulle du modèle choisi.</small>`;
+}
+
 // Réglages détaillés de l'outil : fenêtre flottante sous la barre du haut, jamais dans le volet.
 const TOOL_TRAMA = ['texture', 'fill', 'shape'];
 function renderPop() {
   const el = $('#pop', root);
   if (!el || !ed.project) return;
   const bubbleOnly = /^b(text|shape|tail)$/.test(popId || '');
-  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && ed.tool !== 'pencil' && ed.tool !== 'eraser') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
+  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && !['pencil', 'eraser', 'texture'].includes(ed.tool)) || (popId === 'lib-bubble' && ed.tool !== 'bubble') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
   if (!popId) { el.hidden = true; el.innerHTML = ''; el.dataset.id = ''; el._html = ''; return; }
   const a = document.activeElement;
   if (el.dataset.id === popId && el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type === 'text'))) return;   // on ne reconstruit pas sous les doigts qui tapent
@@ -470,7 +485,7 @@ function syncPop() { const el = $('#pop', root); if (el && popId && el.dataset.i
 function popHtml() {
   const b = bubble();
   const [title, body] = {
-    brush: [`Pinceau · ${esc(currentBrush().name)}`, brushPop], 'lib-brush': ['Pinceaux', () => brushesTab()], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
+    brush: [`Pinceau · ${esc(currentBrush().name)}`, brushPop], 'lib-brush': ['Pinceaux', () => brushesTab()], 'lib-bubble': ['Modèles de bulles', bubbleTplList], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
     btext: ['Texte de la bulle', () => bubbleText(b)], bshape: ['Forme de la bulle', () => bubbleShape(b)], btail: ['Queue de la bulle', () => bubbleTail(b)],
   }[popId];
   return `<div class="pop-head"><b>${title}</b><button class="icon-btn icon-only" data-act="pop-close" aria-label="Fermer">${icon('x')}</button></div><div class="pop-body">${body()}</div>`;
@@ -482,7 +497,7 @@ function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
   const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
-  const BICON = { parole: 'message-circle', pensee: 'cloud', narration: 'square', texte: 'typography' };
+  const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
       <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
@@ -535,7 +550,7 @@ const GRAIN_TYPES = [['none', 'Aucun (plein)'], ['noise', 'Grain fin'], ['paper'
 
 function brushesTab() { return brushesParts().list; }
 function brushesParts() {
-  const cur = ed.brushParams, groups = [...BRUSH_GROUPS, 'Mes pinceaux'], list = allBrushes();
+  const cur = ed.brushParams, groups = [...BRUSH_GROUPS, 'Mes pinceaux', 'Mes gommes'], list = allBrushes();
   const sl = ([k, label, min, max, step, fmt]) => `<label class="field inline"><span>${label} : ${fmt(cur[k])}</span><input type="range" id="p-${k}" min="${min}" max="${max}" step="${step}" value="${cur[k]}"></label>`;
   const custom = currentBrush().custom, here = currentBrush().group;
   const lists = groups.map(g => { const items = list.filter(b => b.group === g); return items.length ? sec('bg-' + g, esc(g), items.map(b =>
@@ -552,7 +567,8 @@ function brushesParts() {
       <button class="btn small" data-act="brush-reset" title="Rétablir les réglages du pinceau">${icon('refresh')} Rétablir</button>
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
-  return { pop: buttons + settings, list: lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du haut. Les pinceaux enregistrés restent sur cet appareil.</small>' };
+  const addBtn = `<div class="row tight" style="margin-bottom:6px"><button class="btn small primary" data-act="brush-save">${icon('plus')} Enregistrer ${ed.tool === 'eraser' ? 'cette gomme' : 'ce pinceau'}…</button></div>`;
+  return { pop: buttons + settings, list: addBtn + lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du haut. Les pinceaux enregistrés restent sur cet appareil.</small>' };
 }
 const brushPop = () => brushesParts().pop;
 
@@ -570,6 +586,7 @@ function tramasTab() {
   const cur = tramaById(ed.project, ed.tramaId);
   const settings = `<div class="row tight" style="margin:4px 0 6px">
       <button class="btn small" data-act="new-trame">${icon('plus')} Nouvelle trame</button>
+      <button class="btn small" data-act="tpreset-save" title="Enregistrer la trame, l'échelle et le fond actuels">${icon('plus')} Enregistrer le réglage…</button>
       ${cur.builtin === false ? `<button class="btn small" data-act="edit-trame" aria-label="Modifier la trame">${icon('pencil')}</button><button class="btn small danger" data-act="del-trame" aria-label="Supprimer la trame">${icon('trash')}</button>` : ''}</div>`;
   const presets = ed.tramaPresets.map(t => `<div class="row tight" style="margin-bottom:4px"><button class="btn small" data-tpreset="${t.id}" style="flex:1;justify-content:flex-start">${esc(t.name)}</button><button class="icon-btn icon-only" data-tpdel="${t.id}" aria-label="Supprimer le réglage ${esc(t.name)}">${icon('trash')}</button></div>`).join('');
   const open = g => g === 'Plein' || g === 'Gris' || g === 'Ma bibliothèque' || g === cur.group;
@@ -610,6 +627,7 @@ function pagesTab() {
 const SLIDERS = {
   'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
   'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-spikes': ['spikes', v => `Pointes : ${v}`], 'b-depth': ['depth', v => `Profondeur : ${v} %`],
   'b-rot': ['rot', v => `Rotation : ${v}°`],
   'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
   'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
@@ -630,7 +648,8 @@ function bubbleShape(b) {
   const p = props(b);
   return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
-      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
+      ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) : ''}
+      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' || p.shape === 'eclair' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
       ${slider('b-pad', p, 0, 10, 0.5)}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
       <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
       <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
@@ -670,9 +689,12 @@ async function onDock(e) {
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   const br = e.target.closest('[data-brush]');
   if (br) {
-    if (ed.tool !== 'pencil' && ed.tool !== 'eraser') setTool('pencil');   // seuls ces outils utilisent un pinceau
+    if (!['pencil', 'eraser', 'texture'].includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent un pinceau
     selectBrush(br.dataset.brush); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); return;
   }
+  const tpl = e.target.closest('[data-tpl]'), tpld = e.target.closest('[data-tpldel]');
+  if (tpld) { deleteBubbleTemplate(tpld.dataset.tpldel); savePrefs(); renderOptbar(); renderPop(); return; }
+  if (tpl) { ed.bubbleTemplate = tpl.dataset.tpl; savePrefs(); popId = null; renderOptbar(); renderPop(); return; }
   const tp = e.target.closest('[data-tpreset]'), tpd = e.target.closest('[data-tpdel]');
   if (tpd) { ed.tramaPresets = ed.tramaPresets.filter(x => x.id !== tpd.dataset.tpdel); savePrefs(); renderDock(); return; }
   if (tp) { applyTramaPreset(tp.dataset.tpreset); return; }
@@ -742,10 +764,17 @@ async function onDock(e) {
   else if (a === 'pick-font') fontModal();
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
+  else if (a === 'tpl-save') {
+    const b = bubble();
+    if (!b) { toast('Sélectionne d\'abord une bulle.'); return; }
+    const name = await promptModal({ title: 'Enregistrer le modèle de bulle', label: 'Nom', value: 'Ma bulle' });
+    if (name) { saveBubbleTemplate(name, b); savePrefs(); renderOptbar(); renderPop(); toast('Modèle enregistré.'); }
+  }
   else if (a === 'brush-reset') { resetBrush(); renderDock(); renderOptbar(); }
   else if (a === 'brush-save') {
-    const name = await promptModal({ title: 'Enregistrer le pinceau', label: 'Nom', value: 'Mon pinceau' });
-    if (name) { saveBrushAs(name); savePrefs(); renderDock(); renderOptbar(); toast('Pinceau enregistré.'); }
+    const eraser = ed.tool === 'eraser';
+    const name = await promptModal({ title: eraser ? 'Enregistrer la gomme' : 'Enregistrer le pinceau', label: 'Nom', value: eraser ? 'Ma gomme' : 'Mon pinceau' });
+    if (name) { saveBrushAs(name, eraser ? 'Mes gommes' : 'Mes pinceaux'); savePrefs(); renderDock(); renderOptbar(); renderPop(); toast(eraser ? 'Gomme enregistrée.' : 'Pinceau enregistré.'); }
   }
   else if (a === 'brush-update') { updateBrush(); savePrefs(); toast('Pinceau mis à jour.'); }
   else if (a === 'brush-del') {
@@ -770,7 +799,7 @@ function setTail(b, on) {
 }
 
 // Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
-const STYLE_KEYS = ['pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+const STYLE_KEYS = ['spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
 function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
@@ -1105,19 +1134,19 @@ function libraryModal(mode) {
     const seg = `<div class="seg" role="group" aria-label="Bibliothèque" style="margin-bottom:10px">${[['brushes', 'Pinceaux', 'brush'], ['tramas', 'Trames', 'texture'], ['bubbles', 'Bulles', 'message-circle']].map(([id, n, ic]) =>
       `<button data-lib="${id}" class="${mode === id ? 'on' : ''}">${icon(ic)} ${n}</button>`).join('')}</div>`;
     const bubbles = `<p style="margin-bottom:8px;color:var(--text-secondary)">Choisis un modèle : la bulle est posée dans la case ouverte.</p>
-      <div class="row tight">${BUBBLE_KINDS.map(k => `<button class="btn" data-addb="${k.id}">${icon(k.icon)} ${k.name}</button>`).join('')}
+      <div class="row tight">${allBubbleTemplates().map(t => `<button class="btn" data-addtpl="${t.id}">${icon((BUBBLE_KINDS.find(k => k.id === t.kind) || BUBBLE_KINDS[0]).icon)} ${esc(t.name)}</button>`).join('')}
       <button class="btn" data-freebubble="1">${icon('writing')} Dessinée à la main</button></div>`;
     body.innerHTML = seg + (mode === 'brushes' ? brushesParts().list : mode === 'tramas' ? tramasTab() : bubbles);
     paintSwatches(body); paintLibrary(body);
   };
   draw();
   m.el.addEventListener('click', async e => {
-    const lib = e.target.closest('[data-lib]'), add = e.target.closest('[data-addb]'), free = e.target.closest('[data-freebubble]');
+    const lib = e.target.closest('[data-lib]'), add = e.target.closest('[data-addtpl]'), free = e.target.closest('[data-freebubble]');
     if (lib) { mode = lib.dataset.lib; draw(); return; }
     if (add || free) {
       m.close();
       if (ed.tool !== 'bubble') setTool('bubble');
-      if (add) { addBubble(add.dataset.addb); popId = 'btext'; } else ed.bubbleDraw = true;
+      if (add) { ed.bubbleTemplate = add.dataset.addtpl; savePrefs(); addTemplateBubble(); popId = 'btext'; } else ed.bubbleDraw = true;
       renderOptbar(); renderPop(); return;
     }
     const closes = e.target.closest('[data-brush],[data-trama]');

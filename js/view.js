@@ -1,6 +1,6 @@
 // Vue : une seule toile affiche la page (papier, cases, bulles, aides). Chaque case garde son propre
 // canevas, recomposé seulement là où on a dessiné.
-import { ed, page, gutterHandles, splitRects } from './editor.js';
+import { ed, page, gutterHandles, splitRects, mergeCandidates } from './editor.js';
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
@@ -290,6 +290,15 @@ export function edgePluses(p) {
   });
 }
 
+// Boutons de fusion : un par case voisine absorbable, posé au centre de cette case (la case active l'absorbe). Flèche vers la case active.
+export function mergeButtons(ap) {
+  const ps = page().panels, c = toScreen(ap.x + ap.w / 2, ap.y + ap.h / 2);
+  return mergeCandidates(ap).map(m => {
+    const b = ps.find(p => p.id === m.id), q = toScreen(b.x + b.w / 2, b.y + b.h / 2), dx = c.x - q.x, dy = c.y - q.y, d = Math.hypot(dx, dy) || 1;
+    return { id: m.id, x: q.x, y: q.y, r: 22, ux: dx / d, uy: dy / d, index: m.index };
+  });
+}
+
 // Aperçu d'ajout de case : poignée sur la ligne pointillée (elle règle la part de la nouvelle case) et pilule ✕ ✓ au centre de la nouvelle case
 // (au centre de la case coupée si la nouvelle est trop étroite à l'écran). Positions en pixels d'écran ; `line` = position de la ligne dans la page.
 export function previewControls(ap) {
@@ -324,6 +333,15 @@ function drawGutters(pg, accent) {
       const poly = r => { ctx.beginPath(); [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].forEach(([x, y], i) => { const q = toScreen(x, y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); };
       ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = accent; poly(sp.fresh); ctx.fill(); ctx.restore();
       ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); poly(sp.fresh); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (!pv) for (const m of mergeButtons(ap)) {   // fusion : bouton au centre de chaque case voisine absorbable
+      ctx.save(); ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; const L = 8, ex = m.x + m.ux * L, ey = m.y + m.uy * L, sx = m.x - m.ux * L, sy = m.y - m.uy * L;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.moveTo(ex - m.ux * 6 - m.uy * 5, ey - m.uy * 6 + m.ux * 5); ctx.lineTo(ex, ey); ctx.lineTo(ex - m.ux * 6 + m.uy * 5, ey - m.uy * 6 - m.ux * 5); ctx.stroke();
+      ctx.font = "600 11px 'Inter', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const t = 'Fusionner', tw = ctx.measureText(t).width + 14;
+      ctx.fillStyle = 'rgba(28,28,30,.85)'; ctx.beginPath(); ctx.roundRect(m.x - tw / 2, m.y + m.r + 5, tw, 20, 6); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(t, m.x, m.y + m.r + 15);
+      ctx.restore();
     }
     const pc = pv && sp ? previewControls(ap) : null;
     if (pc) {

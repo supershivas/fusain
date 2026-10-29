@@ -6,7 +6,7 @@ import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
-import { autoSize, pathBounds, props as bubbleProps } from './bubbles.js';
+import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
@@ -15,7 +15,7 @@ export const ed = {
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
-  addRatio: 50, addPreview: null,
+  addRatio: 50, addPreview: null, bubbleTemplate: 'parole', bubbleTemplates: [],
   fingerDraws: false, palm: 'strong', pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
 };
@@ -56,14 +56,14 @@ export function selectBrush(id) {
   setSizeMm(ed.brushSizes[key(id)] ?? (ed.tool === 'texture' ? Math.max(ed.brushParams.sizeMm, 3) : ed.brushParams.sizeMm));
 }
 export function resetBrush() { ed.brushParams = brushSpec(ed.brushId, ed.customBrushes); }
-export function saveBrushAs(name) {
+export function saveBrushAs(name, group = 'Mes pinceaux') {
   const id = 'c' + Math.random().toString(36).slice(2, 8);
-  ed.customBrushes.push({ ...ed.brushParams, id, name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm });
+  ed.customBrushes.push({ ...ed.brushParams, id, name, group, custom: true, sizeMm: ed.sizeMm });
   ed.brushSizes[id] = ed.sizeMm; ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
 }
 export function updateBrush() {
   const i = ed.customBrushes.findIndex(b => b.id === ed.brushId);
-  if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
+  if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: c.group || 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
 }
 export function deleteBrush(id) {
   ed.customBrushes = ed.customBrushes.filter(b => b.id !== id);
@@ -730,13 +730,30 @@ export function addBubbleObj(b) {
   return b;
 }
 
-export function addBubble(kind, at) {
+export function addBubble(kind, at, style) {
   const p = panel();
   const b = newBubble(kind, 0, 0), c = at || { x: p.x + p.w / 2, y: p.y + p.h / 3 };
-  Object.assign(b, ed.bubbleDefaults[kind] || {});   // le dernier style réglé pour ce type de bulle
+  Object.assign(b, style || ed.bubbleDefaults[kind] || {});   // le style du modèle choisi, sinon le dernier style réglé pour ce type de bulle
   b.x = Math.round(c.x - b.w / 2); b.y = Math.round(c.y - b.h / 2);
   if (b.tail) b.tail = { x: Math.round(b.x + b.w * 0.35), y: Math.round(b.y + b.h + 160) };
   return addBubbleObj(b);
+}
+
+// Modèles de bulle : ceux du programme + ceux que l'auteur enregistre (sur cet appareil).
+export const allBubbleTemplates = () => BUBBLE_TEMPLATES.concat(ed.bubbleTemplates);
+export const currentTemplate = () => allBubbleTemplates().find(t => t.id === ed.bubbleTemplate) || BUBBLE_TEMPLATES[0];
+export function addTemplateBubble(at) { const t = currentTemplate(); return addBubble(t.kind, at, t.style ? { ...t.style } : undefined); }
+const TEMPLATE_KEYS = ['pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'spikes', 'depth', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip', 'sameStroke', 'clip', 'noFrame'];
+export function saveBubbleTemplate(name, b) {
+  const style = {};
+  for (const k of TEMPLATE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) style[k] = b[k];
+  const t = { id: 'bt' + Math.random().toString(36).slice(2, 8), name, kind: b.kind, style };
+  ed.bubbleTemplates.push(t); ed.bubbleTemplate = t.id;
+  return t;
+}
+export function deleteBubbleTemplate(id) {
+  ed.bubbleTemplates = ed.bubbleTemplates.filter(t => t.id !== id);
+  if (ed.bubbleTemplate === id) ed.bubbleTemplate = 'parole';
 }
 
 // Bulle dessinée à la main : le tracé fermé devient le contour, le texte se centre dedans.
