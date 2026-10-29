@@ -19,6 +19,7 @@ import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
 import { buildPDF, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
+import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection } from './selection.js';
 
 export const TOOLS = [
   { id: 'pencil', icon: 'pencil', label: 'Crayon et pinceaux (B)', key: 'b' },
@@ -27,6 +28,7 @@ export const TOOLS = [
   { id: 'fill', icon: 'bucket-droplet', label: 'Remplir (G)', key: 'g' },
   { id: 'shape', icon: 'square', label: 'Formes (S)', key: 's' },
   { id: 'mask', icon: 'mask', label: 'Masque (M)', key: 'm' },
+  { id: 'select', icon: 'marquee-2', label: 'Sélection (A)', key: 'a' },
   { id: 'bubble', icon: 'message-circle', label: 'Bulles (V)', key: 'v' },
   { id: 'layout', icon: 'layout-board-split', label: 'Taille des cases (L)', key: 'l' },
   { id: 'pan', icon: 'hand-stop', label: 'Déplacer la vue (H)', key: 'h' },
@@ -52,7 +54,7 @@ export function loadPrefs() {
     if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
     if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
-    if (typeof p.tool === 'string') ed.tool = p.tool === 'bubble' || p.tool === 'layout' ? 'pencil' : p.tool;
+    if (typeof p.tool === 'string') ed.tool = ['bubble', 'layout', 'select'].includes(p.tool) ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
 // Préférences de l'appareil : réglages de chaque outil, dernier style de chaque type de bulle, options d'image tramée.
@@ -73,13 +75,13 @@ export function mountEditor(el) {
   root.innerHTML = `<div class="ed">
     <nav class="toolbar" id="toolbar" aria-label="Outils"></nav>
     <section class="stage" id="stage">
-      <div class="optwrap"><div class="optbar" id="optbar"></div><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div></div>
       <div class="canvas-wrap">
         <canvas id="view" aria-label="Page de BD"></canvas>
         <div class="zoombar" id="zoombar"></div>
       </div>
+      <div class="optwrap"><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div><div class="optbar" id="optbar"></div></div>
     </section>
-    <aside class="dock" id="dock" ${dockOpen ? '' : 'hidden'}></aside>
+    <aside class="dock ${dockOpen ? '' : 'closed'}" id="dock"></aside>
   </div>`;
   attach($('#view', root));
   attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser });
@@ -95,6 +97,7 @@ export function mountEditor(el) {
   $('#dock', root).addEventListener('pointerup', swipeUp);
   $('#dock', root).addEventListener('pointercancel', swipeUp);
   $('#dock', root).addEventListener('click', onDock);
+  $('#dock', root).addEventListener('click', onDockFoot);
   $('#dock', root).addEventListener('toggle', onSecToggle, true);
   $('#dock', root).addEventListener('input', onDockInput);
   $('#dock', root).addEventListener('change', onDockChange);
@@ -103,7 +106,9 @@ export function mountEditor(el) {
   pop.addEventListener('click', onDock); pop.addEventListener('input', onDockInput); pop.addEventListener('change', onDockChange); pop.addEventListener('focusin', onDockFocus);
 
   unsub = subscribe(what => {
+    if (what === 'panels' || what === 'page' || what === 'project') { polyCancel(); clearSelection(); }
     if (what === 'undo') { updateUndo(); if (ed.tool === 'layout') renderOptbar(); }
+    else if (what === 'sel') renderOptbar();
     else if (what === 'panels') renderAll();
     else if (what === 'project' || what === 'page') { renderAll(); fit(); }
     else if (what === 'panel') { renderDock(); renderOptbar(); }
@@ -113,7 +118,7 @@ export function mountEditor(el) {
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
-  fsListener = () => { renderToolbar(); setTimeout(resize, 100); };
+  fsListener = () => { renderToolbar(); renderDock(); setTimeout(resize, 100); };
   onFullscreenChange(fsListener);
   setTimeout(resize, 0);
 }
@@ -136,8 +141,7 @@ function renderToolbar() {
     <button class="icon-btn icon-only" data-act="undo" id="btn-undo" title="Annuler (Ctrl+Z)" aria-label="Annuler">${icon('arrow-back-up')}</button>
     <button class="icon-btn icon-only" data-act="redo" id="btn-redo" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">${icon('arrow-forward-up')}</button></span>
     <span class="sp"></span>
-    ${canFullscreen() ? `<button class="icon-btn icon-only" data-act="fullscreen" title="Plein écran : masque la barre du navigateur" aria-label="Plein écran" aria-pressed="${isFullscreen()}">${icon(isFullscreen() ? 'arrows-minimize' : 'arrows-maximize')}</button>` : ''}
-    <button class="icon-btn icon-only" data-act="dock" title="Panneaux" aria-label="Panneaux" aria-pressed="${dockOpen}">${icon('layout-sidebar-right')}</button>`;
+    <button class="icon-btn icon-only dock-toggle" data-act="dock" title="Panneaux" aria-label="Panneaux" aria-pressed="${dockOpen}">${icon('layout-sidebar-right')}</button>`;
   updateUndo();
 }
 
@@ -171,6 +175,7 @@ export function undo() { ed.undo.undo(); markChanged(); requestRender(); }
 export function redo() { ed.undo.redo(); markChanged(); requestRender(); }
 
 function setTool(id) {
+  if (ed.tool === 'select' && id !== 'select') { polyCancel(); clearSelection(); }
   storeToolSettings();   // l'outil quitté garde ses réglages ; celui qu'on prend retrouve les siens
   ed.tool = id;
   applyToolSettings();
@@ -188,8 +193,18 @@ function onToolbar(e) {
     setTool(b.dataset.tool);
   } else if (b.dataset.act === 'undo') undo();
   else if (b.dataset.act === 'redo') redo();
-  else if (b.dataset.act === 'fullscreen') toggleFullscreen();
-  else if (b.dataset.act === 'dock') { dockOpen = !dockOpen; $('#dock', root).hidden = !dockOpen; renderToolbar(); setTimeout(resize, 0); }
+  else if (b.dataset.act === 'dock') toggleDock();
+}
+
+// Panneau de droite : ouvert, ou replié en un rail étroit qui garde ses deux boutons du bas (plein écran, panneau).
+function toggleDock(open = !dockOpen) {
+  dockOpen = open; $('#dock', root).classList.toggle('closed', !dockOpen);
+  renderToolbar(); renderDock(); setTimeout(resize, 0);
+}
+function onDockFoot(e) {
+  const b = e.target.closest('.dock-foot [data-act]');
+  if (!b) return;
+  if (b.dataset.act === 'foot-fs') toggleFullscreen(); else if (b.dataset.act === 'foot-dock') toggleDock();
 }
 
 // ───────────────────────── Zoom et pages ─────────────────────────
@@ -278,7 +293,8 @@ export function renderOptbar() {
       <button class="btn small" data-split="h" title="Couper la case en deux, l'une sous l'autre">${icon('layout-rows')} Ajouter dessous</button>`
       + mergeCandidates(pn).map(c => `<button class="btn small" data-merge="${c.id}" title="La case ${idx + 1} absorbe la case ${c.index + 1}">${icon(ARROW[c.dir])} Fusionner avec la ${c.index + 1}</button>`).join('')
       + (page().panels.length > 1 ? `<button class="btn small danger" data-delpanel="1">${icon('trash')} Supprimer la case</button>` : '');
-  } else if (t === 'pan') {
+  } else if (t === 'select') html = selectBar();
+  else if (t === 'pan') {
     html = `<span class="hint">Fais glisser pour déplacer la page. Pincer pour zoomer.</span>`;
   }
   if (ed.maskMode !== 'off' && t !== 'mask' && t !== 'bubble' && t !== 'pan') {
@@ -287,6 +303,51 @@ export function renderOptbar() {
   o.hidden = !html; o.innerHTML = html;
   paintSwatches(o);
   $$('canvas[data-bprev]', o).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
+}
+
+// Outil Sélection : forme, opération, déplacement du contenu.
+const SEL_MODES = [['auto', 'wand', 'Automatique : la zone fermée touchée'], ['free', 'lasso', 'Main levée'], ['poly', 'lasso-polygon', 'Polygone : touche les sommets, touche le premier pour fermer'], ['rect', 'rectangle', 'Rectangle'], ['ellipse', 'circle', 'Ellipse']];
+const SEL_OPS = [['new', 'replace', 'Nouvelle sélection'], ['add', 'plus', 'Ajouter à la sélection'], ['sub', 'minus', 'Retirer de la sélection']];
+function selectBar() {
+  const has = !!currentSelection(), seg = (name, list, cur) => `<span class="seg" role="group" aria-label="${name}">${list.map(([id, ic, label]) =>
+    `<button data-sel${name === 'Forme' ? 'mode' : 'op'}="${id}" class="${cur === id ? 'on' : ''}" title="${label}" aria-label="${label}" aria-pressed="${cur === id}">${icon(ic)}</button>`).join('')}</span>`;
+  const tog = (act, ic, label, on) => `<button class="icon-btn icon-only ${on ? 'on' : ''}" data-selact="${act}" title="${label}" aria-label="${label}" aria-pressed="${!!on}">${icon(ic)}</button>`;
+  const hint = ed.selMove ? `Fais glisser pour déplacer ${has ? 'la sélection' : 'tout le contenu de la case'}.`
+    : ed.selMode === 'poly' ? (polyCount() ? `${polyCount()} point${polyCount() > 1 ? 's' : ''} : touche le premier point pour fermer.` : 'Touche les sommets du polygone.')
+    : has ? '' : 'Touche une zone ou trace-la.';
+  return seg('Forme', SEL_MODES, ed.selMode) + seg('Opération', SEL_OPS, ed.selOp)
+    + (ed.selMode === 'poly' && polyCount() ? `<button class="btn small" data-selact="polyok" ${polyCount() < 3 ? 'disabled' : ''}>${icon('check')} Fermer</button><button class="btn small" data-selact="polycancel">${icon('x')} Annuler</button>` : '')
+    + `<span class="sep-v"></span>`
+    + tog('move', 'arrows-move', 'Déplacer le contenu (sans sélection : tout le contenu de la case)', ed.selMove)
+    + tog('scope', 'stack-2', ed.selScope === 'all' ? 'Déplace tous les calques (touche pour le calque actif seul)' : 'Déplace le calque actif seul (touche pour tous les calques)', ed.selScope === 'active')
+    + tog('copy', 'copy', 'Copier au lieu de déplacer', ed.selCopy)
+    + `<span class="sep-v"></span>`
+    + `<button class="icon-btn icon-only" data-selact="all" title="Tout sélectionner (Ctrl+A)" aria-label="Tout sélectionner">${icon('select-all')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="invert" title="Inverser la sélection" aria-label="Inverser la sélection">${icon('switch-horizontal')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="clear" title="Effacer le contenu sélectionné" aria-label="Effacer le contenu sélectionné" ${has ? '' : 'disabled'}>${icon('eraser')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="none" title="Désélectionner (Échap)" aria-label="Désélectionner" ${has ? '' : 'disabled'}>${icon('square-off')}</button>`
+    + (hint ? `<span class="hint">${hint}</span>` : '');
+}
+function onSelect(b) {
+  const d = b.dataset;
+  if (d.selmode) { polyCancel(); ed.selMode = d.selmode; ed.selMove = false; }
+  else if (d.selop) ed.selOp = d.selop;
+  else if (d.selact === 'move') { ed.selMove = !ed.selMove; polyCancel(); }
+  else if (d.selact === 'scope') ed.selScope = ed.selScope === 'all' ? 'active' : 'all';
+  else if (d.selact === 'copy') ed.selCopy = !ed.selCopy;
+  else if (d.selact === 'all') { polyCancel(); selectAll(panel()); }
+  else if (d.selact === 'invert') { polyCancel(); invertSelection(panel()); }
+  else if (d.selact === 'none') { polyCancel(); clearSelection(); }
+  else if (d.selact === 'polycancel') polyCancel();
+  else if (d.selact === 'polyok') { if (!polyFinish()) toast('Il faut au moins trois points.'); }
+  else if (d.selact === 'clear') eraseSelection();
+  renderOptbar();
+}
+function eraseSelection() {
+  const r = clearSelectionContent();
+  if (r === 'ok') toast('Contenu effacé.', { actionLabel: 'Annuler', duration: 6000, onAction: undo });
+  else if (r === 'locked') toast('Aucun calque visible et déverrouillé à effacer.');
+  else if (r === 'empty') toast('Rien à effacer dans la sélection.', { duration: 1600 });
 }
 
 const POP_BTN = { brush: ['adjustments-horizontal', 'Réglages'], trama: ['adjustments-horizontal', 'Réglages'], btext: ['typography', 'Texte'], bshape: ['shape', 'Forme'], btail: ['message-circle-plus', 'Queue'] };
@@ -304,7 +365,8 @@ function paintSwatches(scope) {
 function onOptbar(e) {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.dataset.ink) { ed.ink = +b.dataset.ink; savePrefs(); renderOptbar(); }
+  if (b.dataset.selmode || b.dataset.selop || b.dataset.selact) onSelect(b);
+  else if (b.dataset.ink) { ed.ink = +b.dataset.ink; savePrefs(); renderOptbar(); }
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -392,15 +454,17 @@ export function renderDock() {
   const d = $('#dock', root);
   if (!d || !ed.project) return;
   const prevScroll = $('.dock-body', d) ? $('.dock-body', d).scrollTop : 0;
-  d.innerHTML = `<div class="dock-tabs" role="tablist">${TABS.map(t =>
+  const foot = `<div class="dock-foot">
+    ${canFullscreen() ? `<button class="icon-btn icon-only" data-act="foot-fs" title="Plein écran : masque la barre du navigateur" aria-label="Plein écran" aria-pressed="${isFullscreen()}">${icon(isFullscreen() ? 'arrows-minimize' : 'arrows-maximize')}</button>` : ''}
+    <button class="icon-btn icon-only" data-act="foot-dock" title="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-label="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-expanded="${dockOpen}">${icon(dockOpen ? 'layout-sidebar-right-collapse' : 'layout-sidebar-right-expand')}</button></div>`;
+  d.innerHTML = dockOpen ? `<div class="dock-tabs" role="tablist">${TABS.map(t =>
     `<button role="tab" data-tab="${t.id}" class="${dockTab === t.id ? 'on' : ''}" aria-selected="${dockTab === t.id}" title="${t.label}">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}</div>
-    <div class="dock-body">${({ layers: layersTab, page: pageTab })[dockTab]()}</div>`;
-  $('.dock-body', d).scrollTop = prevScroll;
-  paintSwatches(d);
+    <div class="dock-body">${({ layers: layersTab, page: pageTab })[dockTab]()}</div>${foot}` : foot;
+  if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
   renderPop();
 }
 
-// Réglages détaillés de l'outil : fenêtre flottante sous la barre du haut, jamais dans le volet.
+// Réglages détaillés de l'outil : fenêtre flottante au-dessus de la barre du bas, jamais dans le volet.
 const TOOL_TRAMA = ['texture', 'fill', 'shape'];
 function renderPop() {
   const el = $('#pop', root);
@@ -506,7 +570,7 @@ function brushesParts() {
       <button class="btn small" data-act="brush-reset" title="Rétablir les réglages du pinceau">${icon('refresh')} Rétablir</button>
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
-  return { pop: buttons + settings, list: lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du haut. Les pinceaux enregistrés restent sur cet appareil.</small>' };
+  return { pop: buttons + settings, list: lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du bas. Les pinceaux enregistrés restent sur cet appareil.</small>' };
 }
 const brushPop = () => brushesParts().pop;
 
@@ -1069,7 +1133,7 @@ function libraryModal(mode) {
 
 // ───────────────────────── Commandes du menu de l'en-tête ─────────────────────────
 
-const showDock = tab => { dockOpen = true; $('#dock', root).hidden = false; dockTab = tab; renderToolbar(); renderDock(); setTimeout(resize, 0); };
+const showDock = tab => { dockTab = tab; toggleDock(true); };
 const needLayer = () => { if (!deleteLayer()) toast('Une case garde au moins un calque.'); };
 const COMMANDS = {
   'new-project': () => newProjectModal(), 'import-decoupage': () => decoupageModal(),
@@ -1080,6 +1144,9 @@ const COMMANDS = {
   'del-bubble': () => { const b = bubble(); if (b) deleteBubble(b); else toast('Aucune bulle sélectionnée.'); },
   fit, 'zoom-in': () => zoomAt(view.w / 2, view.h / 2, 1.5), 'zoom-out': () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5),
   'tool-layout': () => setTool('layout'),
+  'sel-all': () => { if (ed.tool !== 'select') setTool('select'); selectAll(panel()); },
+  'sel-none': () => { polyCancel(); clearSelection(); renderOptbar(); },
+  'move-case': () => { if (ed.tool !== 'select') setTool('select'); polyCancel(); clearSelection(); ed.selMove = true; renderOptbar(); toast('Fais glisser pour déplacer tout le contenu de la case.', { duration: 3000 }); },
   relayout: async () => { const id = await pickLayout('Disposition des cases'); if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); } },
   frame: () => { secState.cf = true; showDock('page'); },
   dither: ditherModal,
@@ -1093,7 +1160,7 @@ const COMMANDS = {
   'page-left': () => movePage(-1), 'page-right': () => movePage(1),
   'page-prev': () => goToPage(ed.pageIdx - 1), 'page-next': () => goToPage(ed.pageIdx + 1),
   fullscreen: () => toggleFullscreen(),
-  dock: () => { dockOpen = !dockOpen; $('#dock', root).hidden = !dockOpen; renderToolbar(); setTimeout(resize, 0); },
+  dock: () => toggleDock(),
   notes: () => { ed.showNotes = !ed.showNotes; savePrefs(); requestRender(); },
   'hide-bubbles': () => togglePageBubbles(),
 };
@@ -1106,10 +1173,12 @@ export function runCommand(id) {
 
 function onKey(e) {
   if (e.key === 'Escape' && popId && !modalOpen()) { popId = null; renderOptbar(); renderPop(); return; }
+  if (e.key === 'Escape' && ed.tool === 'select' && !modalOpen() && !typing(e)) { polyCancel(); clearSelection(); renderOptbar(); return; }
   if (typing(e) || modalOpen()) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && k === 'a') { e.preventDefault(); if (ed.tool !== 'select') setTool('select'); selectAll(panel()); return; }
   if (mod) return;
   const t = TOOLS.find(x => x.key === k);
   if (t) { setTool(t.id); return; }
@@ -1117,5 +1186,6 @@ function onKey(e) {
   else if (k === '[') { setSizeMm(ed.sizeMm / 1.2); savePrefs(); renderOptbar(); }
   else if (k === ']') { setSizeMm(ed.sizeMm * 1.2); savePrefs(); renderOptbar(); }
   else if (k === '0') fit();
-  else if (k === 'delete' || k === 'backspace') { if (bubble()) deleteBubble(); }
+  else if (k === 'enter' && ed.tool === 'select') { if (polyCount()) polyFinish(); }
+  else if (k === 'delete' || k === 'backspace') { if (ed.tool === 'select') eraseSelection(); else if (bubble()) deleteBubble(); }
 }

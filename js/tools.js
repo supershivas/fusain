@@ -10,6 +10,7 @@ import { tramaById } from './tramas.js';
 import { invalidate, setOverlay, toScreen, view, bubbleCross, gutterPlus } from './view.js';
 import { hitBubble, tailOrigin } from './bubbles.js';
 import { toast } from './toast.js';
+import { selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
 let session = null, hinted = null;   // hinted : dernier calque signalé par un toast de redirection
 export const busy = () => !!session;
@@ -58,6 +59,7 @@ export function down(pt) {
   if (session) return;
   if (ed.tool === 'bubble') { bubbleDown(pt); return; }
   if (ed.tool === 'layout') { layoutDown(pt); return; }
+  if (ed.tool === 'select') { selectDown(pt); return; }
   const p = panelAt(pt.x, pt.y);
   if (!p) {
     // Départ hors de toute case : le geste est suivi, et il se pose dans la première case où il entre (rogné au cadre).
@@ -142,6 +144,14 @@ export function move(pt) {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
   } else if (session.kind === 'bubble') bubbleMove(pt);
+  else if (session.kind === 'selmove') moveMove(session, pt);
+  else if (session.kind === 'selfree') {
+    const l = session.pts[session.pts.length - 1];
+    if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
+  } else if (session.kind === 'selshape') {
+    session.x1 = pt.x; session.y1 = pt.y;
+    setOverlay({ shape: { kind: ed.selMode, x0: session.x0, y0: session.y0, x1: pt.x, y1: pt.y } });
+  }
 }
 
 export function up() {
@@ -177,6 +187,14 @@ export function up() {
     notify('bubbles'); notify('tool');
   } else if (s.kind === 'bubble') {
     commitBubbleEdit(s.b, s.before);
+  } else if (s.kind === 'selmove') endMove(s);
+  else if (s.kind === 'selfree') {
+    setOverlay({ free: null });
+    if (!(s.pts.length >= 3 && selectShape(s.p, 'poly', s.pts, ed.selOp)) && ed.selOp === 'new') clearSelection();
+  } else if (s.kind === 'selshape') {
+    setOverlay({ shape: null });
+    const ok = s.x1 !== undefined && selectShape(s.p, ed.selMode, [{ x: s.x0, y: s.y0 }, { x: s.x1, y: s.y1 }], ed.selOp);
+    if (!ok && ed.selOp === 'new') clearSelection();   // un simple toucher dans le vide désélectionne
   }
 }
 
@@ -188,7 +206,33 @@ export function cancel() {
   else if (s.kind === 'shape') setOverlay({ shape: null });
   else if (s.kind === 'free') setOverlay({ free: null });
   else if (s.kind === 'gutter') setOverlay({ guide: null });
+  else if (s.kind === 'selmove') cancelMove(s);
+  else if (s.kind === 'selfree') setOverlay({ free: null });
+  else if (s.kind === 'selshape') setOverlay({ shape: null });
   else if (s.kind === 'bubble') { Object.keys(s.b).forEach(k => delete s.b[k]); Object.assign(s.b, s.before); selectBubble(s.b.id); }
+}
+
+// ───────────────────────── Sélection ─────────────────────────
+
+function selectDown(pt) {
+  if (ed.selMove) {   // déplacer : la sélection, ou à défaut tout le contenu de la case touchée
+    const p = (ed.sel && page().panels.find(q => q.id === ed.sel.panelId)) || panelAt(pt.x, pt.y);
+    if (!p) return;
+    selectPanel(p.id);
+    session = beginMove(p, pt);
+    return;
+  }
+  const p = panelAt(pt.x, pt.y);
+  if (!p) return;
+  selectPanel(p.id);
+  const mode = ed.selMode;
+  if (mode === 'auto') { if (!selectAuto(p, Math.floor(pt.x - p.ex), Math.floor(pt.y - p.ey), ed.selOp) && ed.selOp === 'new') clearSelection(); }
+  else if (mode === 'poly') {
+    const f = polyFirst();
+    if (f && polyCount() >= 3 && near(toScreen(pt.x, pt.y), toScreen(f.x, f.y), pt.type === 'touch' ? 26 : 14)) polyFinish();
+    else polyAdd(p, pt);
+  } else if (mode === 'free') { session = { kind: 'selfree', p, pts: [{ x: pt.x, y: pt.y }] }; setOverlay({ free: session.pts }); }
+  else session = { kind: 'selshape', p, x0: pt.x, y0: pt.y };
 }
 
 // ───────────────────────── Gouttières ─────────────────────────

@@ -156,6 +156,7 @@ export function render() {
     if (p.mask && ed.maskMode !== 'off' || (p.mask && ed.tool === 'mask')) {
       if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h); }
     }
+    if (ed.sel && ed.sel.panelId === p.id) drawSelection(p, ed.sel);
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
@@ -170,6 +171,11 @@ export function render() {
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([]);
     ctx.strokeRect(a.x - 3, a.y - 3, active.w * s + 6, active.h * s + 6);
   }
+  const selPanel = ed.sel && pg.panels.find(q => q.id === ed.sel.panelId);
+  if (selPanel && ed.tool === 'select') {   // cadre pointillé autour de la sélection
+    const a = toScreen(selPanel.ex + ed.sel.x0 + ed.sel.dx, selPanel.ey + ed.sel.y0 + ed.sel.dy), b = toScreen(selPanel.ex + ed.sel.x1 + ed.sel.dx, selPanel.ey + ed.sel.y1 + ed.sel.dy);
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.setLineDash([]);
+  }
   if (ed.showNotes) drawNotes(pg);
   drawBubbleSelection(pg, accent);
   drawShapePreview(accent);
@@ -179,11 +185,41 @@ export function render() {
     overlay.free.forEach((q, i) => { const a = toScreen(q.x, q.y); i ? ctx.lineTo(a.x, a.y) : ctx.moveTo(a.x, a.y); });
     ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
   }
+  if (overlay.free && overlay.dots) {   // sommets d'un polygone en cours
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2;
+    for (const q of overlay.free) { const a = toScreen(q.x, q.y); ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  }
   if (overlay.cursor && overlay.cursor.r > 0) {
     const c = overlay.cursor;
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 0.5, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 0.5, 0, Math.PI * 2); ctx.stroke();
   }
+}
+
+// Sélection : voile et contour (octets 0/1 → pixels), mis en cache sur l'objet sélection ; le contenu soulevé se montre par-dessus.
+function tintOf(sel) {
+  if (sel.tint) return sel.tint;
+  const bw = sel.x1 - sel.x0, bh = sel.y1 - sel.y0, W = sel.ew, cv = document.createElement('canvas');
+  cv.width = bw; cv.height = bh;
+  const cx = cv.getContext('2d'), img = cx.createImageData(bw, bh), u = new Uint32Array(img.data.buffer);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const i = (sel.y0 + y) * W + sel.x0 + x;
+    if (!sel.mask[i]) continue;
+    const edge = x === 0 || y === 0 || x === bw - 1 || y === bh - 1 || !sel.mask[i - 1] || !sel.mask[i + 1] || !sel.mask[i - W] || !sel.mask[i + W];
+    u[y * bw + x] = edge ? 0xFF2B39C0 : 0x302B39C0;
+  }
+  cx.putImageData(img, 0, 0);
+  return (sel.tint = cv);
+}
+
+function drawSelection(p, sel) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  const f = ed.selFloat;
+  if (f) ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
+  if (ed.tool === 'select') ctx.drawImage(tintOf(sel), p.ex + sel.x0 + sel.dx, p.ey + sel.y0 + sel.dy);
+  ctx.restore();
 }
 
 // Plan et description de la case (aide au dessin, jamais exportés).

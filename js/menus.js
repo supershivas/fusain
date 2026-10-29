@@ -15,6 +15,7 @@ const menus = () => {
       ['import-decoupage', 'Importer un découpage…', 'file-import'], ['settings', 'Réglages…', 'settings']]],
     ['Édition', [
       ['undo', 'Annuler', 'arrow-back-up', 'Ctrl+Z', !ed.undo.canUndo], ['redo', 'Rétablir', 'arrow-forward-up', 'Ctrl+Maj+Z', !ed.undo.canRedo], null,
+      ['sel-all', 'Tout sélectionner', 'select-all', 'Ctrl+A'], ['sel-none', 'Désélectionner', 'square-off', '', !ed.sel], ['move-case', 'Déplacer le contenu de la case', 'arrows-move'], null,
       ['clear-layer', 'Vider le calque', 'eraser'], ['copy-case', 'Copier la case vers…', 'copy'], null,
       ['del-case', 'Supprimer la case', 'trash', '', pg.panels.length < 2], ['del-bubble', 'Supprimer la bulle', 'message-circle-off', 'Suppr', !bubble()]]],
     ['Outils', [

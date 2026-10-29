@@ -201,7 +201,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; min-height: 32px; 
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--stage-bg); display: flex; flex-direction: column; }
 .canvas-wrap { position: relative; flex: 1; min-height: 0; }
 .canvas-wrap > canvas { position: absolute; inset: 0; display: block; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.optbar { flex: none; z-index: 3; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 6px 10px; }
+.optbar { flex: none; z-index: 3; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; background: var(--card-bg); border-top: 1px solid var(--border); padding: 6px 10px; }
 .optbar label.opt { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-secondary); }
 .optbar input[type=range] { width: 120px; }
 .optbar .val { font-family: var(--font-mono); font-size: .78rem; min-width: 5.5em; color: var(--text-muted); }
@@ -357,7 +357,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 
 /* ── Réglages de l'outil : fenêtre flottante sous la barre du haut ── */
 .optwrap { position: relative; flex: none; z-index: 9; }
-.pop { position: absolute; left: 8px; top: calc(100% + 4px); z-index: 5; width: min(340px, calc(100% - 16px)); max-height: min(70vh, 540px); display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 12px 36px rgba(0,0,0,.3); font-size: .86rem; }
+.pop { position: absolute; left: 8px; bottom: calc(100% + 4px); z-index: 5; width: min(340px, calc(100% - 16px)); max-height: min(540px, calc(100dvh - 190px)); display: flex; flex-direction: column; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 12px 36px rgba(0,0,0,.3); font-size: .86rem; }
 .pop[hidden] { display: none; }
 .pop-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 12px; border-bottom: 1px solid var(--border); flex: none; }
 .pop-head b { font-size: .8rem; font-weight: 600; }
@@ -385,3 +385,20 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swatch-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 .lib-body .brush-row, .pop .brush-row { width: 100%; }
 @media (max-width: 768px) { .optbar .size input[type=range] { width: auto; } }
+
+/* ── Façon Procreate : propriétés de l'outil en bas de l'écran, boutons d'affichage en pied du panneau de droite ── */
+.optwrap { z-index: 9; }
+@media (min-width: 769px) { .optbar { padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); } }
+.optbar .sep-v { flex: none; width: 1px; height: 28px; background: var(--border); }
+.optbar .btn:disabled, .optbar .icon-btn:disabled { opacity: .35; }
+.dock-foot { flex: none; display: flex; justify-content: flex-end; gap: 2px; padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); }
+.dock-foot .icon-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.dock-body { min-height: 0; }
+.dock.closed { width: 56px; border-left: 0; background: transparent; justify-content: flex-end; }
+.dock.closed .dock-foot { flex-direction: column; align-items: center; border-top: 0; padding: 4px 0 calc(4px + env(safe-area-inset-bottom, 0px)); }
+.toolbar .dock-toggle { display: none; }
+@media (max-width: 768px) {
+  .toolbar .dock-toggle { display: inline-flex; }
+  .dock.closed { display: none; }
+  .pop { max-height: min(540px, calc(100dvh - 260px)); }
+}

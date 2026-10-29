@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.0 — 2026-10-29
+- Nouvel outil Sélection : automatique, main levée, polygone, rectangle, ellipse ; on déplace le contenu d'une case (ou toute la case)
+- Interface façon Procreate : réglages de l'outil en bas de l'écran, plein écran et masquage du panneau en bas du panneau de droite
+
 ## 1.10.0 — 2026-10-28
 - Double tape du bout du stylet : bascule plume et gomme (aussi le bouton du flanc ; le bout gomme du stylet gomme)
 - Rejet de la paume assoupli : seul le déplacement ou le trait d'un doigt isolé près du stylet est ignoré, zoom et annuler restent libres
