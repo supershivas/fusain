@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.25.0 — 2026-10-29
+- Bulles : trois listes déroulantes Texte / Forme / Queue dans la barre flottante (l'onglet Texte n'a plus que le texte, le modèle passe dans Forme)
+- Nouvelles bulles : majuscules décochées et police Architects Daughter par défaut
+- Taille auto : le texte ne touche plus jamais le trait de la bulle (marge minimale automatique)
+
 ## 1.24.0 — 2026-10-29
 - Outil Bulle : barre flottante sur la bulle (écrire, forme en une touche, queue marche / arrêt, réglages, copie, corbeille) et saisie du texte directement sur la bulle
 - La barre du haut ne garde que le modèle et le tracé à la main

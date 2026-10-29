@@ -11,7 +11,7 @@ import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateVie
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
-import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf } from './bubbles.js';
+import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
@@ -643,8 +643,7 @@ const slider = (id, p, min, max, step = 1) => `<label class="field inline"><span
 
 function bubbleText(b) {
   const p = props(b);
-  return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
-      <textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
+  return `<textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
       <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
       <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}"></label>
       <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
@@ -652,17 +651,19 @@ function bubbleText(b) {
 }
 function bubbleShape(b) {
   const p = props(b);
-  return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+  return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+      <label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
       ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) + slider('b-vround', p, 0, 100, 5) + slider('b-tround', p, 0, 100, 5) : ''}
       ${p.shape === 'cloud' ? slider('b-lobes', p, 0, 40) + slider('b-bulge', p, 0, 100, 5) + `<label class="check compact"><input type="checkbox" id="b-cloudsoft" ${p.cloudSoft ? 'checked' : ''}> Creux arrondis (nuage doux)</label>` : ''}
       ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' || p.shape === 'eclair' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
+      ${slider('b-pad', p, 0, 10, 0.5)}${b.auto ? '<small class="note">En taille auto, la marge garde toujours le texte à distance du trait.</small>' : ''}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
       <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
       <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
       ${b.clip ? `<label class="check compact"><input type="checkbox" id="b-noframe" ${b.noFrame ? 'checked' : ''}> Pas de trait de case là où la bulle la touche</label>` : ''}
       <button class="btn small" data-act="bubble-lines-all" style="margin:2px 0 8px">Appliquer ces traits à toutes les bulles</button>
-      ${slider('b-rot', p, 0, 359)}`;
+      ${slider('b-rot', p, 0, 359)}
+      <button class="btn small" data-act="tpl-save" style="margin-top:6px">${icon('device-floppy')} Enregistrer comme modèle…</button>`;
 }
 function bubbleTail(b) {
   const p = props(b);
@@ -772,7 +773,7 @@ async function onDock(e) {
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
   else if (a === 'tpl-save') {
-    bfMenu = false; placeBubbleUI();
+    bfTab = null; placeBubbleUI();
     const b = bubble();
     if (!b) { toast('Sélectionne d\'abord une bulle.'); return; }
     const name = await promptModal({ title: 'Enregistrer le modèle de bulle', label: 'Nom', value: 'Ma bulle' });
@@ -818,20 +819,19 @@ function rememberBubble(b) {
 
 const SHAPE_ORDER = [['ellipse', 'circle', 'Ellipse'], ['rect', 'square-rounded', 'Rectangle'], ['cloud', 'cloud', 'Nuage'], ['eclair', 'bolt', 'Éclair']];
 const tailMemory = new Map();
-let bfMenu = false, editBefore = null;
-const editingBubble = () => { const e = $('#bedit', root); return e && !e.hidden; };
+let bfTab = null, editBefore = null;   // bfTab : liste déroulante ouverte sous la barre ('text' | 'shape' | 'tail')
+const STRUCTURAL = ['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto', 'b-clip', 'b-samestroke'];   // ces réglages changent les curseurs affichés
 
 function initBubbleUI() {
   const fl = $('#bfloat', root), ta = $('#bedit', root);
-  fl.addEventListener('click', e => { if (e.target.closest('[data-act]')) onDock(e); });
+  // la liste déroulante réutilise les gestionnaires du volet (curseurs, cases, police, modèle…)
   fl.addEventListener('click', e => {
-    const t = e.target.closest('[data-bf], [data-bfpop]'), b = bubble();
+    if (e.target.closest('[data-act]')) { onDock(e); return; }
+    const t = e.target.closest('[data-bf]'), b = bubble();
     if (!t || !b) return;
-    if (t.dataset.bfpop) { popId = t.dataset.bfpop; bfMenu = false; renderOptbar(); renderPop(); placeBubbleUI(); return; }
     const a = t.dataset.bf;
-    if (a === 'text') { bfMenu = false; openBubbleEdit(); return; }
-    if (a === 'more') { bfMenu = !bfMenu; placeBubbleUI(); return; }
-    bfMenu = false;
+    if (a === 'text') { bfTab = null; openBubbleEdit(); return; }
+    if (a === 'tab-text' || a === 'tab-shape' || a === 'tab-tail') { const k = a.slice(4); bfTab = bfTab === k ? null : k; placeBubbleUI(); return; }
     if (a === 'shape') {
       const cur = props(b).shape, i = SHAPE_ORDER.findIndex(s => s[0] === cur), next = SHAPE_ORDER[(i + 1) % SHAPE_ORDER.length];
       const before = snapshotBubble(b); b.shape = next[0]; refitBubble(b); commitBubbleEdit(b, before); rememberBubble(b); toast(next[2], { duration: 900 });
@@ -841,9 +841,12 @@ function initBubbleUI() {
       else { setTail(b, true); if (tailMemory.has(b.id)) b.tail = tailMemory.get(b.id); if (b.tailStyle === 'none') delete b.tailStyle; }
       commitBubbleEdit(b, before); rememberBubble(b);
     } else if (a === 'dup') duplicateBubble(b);
-    else if (a === 'del') { deleteBubble(b); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); }
-    placeBubbleUI();
+    else if (a === 'del') { deleteBubble(b); bfTab = null; toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); }
+    fl._html = ''; placeBubbleUI();
   });
+  fl.addEventListener('input', e => { onDockInput0(e); const id = e.target.id; if (STRUCTURAL.includes(id)) { fl._html = ''; placeBubbleUI(); } });
+  fl.addEventListener('change', e => { onDockChange(e); fl._html = ''; placeBubbleUI(); });
+  fl.addEventListener('focusin', onDockFocus);
   ta.addEventListener('input', () => { const b = bubble(); if (!b) return; b.text = ta.value; refitBubble(b); markChanged(); requestRender(); });
   ta.addEventListener('blur', () => {
     const b = bubble();
@@ -866,30 +869,47 @@ function placeBubbleUI() {
   const fl = $('#bfloat', root), ta = $('#bedit', root);
   if (!fl || !ta) return;
   const b = ed.tool === 'bubble' && !ed.bubbleDraw ? bubble() : null;
-  if (!b || b.hidden) { fl.hidden = true; if (!ta.hidden) { ta.hidden = true; } return; }
+  if (!b || b.hidden) { fl.hidden = true; bfTab = null; if (!ta.hidden) ta.hidden = true; return; }
   const k = view.s, c = toScreen(b.x + b.w / 2, b.y + b.h / 2);
   if (!ta.hidden) {
     const tw = Math.max(b.w * k, 170), th = Math.max(b.h * k, 76);   // champ assez grand pour taper même si la bulle est petite
     ta.style.width = tw + 'px'; ta.style.height = th + 'px'; ta.style.left = c.x - tw / 2 + 'px'; ta.style.top = c.y - th / 2 + 'px';
     ta.style.transform = `rotate(${(b.rot || 0) * Math.PI / 180 + view.r}rad)`;
   }
-  const cur = props(b).shape, sh = SHAPE_ORDER.find(s => s[0] === cur) || SHAPE_ORDER[0], locked = !!b.locked;
-  const html = `<button data-bf="text" title="Écrire" aria-label="Écrire le texte">${icon('typography')}</button>
+  const cur = props(b).shape, sh = SHAPE_ORDER.find(s => s[0] === cur) || SHAPE_ORDER[0];
+  const tab = (id, ico, label) => `<button data-bf="tab-${id}" class="tab ${bfTab === id ? 'on' : ''}" aria-expanded="${bfTab === id}" title="Réglages : ${label}">${icon(ico)}<span>${label}</span>${icon('chevron-down')}</button>`;
+  const drop = bfTab === 'text' ? bubbleText(b) : bfTab === 'shape' ? bubbleShape(b) : bfTab === 'tail' ? bubbleTail(b) : '';
+  const html = `<div class="bfbar"><button data-bf="text" title="Écrire" aria-label="Écrire le texte">${icon('writing')}</button>
     <button data-bf="shape" title="Forme : ${sh[2]} (touche pour changer)" aria-label="Changer la forme, actuelle : ${sh[2]}">${icon(sh[1])}</button>
     <button data-bf="tail" class="${b.tail ? 'on' : ''}" title="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-label="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-pressed="${!!b.tail}">${icon(b.tail ? 'message-circle' : 'message-circle-off')}</button>
-    <button data-bf="more" class="${bfMenu ? 'on' : ''}" title="Réglages" aria-label="Réglages de la bulle" aria-expanded="${bfMenu}">${icon('adjustments-horizontal')}</button>
+    <i class="sep"></i>${tab('text', 'typography', 'Texte')}${tab('shape', 'shape', 'Forme')}${tab('tail', 'message-circle-plus', 'Queue')}<i class="sep"></i>
     <button data-bf="dup" title="Dupliquer" aria-label="Dupliquer la bulle">${icon('copy')}</button>
-    <button data-bf="del" title="Supprimer" aria-label="Supprimer la bulle">${icon('trash')}</button>
-    ${bfMenu ? `<div class="bfmenu"><button data-bfpop="btext">${icon('typography')} Texte, police, taille…</button><button data-bfpop="bshape">${icon('shape')} Forme et trait…</button>
-      <button data-bfpop="btail">${icon('message-circle-plus')} Queue…</button><button data-act="tpl-save">${icon('device-floppy')} Enregistrer comme modèle…</button></div>` : ''}`;
-  if (fl._html !== html) { fl._html = html; fl.innerHTML = html; }
-  fl.hidden = ta.hidden === false || locked;
+    <button data-bf="del" title="Supprimer" aria-label="Supprimer la bulle">${icon('trash')}</button></div>${drop ? `<div class="bfdrop">${drop}</div>` : ''}`;
+  const a = document.activeElement, typing = fl.contains(a) && a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
+  if (fl._html !== html) {
+    fl._html = html;
+    if (!typing) {   // pas de reconstruction sous un doigt qui règle un curseur ou tape
+      const keep = fl.querySelector('.bfdrop') ? fl.querySelector('.bfdrop').scrollTop : 0;
+      fl.innerHTML = html; const d = fl.querySelector('.bfdrop'); if (d) d.scrollTop = keep;
+    }
+  }
+  fl.hidden = !ta.hidden || !!b.locked;
   if (fl.hidden) return;
-  const w = fl.offsetWidth || 300, barH = 52, rh = bubbleRotHandle(b);
+  const bar = fl.querySelector('.bfbar'), w = Math.max(bar ? bar.offsetWidth : 360, drop ? 330 : 0), barH = 52, rh = bubbleRotHandle(b);
   let top = rh.y - 20 - barH;
   if (top < 6) { const bottom = toScreen(b.x + b.w / 2, b.y + b.h); top = Math.min(view.h - barH - 6, bottom.y + 44); }
   const left = Math.max(w / 2 + 6, Math.min(view.w - w / 2 - 6, rh.x));
   fl.style.left = left + 'px'; fl.style.top = Math.max(6, top) + 'px';
+  const d = fl.querySelector('.bfdrop');
+  if (d) {
+    d.style.maxHeight = Math.max(160, view.h - Math.max(6, top) - barH - 20) + 'px';
+    // la liste se range à côté de la bulle (jamais dessus : on veut voir l'effet des réglages) ; à défaut, sous la barre
+    const xs = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([x, y]) => { const q = bubbleToPage(b, x, y); return toScreen(q.x, q.y).x; });
+    const minX = Math.min(...xs), maxX = Math.max(...xs), dw = 320, barLeft = left - (bar ? bar.offsetWidth : 360) / 2;
+    const roomR = view.w - 6 - (maxX + 16 + dw), roomL = minX - 16 - dw - 6;
+    d.classList.toggle('side', roomR >= 0 || roomL >= 0);
+    if (roomR >= 0 || roomL >= 0) d.style.left = ((roomR >= roomL ? maxX + 16 : minX - 16 - dw) - barLeft) + 'px'; else d.style.left = '';
+  }
 }
 
 let bubbleBefore = null;

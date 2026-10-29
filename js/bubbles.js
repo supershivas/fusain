@@ -36,7 +36,7 @@ export const BUBBLE_TEMPLATES = [
   { id: 'parole', name: 'Parole', kind: 'parole' }, { id: 'pensee', name: 'Pensée', kind: 'pensee' }, { id: 'cri', name: 'Cri (éclair)', kind: 'cri' },
   { id: 'narration', name: 'Narration', kind: 'narration' }, { id: 'texte', name: 'Texte libre', kind: 'texte' },
   { id: 'mon-style', name: 'Mon style BD', kind: 'parole', style: { shape: 'rect', radius: 10, wobble: 45, pad: 6, sameStroke: true, clip: true, noFrame: true,
-    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: true, auto: false } },
+    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: false, auto: false } },
   { id: 'eclair-fort', name: 'Cri très pointu', kind: 'cri', style: { spikes: 18, depth: 42, wobble: 45, stroke: 0.6 } },
   { id: 'eclair-rond', name: 'Éclair arrondi', kind: 'cri', style: { spikes: 12, depth: 26, wobble: 25, valleyRound: 75, tipRound: 10 } },
   { id: 'nuage-doux', name: 'Nuage doux', kind: 'pensee', style: { lobes: 9, bulge: 22, cloudSoft: 1, wobble: 20 } },
@@ -83,15 +83,29 @@ export function wrapText(ctx, text, maxW) {
   return lines;
 }
 
+// Part du cadre de la bulle qu'on peut remplir de texte sans toucher le contour : un ovale ne laisse que son rectangle inscrit, une étoile ou un nuage moins.
+function innerFactor(p) {
+  if (p.shape === 'eclair') return 0.707 * Math.max(0.4, 1 - p.depth / 100 * (1 + 0.5 * p.wobble / 100));
+  if (p.shape === 'cloud') return 0.707 * 0.93;
+  if (p.shape === 'ellipse') return 0.707 * 0.95;
+  if (p.shape === 'libre') return 0.6;
+  return 1;
+}
+// Marge intérieure réelle : en taille auto, jamais moins que ce qu'il faut pour que le texte ne touche pas le trait (épaisseur, imperfections, corps du texte).
+function padOf(b, p, dpi) {
+  const fp = fontPx(b, dpi), pad = mm(p.pad, dpi);
+  return b.auto ? Math.max(pad, mm(p.stroke, dpi) * 2 + fp * 0.3 + p.wobble / 100 * fp * 0.25) : pad;
+}
+
 // Taille qui contient le texte avec sa marge intérieure (un ovale demande plus de place qu'un rectangle).
 export function fitSize(ctx, b, dpi) {
   setFont(ctx, b, dpi);
-  const p = props(b), fp = fontPx(b, dpi), pad = mm(p.pad, dpi), text = shown(b) || ' ';
+  const p = props(b), fp = fontPx(b, dpi), pad = padOf(b, p, dpi), text = shown(b) || ' ';
   const target = Math.max(fp * 6, Math.min(fp * 14, Math.sqrt(ctx.measureText(text).width * fp * 3.2)));
   const lines = wrapText(ctx, text, target);
   const tw = Math.max(...lines.map(l => ctx.measureText(l).width)), th = lines.length * fp * 1.2;
-  const k = roundy(p.shape) ? 1.42 : 1;
-  return { w: Math.round(tw * k + pad * 2), h: Math.round(th * k + pad * 2) };
+  const f = innerFactor(p);
+  return { w: Math.round((tw + pad * 2) / f), h: Math.round((th + pad * 2) / f) };
 }
 
 export function autoSize(ctx, b, dpi) {
@@ -336,8 +350,8 @@ export function drawBubble(ctx, b, dpi, lwOverride, fillOnly = false) {
 
   if (b.text && !fillOnly) {
     setFont(ctx, b, dpi);
-    const fp = fontPx(b, dpi), pad = mm(p.pad, dpi);
-    const maxW = roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
+    const fp = fontPx(b, dpi), pad = padOf(b, p, dpi);
+    const maxW = b.auto ? b.w * innerFactor(p) - pad * 2 : roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
     const lines = wrapText(ctx, shown(b), Math.max(fp, maxW));
     ctx.fillStyle = '#000'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const top = cy - (lines.length * fp * 1.2) / 2 + fp * 0.6;

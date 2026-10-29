@@ -395,10 +395,16 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swipe.drop-below::after { bottom: 0; }
 
 /* Barre flottante de la bulle et saisie du texte sur la bulle */
-.bfloat { position: absolute; z-index: 6; transform: translateX(-50%); display: flex; gap: 2px; padding: 4px; background: #1c1c1e; border-radius: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.bfloat { position: absolute; z-index: 6; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
 .bfloat[hidden], .bedit[hidden] { display: none; }
-.bfloat > button { min-width: 44px; height: 44px; border-radius: 9px; color: #fff; font-size: 1.2rem; display: inline-flex; align-items: center; justify-content: center; }
-.bfloat > button.on { background: var(--accent); }
-.bfmenu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 240px; display: flex; flex-direction: column; padding: 4px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
-.bfmenu button { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 8px; color: var(--text-primary); font-size: .9rem; text-align: left; }
+.bfbar { display: flex; align-items: center; gap: 2px; padding: 4px; background: #1c1c1e; border-radius: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.bfbar > button { min-width: 44px; height: 44px; border-radius: 9px; color: #fff; font-size: 1.2rem; display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.bfbar > button.on, .bfbar > button.tab.on { background: var(--accent); }
+.bfbar > button.tab { padding: 0 8px; font-size: .78rem; font-weight: 500; }
+.bfbar > button.tab .ti { font-size: 1.05rem; }
+.bfbar > button.tab .ti-chevron-down { font-size: .8rem; opacity: .7; }
+.bfbar .sep { width: 1px; height: 26px; background: rgba(255,255,255,.2); margin: 0 3px; }
+.bfdrop { margin-top: 6px; width: 320px; max-width: calc(100vw - 24px); overflow-y: auto; padding: 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); color: var(--text-primary); }
+.bfdrop.side { position: absolute; top: 58px; margin-top: 0; }
 .bedit { position: absolute; z-index: 7; box-sizing: border-box; padding: 8px; text-align: center; font-size: 16px; line-height: 1.25; border: 2px solid var(--accent); border-radius: 14px; background: rgba(255,255,255,.96); color: #000; resize: none; margin: 0; -webkit-user-select: text; user-select: text; transform-origin: center; }
+@media (max-width: 520px) { .bfbar > button.tab span { display: none; } }
