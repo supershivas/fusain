@@ -1,13 +1,13 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, addCase, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, addCaseAt, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, gutterPlus } from './view.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses } from './view.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 
@@ -199,14 +199,17 @@ export function cancel() {
 // On attrape une gouttière n'importe où le long de son trait.
 function layoutDown(pt) {
   const R = pt.type === 'touch' ? 28 : 18, at = toScreen(pt.x, pt.y);
-  for (const h of gutterHandles()) {   // le « + » d'une gouttière ajoute une case
-    const pl = gutterPlus(h);
-    if (Math.hypot(at.x - pl.x, at.y - pl.y) <= pl.r + (pt.type === 'touch' ? 10 : 4)) {
-      if (addCase(h.L, h.axis)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
-      else toast('Les cases sont trop petites pour en ajouter une.');
-      return;
-    }
+  const ap = page().panels.find(p => p.id === ed.panelId);
+  if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : un premier toucher montre la case, un second (ou « Valider ») l'ajoute
+    if (Math.hypot(at.x - pl.x, at.y - pl.y) > pl.r + (pt.type === 'touch' ? 10 : 4)) continue;
+    if (!splitRects(ap, pl.side, ed.addRatio / 100)) { toast('Cette case est trop petite pour être coupée de ce côté.'); return; }
+    if (ed.addPreview && ed.addPreview.panelId === ap.id && ed.addPreview.side === pl.side) {
+      ed.addPreview = null;
+      if (addCaseAt(ap.id, pl.side, ed.addRatio / 100)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+    } else ed.addPreview = { panelId: ap.id, side: pl.side };
+    notify('tool'); setOverlay({}); return;
   }
+  if (ed.addPreview) { ed.addPreview = null; notify('tool'); setOverlay({}); }
   let best = null;
   for (const h of gutterHandles()) {
     const v = h.axis === 'v', along = v ? pt.y : pt.x, across = Math.abs((v ? pt.x : pt.y) - h.pos) * view.s;

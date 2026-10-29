@@ -1,7 +1,7 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
   ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
-  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, duplicateBubble, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
+  clearLayer, mergeDown, clearMask, invertMask, addCase, addCaseAt, setNote, addBubble, deleteBubble, duplicateBubble, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
@@ -276,9 +276,11 @@ export function renderOptbar() {
           : `<span class="hint">Touche une bulle pour la régler ; points rouges : taille et queue.</span>`);
   } else if (t === 'layout') {
     const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
-    html = `<span class="hint">Glisse une gouttière ; « + » ajoute une case. Case ${idx + 1} :</span>
-      <button class="btn small" data-split="v" title="Couper la case en deux, côte à côte">${icon('layout-columns')} Ajouter à côté</button>
-      <button class="btn small" data-split="h" title="Couper la case en deux, l'une sous l'autre">${icon('layout-rows')} Ajouter dessous</button>`
+    const pv = ed.addPreview && ed.addPreview.panelId === pn.id ? ed.addPreview : null;
+    html = (pv
+      ? `<span class="opt size"><input type="range" id="o-ratio" min="20" max="80" step="5" value="${ed.addRatio}" aria-label="Part de la nouvelle case"><span class="unit" id="o-ratio-v">${ed.addRatio} %</span></span>
+         <button class="btn small primary" data-addok="1">${icon('check')} Valider</button><button class="btn small" data-addno="1">Annuler</button>`
+      : `<span class="hint">Glisse une gouttière, ou touche un « + » au bord de la case ${idx + 1} pour ajouter une case de ce côté.</span>`)
       + mergeCandidates(pn).map(c => `<button class="btn small" data-merge="${c.id}" title="La case ${idx + 1} absorbe la case ${c.index + 1}">${icon(ARROW[c.dir])} Fusionner avec la ${c.index + 1}</button>`).join('')
       + (page().panels.length > 1 ? `<button class="btn small danger" data-delpanel="1">${icon('trash')} Supprimer la case</button>` : '');
   } else if (t === 'pan') {
@@ -311,6 +313,8 @@ function onOptbar(e) {
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
+  else if (b.dataset.addok) { const pv = ed.addPreview; ed.addPreview = null; if (pv && addCaseAt(pv.panelId, pv.side, ed.addRatio / 100)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: undo }); renderOptbar(); requestRender(); }
+  else if (b.dataset.addno) { ed.addPreview = null; renderOptbar(); requestRender(); }
   else if (b.dataset.split) { if (addCase([panel().id], b.dataset.split)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: undo }); else toast('Cette case est trop petite pour être coupée.'); }
   else if (b.dataset.delpanel) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); }
   else if (b.dataset.freebubble) { ed.bubbleDraw = b.dataset.freebubble === '1'; renderOptbar(); }
@@ -333,6 +337,7 @@ function onOptInput(e) {
   if (id === 'o-size') { setSizeMm(vToSize(+e.target.value)); showSize('o-size'); }
   else if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); showSize('o-mm'); } }
   else if (id === 'o-gap') { ed.fillGap = +e.target.value; const v = $('#o-gap-v', root); if (v) v.textContent = ed.fillGap + ' %'; savePrefs(); }
+  else if (id === 'o-ratio') { ed.addRatio = +e.target.value; const v = $('#o-ratio-v', root); if (v) v.textContent = ed.addRatio + ' %'; requestRender(); }
   else if (id === 'o-filled') { ed.shapeFilled = e.target.checked; savePrefs(); }
 }
 

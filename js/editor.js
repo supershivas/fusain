@@ -15,6 +15,7 @@ export const ed = {
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
+  addRatio: 50, addPreview: null,
   fingerDraws: false, palm: 'strong', pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
 };
@@ -469,6 +470,31 @@ export function addCase(ids, axis) {
   swapPanels(pg, after); ed.panelId = fresh[0].id; notify('panel');
   ed.undo.pushAction('Ajouter une case', () => { swapPanels(pg, before); ed.panelId = before.some(p => p.id === prevId) ? prevId : before[0].id; }, () => { swapPanels(pg, after); ed.panelId = fresh[0].id; });
   return fresh[0];
+}
+
+// Ajout d'une case contre un bord de la case `p` : `side` 'left' | 'right' | 'top' | 'bottom', `ratio` = part de la nouvelle case (0,2 à 0,8).
+// Elle prend la place de la case coupée (la page ne grandit pas, rien n'entre dans la marge). Renvoie { old, fresh } (rectangles) ou null si trop petit.
+export function splitRects(p, side, ratio = 0.5) {
+  const gap = mmToPx(ed.project.gutter, ed.project.dpi), { w: pw, h: ph } = pageSize(ed.project), min = Math.round(Math.min(pw, ph) * 0.1);
+  const horiz = side === 'left' || side === 'right', total = (horiz ? p.w : p.h) - gap;
+  const fresh = Math.round(total * ratio), old = total - fresh;
+  if (fresh < min || old < min) return null;
+  if (side === 'right') return { old: { x: p.x, y: p.y, w: old, h: p.h }, fresh: { x: p.x + old + gap, y: p.y, w: fresh, h: p.h } };
+  if (side === 'left') return { fresh: { x: p.x, y: p.y, w: fresh, h: p.h }, old: { x: p.x + fresh + gap, y: p.y, w: old, h: p.h } };
+  if (side === 'bottom') return { old: { x: p.x, y: p.y, w: p.w, h: old }, fresh: { x: p.x, y: p.y + old + gap, w: p.w, h: fresh } };
+  return { fresh: { x: p.x, y: p.y, w: p.w, h: fresh }, old: { x: p.x, y: p.y + fresh + gap, w: p.w, h: old } };
+}
+
+export function addCaseAt(panelId, side, ratio = 0.5) {
+  const pg = page(), p = pg.panels.find(q => q.id === panelId);
+  const r = p && splitRects(p, side, ratio);
+  if (!r) return null;
+  const before = pg.panels.slice(), np = newPanel(r.fresh), prevId = ed.panelId;
+  const first = side === 'left' || side === 'top';
+  const after = before.flatMap(q => (q !== p ? [q] : first ? [np, reshape(q, r.old)] : [reshape(q, r.old), np]));
+  swapPanels(pg, after); ed.panelId = np.id; notify('panel');
+  ed.undo.pushAction('Ajouter une case', () => { swapPanels(pg, before); ed.panelId = prevId; }, () => { swapPanels(pg, after); ed.panelId = np.id; });
+  return np;
 }
 
 export function deletePanel() {

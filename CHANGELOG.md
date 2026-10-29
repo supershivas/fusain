@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.18.0 — 2026-10-29
+- Ajout de case : un « + » sur chaque bord de la case active, avec aperçu de la nouvelle case et part réglable (20 à 80 %), puis Valider
+- On peut maintenant diviser une page à case unique ; les « + » des gouttières disparaissent
+
 ## 1.17.0 — 2026-10-28
 - Encrage et trames en couleur : chaque calque d'encre ou de trame a sa couleur libre (volet Calques)
 - L'export PDF passe en couleur dès qu'un calque est coloré

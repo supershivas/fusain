@@ -1,6 +1,6 @@
 // Vue : une seule toile affiche la page (papier, cases, bulles, aides). Chaque case garde son propre
 // canevas, recomposé seulement là où on a dessiné.
-import { ed, page, gutterHandles } from './editor.js';
+import { ed, page, gutterHandles, splitRects } from './editor.js';
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
@@ -280,11 +280,14 @@ function drawShapePreview(accent) {
   ctx.stroke(); ctx.setLineDash([]);
 }
 
-// Bouton « + » d'une gouttière (ajoute une case) : à côté de la tirette, en pixels d'écran.
-export function gutterPlus(h) {
-  const v = h.axis === 'v', a = toScreen(v ? h.pos : h.span[0], v ? h.span[0] : h.pos), b = toScreen(v ? h.pos : h.span[1], v ? h.span[1] : h.pos);
-  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-  return { x: v ? mx : mx + 40, y: v ? my + 40 : my, r: 15 };
+// Les quatre « + » de la case active : un par bord, posés dans la case, au milieu du bord, pour y ajouter une case de ce côté.
+const SIDES = { left: [0, 0.5], right: [1, 0.5], top: [0.5, 0], bottom: [0.5, 1] };
+export function edgePluses(p) {
+  const c = toScreen(p.x + p.w / 2, p.y + p.h / 2);
+  return Object.entries(SIDES).map(([side, [fx, fy]]) => {
+    const e = toScreen(p.x + p.w * fx, p.y + p.h * fy), d = Math.hypot(c.x - e.x, c.y - e.y) || 1, k = Math.min(30, d * 0.45);
+    return { side, x: e.x + (c.x - e.x) / d * k, y: e.y + (c.y - e.y) / d * k, r: 15 };
+  });
 }
 
 // Poignées des gouttières : un trait le long de chaque gouttière, une tirette en son milieu et un « + » pour ajouter une case.
@@ -297,10 +300,22 @@ function drawGutters(pg, accent) {
     ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(mx - w / 2, my - hh / 2, w, hh, 8); ctx.fill();
     ctx.fillStyle = '#fff';
     for (const k of [-1, 0, 1]) { ctx.beginPath(); ctx.arc(v ? mx : mx + k * 10, v ? my + k * 10 : my, 2, 0, Math.PI * 2); ctx.fill(); }
-    const pl = gutterPlus(h);
-    ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(pl.x - 6, pl.y); ctx.lineTo(pl.x + 6, pl.y); ctx.moveTo(pl.x, pl.y - 6); ctx.lineTo(pl.x, pl.y + 6); ctx.stroke();
-    ctx.fillStyle = '#fff';
+  }
+  const ap = pg.panels.find(p => p.id === ed.panelId);
+  if (ap) {
+    const pv = ed.addPreview && ed.addPreview.panelId === ap.id ? ed.addPreview : null, sp = pv && splitRects(ap, pv.side, ed.addRatio / 100);
+    if (sp) {   // aperçu : la future case en pointillés, la case coupée en fond
+      const poly = r => { ctx.beginPath(); [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].forEach(([x, y], i) => { const q = toScreen(x, y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); };
+      ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = accent; poly(sp.fresh); ctx.fill(); ctx.restore();
+      ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); poly(sp.fresh); ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (const pl of edgePluses(ap)) {
+      const ok = !!splitRects(ap, pl.side, ed.addRatio / 100), on = pv && pv.side === pl.side;
+      ctx.globalAlpha = ok ? 1 : 0.35;
+      ctx.fillStyle = on ? accent : '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = on ? '#fff' : accent; ctx.beginPath(); ctx.moveTo(pl.x - 6, pl.y); ctx.lineTo(pl.x + 6, pl.y); ctx.moveTo(pl.x, pl.y - 6); ctx.lineTo(pl.x, pl.y + 6); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
   if (g) {
     const v = g.axis === 'v', a = toScreen(v ? g.pos : g.s0, v ? g.s0 : g.pos), b = toScreen(v ? g.pos : g.s1, v ? g.s1 : g.pos);
