@@ -6,16 +6,17 @@ import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
-import { autoSize, pathBounds } from './bubbles.js';
+import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null,
   tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
-  shapeKind: 'rect', shapeFilled: false,
+  shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
   sel: null, selFloat: null, selMode: 'auto', selOp: 'new', selMove: false, selScope: 'all', selCopy: false,   // outil Sélection (selection.js)
+  addRatio: 50, addPreview: null, bubbleTemplate: 'parole', bubbleTemplates: [],
   fingerDraws: false, palm: 'strong', pressure: true, pressureGamma: 1, showNotes: true,
   undo: new UndoStack(),
 };
@@ -27,9 +28,9 @@ export const notify = what => subs.forEach(fn => fn(what));
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
   pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
-  texture: { sizeMm: 3, ink: 1, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  texture: { sizeMm: 3, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3, brushId: 'stylo', brushParams: null },
-  fill: { ink: 1, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, maskErase: false },
 };
@@ -50,19 +51,20 @@ export const currentBrush = () => allBrushes().find(b => b.id === ed.brushId) ||
 
 // Choisir un pinceau reprend la dernière taille réglée pour lui.
 export function selectBrush(id) {
-  ed.brushSizes[ed.brushId] = ed.sizeMm;
+  const key = i => (ed.tool === 'texture' ? 't:' : '') + i;
+  ed.brushSizes[key(ed.brushId)] = ed.sizeMm;
   ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
-  setSizeMm(ed.brushSizes[id] ?? ed.brushParams.sizeMm);
+  setSizeMm(ed.brushSizes[key(id)] ?? (ed.tool === 'texture' ? Math.max(ed.brushParams.sizeMm, 3) : ed.brushParams.sizeMm));
 }
 export function resetBrush() { ed.brushParams = brushSpec(ed.brushId, ed.customBrushes); }
-export function saveBrushAs(name) {
+export function saveBrushAs(name, group = 'Mes pinceaux') {
   const id = 'c' + Math.random().toString(36).slice(2, 8);
-  ed.customBrushes.push({ ...ed.brushParams, id, name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm });
+  ed.customBrushes.push({ ...ed.brushParams, id, name, group, custom: true, sizeMm: ed.sizeMm });
   ed.brushSizes[id] = ed.sizeMm; ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
 }
 export function updateBrush() {
   const i = ed.customBrushes.findIndex(b => b.id === ed.brushId);
-  if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
+  if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: c.group || 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
 }
 export function deleteBrush(id) {
   ed.customBrushes = ed.customBrushes.filter(b => b.id !== id);
@@ -70,7 +72,9 @@ export function deleteBrush(id) {
 }
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
 export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
-export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(30, mm)); syncSize(); }
+// Plus grosse taille : 50 mm pour les trames (aplats), 30 mm pour le reste.
+export const maxSizeMm = () => ed.tool === 'texture' ? 50 : 30;
+export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(maxSizeMm(), mm)); syncSize(); }
 
 export const page = () => ed.project.pages[ed.pageIdx];
 export const panel = () => page().panels.find(p => p.id === ed.panelId) || page().panels[0];
@@ -155,8 +159,10 @@ export async function addPage(layoutId, count) {
 
 export async function duplicatePage() {
   const src = page(), pg = { id: uid(), panels: [], bubbles: JSON.parse(JSON.stringify(src.bubbles)).map(b => ({ ...b, id: uid() })) };
+  linkBubbles(src);
+  const ids = new Map();
   for (const p of src.panels) {
-    const np = newPanel(p);
+    const np = newPanel(p); ids.set(p.id, np.id);
     Object.assign(np, { ex: p.ex, ey: p.ey, ew: p.ew, eh: p.eh, stroke: p.stroke });
     np.note = { ...p.note };
     np.layers = p.layers.map(l => {
@@ -170,6 +176,7 @@ export async function duplicatePage() {
     if (p.mask && p.mask.data) { np.mask = newLayer('Masque', p.ew, p.eh); np.mask.data = p.mask.data.slice(); np.mask.dirty = true; }
     pg.panels.push(np);
   }
+  src.bubbles.forEach((b, i) => { pg.bubbles[i].panel = ids.get(b.panel); });
   ed.project.pages.splice(ed.pageIdx + 1, 0, pg);
   markChanged();
   await goToPage(ed.pageIdx + 1);
@@ -216,8 +223,28 @@ export function relayoutPage(layoutId) {
 }
 
 // Remplace les cases de la page (disposition, gouttières) ; les calques des cases nouvelles ou restaurées sont à réécrire.
+// Chaque bulle est liée à une case (`b.panel`). Les bulles d'une case retirée partent avec elle et reviennent si on annule.
+const stashed = new WeakMap();
+const panelOfPoint = (panels, x, y) => panels.find(q => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h);
+export function linkBubbles(pg) {
+  for (const b of pg.bubbles) {
+    if (pg.panels.some(p => p.id === b.panel)) continue;
+    const q = panelOfPoint(pg.panels, b.x + b.w / 2, b.y + b.h / 2) || pg.panels[0];
+    if (q) b.panel = q.id;
+  }
+}
 function swapPanels(pg, list) {
   const prev = new Set(pg.panels.flatMap(p => [...p.layers, p.mask]));
+  linkBubbles(pg);
+  const was = new Set(pg.panels.map(p => p.id)), now = new Set(list.map(p => p.id)), box = stashed.get(pg) || new Map();
+  stashed.set(pg, box);
+  for (const id of was) if (!now.has(id)) {
+    const gone = pg.bubbles.filter(b => b.panel === id);
+    if (gone.length) { box.set(id, gone); pg.bubbles = pg.bubbles.filter(b => b.panel !== id); }
+  }
+  for (const id of now) if (!was.has(id) && box.has(id)) { pg.bubbles.push(...box.get(id)); box.delete(id); }
+  if (!pg.bubbles.some(b => b.id === ed.bubbleId)) ed.bubbleId = null;
+  notify('bubbles');
   pg.panels = list;
   if (!list.some(p => p.id === ed.panelId)) ed.panelId = list[0].id;
   for (const p of list) for (const l of [...p.layers, p.mask]) if (l && !prev.has(l)) l.dirty = true;
@@ -286,6 +313,16 @@ export function clampGutter(h, d) {
   return Math.round(Math.max(lo, Math.min(hi, d)));
 }
 
+// Rectangles des cases touchées par une gouttière déplacée de `d` : [{ id, rect }], pour l'aperçu en direct.
+export function gutterPreview(h, d) {
+  const v = h.axis === 'v';
+  return page().panels.flatMap(p => {
+    if (h.L.includes(p.id)) return [{ id: p.id, rect: v ? { x: p.x, y: p.y, w: p.w + d, h: p.h } : { x: p.x, y: p.y, w: p.w, h: p.h + d } }];
+    if (h.R.includes(p.id)) return [{ id: p.id, rect: v ? { x: p.x + d, y: p.y, w: p.w - d, h: p.h } : { x: p.x, y: p.y + d, w: p.w, h: p.h - d } }];
+    return [];
+  });
+}
+
 export function resizeGutter(h, d) {
   d = clampGutter(h, d);
   if (!d) return;
@@ -346,12 +383,24 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
     nl.dirty = true;
     return nl;
   };
+  // les bulles de la case source sont copiées dans la case cible, à la même place relative
+  const srcPg = project.pages[ed.pageIdx], sx = dst.x - src.x, sy = dst.y - src.y;
+  linkBubbles(srcPg);
+  const fresh = srcPg.bubbles.filter(b => b.panel === src.id).map(b => {
+    const nb = JSON.parse(JSON.stringify(b));
+    nb.id = uid(); nb.panel = dst.id; nb.x += sx; nb.y += sy;
+    if (nb.tail) nb.tail = { x: nb.tail.x + sx, y: nb.tail.y + sy };
+    if (nb.path) nb.path = nb.path.map(q => ({ x: q.x + sx, y: q.y + sy }));
+    return nb;
+  });
   const before = { layers: dst.layers, active: dst.active, mask: dst.mask };
   const layers = src.layers.map(clone), mask = src.mask && src.mask.data ? clone(src.mask) : null;
   const after = { layers, mask, active: layers[Math.max(0, src.layers.findIndex(l => l.id === src.active))].id };
   const set = st => {
     Object.assign(dst, st); for (const l of [...dst.layers, dst.mask]) if (l) l.dirty = true;
     if (samePage) { invalidate(dst); notify('layers'); }
+    pg.bubbles = pg.bubbles.filter(b => !fresh.includes(b)); if (st === after) pg.bubbles.push(...fresh);
+    if (samePage) { notify('bubbles'); requestRender(); }
     markChanged();
   };
   set(after);
@@ -404,9 +453,12 @@ export function mergePanels(aId, bId) {
   if (b.mask && b.mask.data) { if (!na.mask) { na.mask = newLayer('Masque', na.ew, na.eh); } paste(b.mask, na.mask); na.mask.dirty = true; }
   na.note = { plan: a.note.plan || b.note.plan, description: [a.note.description, b.note.description].filter(Boolean).join(' / ') };
   const after = before.filter(p => p !== b).map(p => (p === a ? na : p));
-  swapPanels(pg, after);
+  linkBubbles(pg);
+  const moved = pg.bubbles.filter(x => x.panel === b.id);   // les bulles de la case absorbée passent dans la case qui l'absorbe
+  const relink = id => moved.forEach(x => { x.panel = id; });
+  relink(na.id); swapPanels(pg, after);
   ed.panelId = na.id; notify('panel');
-  ed.undo.pushAction('Fusionner les cases', () => swapPanels(pg, before), () => { swapPanels(pg, after); ed.panelId = na.id; });
+  ed.undo.pushAction('Fusionner les cases', () => { swapPanels(pg, before); relink(b.id); }, () => { relink(na.id); swapPanels(pg, after); ed.panelId = na.id; });
   return true;
 }
 
@@ -430,6 +482,39 @@ export function addCase(ids, axis) {
   ed.undo.pushAction('Ajouter une case', () => { swapPanels(pg, before); ed.panelId = before.some(p => p.id === prevId) ? prevId : before[0].id; }, () => { swapPanels(pg, after); ed.panelId = fresh[0].id; });
   return fresh[0];
 }
+
+// Ajout d'une case contre un bord de la case `p` : `side` 'left' | 'right' | 'top' | 'bottom', `ratio` = part de la nouvelle case (0,2 à 0,8).
+// Elle prend la place de la case coupée (la page ne grandit pas, rien n'entre dans la marge). Renvoie { old, fresh } (rectangles) ou null si trop petit.
+export function splitRects(p, side, ratio = 0.5) {
+  const gap = mmToPx(ed.project.gutter, ed.project.dpi), { w: pw, h: ph } = pageSize(ed.project), min = Math.round(Math.min(pw, ph) * 0.1);
+  const horiz = side === 'left' || side === 'right', total = (horiz ? p.w : p.h) - gap;
+  if (total < 2 * min) return null;
+  // la part demandée est ramenée dans ce que la taille minimale permet : une case coupable ne refuse jamais l'ajout
+  const share = Math.max(min / total, Math.min(1 - min / total, ratio)), fresh = Math.round(total * share), old = total - fresh;
+  if (side === 'right') return { old: { x: p.x, y: p.y, w: old, h: p.h }, fresh: { x: p.x + old + gap, y: p.y, w: fresh, h: p.h } };
+  if (side === 'left') return { fresh: { x: p.x, y: p.y, w: fresh, h: p.h }, old: { x: p.x + fresh + gap, y: p.y, w: old, h: p.h } };
+  if (side === 'bottom') return { old: { x: p.x, y: p.y, w: p.w, h: old }, fresh: { x: p.x, y: p.y + old + gap, w: p.w, h: fresh } };
+  return { fresh: { x: p.x, y: p.y, w: p.w, h: fresh }, old: { x: p.x, y: p.y + fresh + gap, w: p.w, h: old } };
+}
+
+export function addCaseAt(panelId, side, ratio = 0.5) {
+  const pg = page(), p = pg.panels.find(q => q.id === panelId);
+  const r = p && splitRects(p, side, ratio);
+  if (!r) return null;
+  const before = pg.panels.slice(), np = newPanel(r.fresh), prevId = ed.panelId;
+  const first = side === 'left' || side === 'top';
+  const after = before.flatMap(q => (q !== p ? [q] : first ? [np, reshape(q, r.old)] : [reshape(q, r.old), np]));
+  swapPanels(pg, after); ed.panelId = np.id; notify('panel');
+  ed.undo.pushAction('Ajouter une case', () => { swapPanels(pg, before); ed.panelId = prevId; }, () => { swapPanels(pg, after); ed.panelId = np.id; });
+  return np;
+}
+
+// Valide ou abandonne l'aperçu d'ajout de case (`ed.addPreview`).
+export function confirmAdd() {
+  const pv = ed.addPreview; ed.addPreview = null; notify('tool');
+  return pv ? addCaseAt(pv.panelId, pv.side, ed.addRatio / 100) : null;
+}
+export function cancelAdd() { if (!ed.addPreview) return; ed.addPreview = null; notify('tool'); requestRender(); }
 
 export function deletePanel() {
   const pg = page(), p = panel();
@@ -519,7 +604,11 @@ export function setLayerProp(id, key, value) {
   const p = panel(), l = p.layers.find(x => x.id === id);
   if (!l) return;
   l[key] = value;
-  if (key === 'kind') { l.draft = value === 'draft'; if (l.draft && !l.color) l.color = nextDraftColor(p); }
+  if (key === 'kind') {
+    l.draft = value === 'draft';
+    if (l.draft && (!l.color || l.color[0] === '#')) l.color = nextDraftColor(p);
+    else if (!l.draft && l.color && l.color[0] !== '#') delete l.color;   // la couleur d'un brouillon est un nom de palette, celle d'un calque une teinte libre
+  }
   invalidate(p); notify('layers'); markChanged();
 }
 
@@ -550,6 +639,16 @@ export function moveLayer(dir) {
   if (j < 0 || j >= p.layers.length) return;
   const swap = (a, b) => { [p.layers[a], p.layers[b]] = [p.layers[b], p.layers[a]]; invalidate(p); notify('layers'); markChanged(); };
   swap(i, j); ed.undo.pushAction('Ordre des calques', () => swap(j, i), () => swap(i, j));
+}
+
+// Glisser-déposer dans la liste : le calque `id` va à la position `to` du tableau (0 = tout en bas de la pile).
+export function moveLayerTo(id, to) {
+  const p = panel(), i = p.layers.findIndex(l => l.id === id), order = p.layers.slice();
+  if (i < 0 || to < 0 || to >= order.length || to === i) return false;
+  const apply = () => { const [l] = p.layers.splice(i, 1); p.layers.splice(to, 0, l); invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(0, p.layers.length, ...order); invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Ordre des calques', unapply, apply);
+  return true;
 }
 
 export function toggleLayer(id, prop) {
@@ -625,19 +724,37 @@ const clone = o => JSON.parse(JSON.stringify(o));
 
 export function addBubbleObj(b) {
   const pg = page();
+  if (!b.panel) b.panel = (panelOfPoint(pg.panels, b.x + b.w / 2, b.y + b.h / 2) || panel()).id;
   const apply = () => { pg.bubbles.push(b); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
   const unapply = () => { pg.bubbles.splice(pg.bubbles.indexOf(b), 1); ed.bubbleId = null; notify('bubbles'); requestRender(); markChanged(); };
   apply(); ed.undo.pushAction('Nouvelle bulle', unapply, apply);
   return b;
 }
 
-export function addBubble(kind, at) {
+export function addBubble(kind, at, style) {
   const p = panel();
   const b = newBubble(kind, 0, 0), c = at || { x: p.x + p.w / 2, y: p.y + p.h / 3 };
-  Object.assign(b, ed.bubbleDefaults[kind] || {});   // le dernier style réglé pour ce type de bulle
+  Object.assign(b, style || ed.bubbleDefaults[kind] || {});   // le style du modèle choisi, sinon le dernier style réglé pour ce type de bulle
   b.x = Math.round(c.x - b.w / 2); b.y = Math.round(c.y - b.h / 2);
   if (b.tail) b.tail = { x: Math.round(b.x + b.w * 0.35), y: Math.round(b.y + b.h + 160) };
   return addBubbleObj(b);
+}
+
+// Modèles de bulle : ceux du programme + ceux que l'auteur enregistre (sur cet appareil).
+export const allBubbleTemplates = () => BUBBLE_TEMPLATES.concat(ed.bubbleTemplates);
+export const currentTemplate = () => allBubbleTemplates().find(t => t.id === ed.bubbleTemplate) || BUBBLE_TEMPLATES[0];
+export function addTemplateBubble(at) { const t = currentTemplate(); return addBubble(t.kind, at, t.style ? { ...t.style } : undefined); }
+const TEMPLATE_KEYS = ['lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'spikes', 'depth', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip', 'sameStroke', 'clip', 'noFrame'];
+export function saveBubbleTemplate(name, b) {
+  const style = {};
+  for (const k of TEMPLATE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) style[k] = b[k];
+  const t = { id: 'bt' + Math.random().toString(36).slice(2, 8), name, kind: b.kind, style };
+  ed.bubbleTemplates.push(t); ed.bubbleTemplate = t.id;
+  return t;
+}
+export function deleteBubbleTemplate(id) {
+  ed.bubbleTemplates = ed.bubbleTemplates.filter(t => t.id !== id);
+  if (ed.bubbleTemplate === id) ed.bubbleTemplate = 'parole';
 }
 
 // Bulle dessinée à la main : le tracé fermé devient le contour, le texte se centre dedans.
@@ -650,6 +767,34 @@ export function addFreeBubble(points) {
   const b = newBubble('parole', r.x, r.y);
   Object.assign(b, { shape: 'libre', path, x: r.x, y: r.y, w: Math.max(120, r.w), h: Math.max(90, r.h), auto: false, tail: null });
   return addBubbleObj(b);
+}
+
+// Copie d'une bulle (même case, légèrement décalée), annulable.
+export function duplicateBubble(b = bubble()) {
+  if (!b) return null;
+  const d = Math.round(ed.project.dpi / 8), nb = clone(b);
+  nb.id = uid(); nb.seed = Math.floor(Math.random() * 1e6);
+  nb.x += d; nb.y += d;
+  if (nb.tail) nb.tail = { x: nb.tail.x + d, y: nb.tail.y + d };
+  if (nb.path) nb.path = nb.path.map(q => ({ x: q.x + d, y: q.y + d }));
+  delete nb.locked; delete nb.hidden;
+  const pg = page(), at = pg.bubbles.indexOf(b) + 1;
+  const apply = () => { pg.bubbles.splice(at, 0, nb); ed.bubbleId = nb.id; notify('bubbles'); requestRender(); markChanged(); };
+  const unapply = () => { pg.bubbles.splice(pg.bubbles.indexOf(nb), 1); ed.bubbleId = b.id; notify('bubbles'); requestRender(); markChanged(); };
+  apply(); ed.undo.pushAction('Dupliquer la bulle', unapply, apply);
+  return nb;
+}
+
+// Copie les réglages de trait d'une bulle (épaisseur, même épaisseur que les cases, rognage) sur toutes les bulles du projet ; annulable.
+export function applyBubbleLines(src = bubble()) {
+  if (!src) return 0;
+  const keys = ['stroke', 'sameStroke', 'clip', 'noFrame'], all = ed.project.pages.flatMap(p => p.bubbles);
+  const before = new Map(all.map(b => [b, keys.map(k => b[k])]));
+  const set = vals => { for (const b of all) { const v = vals(b); keys.forEach((k, i) => { if (v[i] === undefined) delete b[k]; else b[k] = v[i]; }); } notify('bubbles'); requestRender(); markChanged(); };
+  const to = keys.map(k => (k === 'stroke' ? bubbleProps(src).stroke : src[k]));
+  const after = () => to;
+  set(after); ed.undo.pushAction('Traits des bulles', () => set(b => before.get(b)), () => set(after));
+  return all.length;
 }
 
 export function deleteBubble(b = bubble()) {

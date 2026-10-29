@@ -1,14 +1,15 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, addCase, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, gutterPlus } from './view.js';
-import { hitBubble, tailOrigin } from './bubbles.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
+import { mmToPx } from './model.js';
+import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 import { selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
@@ -90,13 +91,13 @@ function begin(p, pt) {
       : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque }
       : { v: ed.ink };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
-    const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
+    const sp = tool === 'pencil' || tool === 'eraser' || tool === 'texture' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
     stampBrush(session.ctx, lx, ly, d); flush(session);
   } else if (tool === 'fill') {
-    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly);
+    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
     if (!region) return;
     ed.undo.begin('Remplir');
     const ctx = makeCtx(p, layer, { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
@@ -109,6 +110,9 @@ function begin(p, pt) {
     setOverlay({ shape: { kind: ed.shapeKind, x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y } });
   }
 }
+
+// Trou toléré dans un contour : le curseur (0–100) va jusqu'à 2,5 mm.
+const fillGapPx = () => Math.round(ed.fillGap / 100 * 2.5 / 25.4 * ed.project.dpi);
 
 export function move(pt) {
   if (!session) return;
@@ -139,7 +143,9 @@ export function move(pt) {
   } else if (session.kind === 'gutter') {
     const h = session.h, v = h.axis === 'v', d = clampGutter(h, (v ? pt.x - session.x0 : pt.y - session.y0));
     session.d = d;
-    setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1] } });
+    setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1], panels: gutterPreview(h, d) } });
+  } else if (session.kind === 'ratio') {
+    ratioMove(pt);
   } else if (session.kind === 'free') {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
@@ -237,16 +243,40 @@ function selectDown(pt) {
 
 // ───────────────────────── Gouttières ─────────────────────────
 
+// La poignée de l'aperçu d'ajout suit le doigt : la part de la nouvelle case s'ajuste (20 à 80 %), avec un aimant à 25, 33, 50, 67 et 75 %.
+function ratioMove(pt) {
+  const s = session, p = s.ap, gap = mmToPx(ed.project.gutter, ed.project.dpi);
+  const L = (s.horiz ? pt.x : pt.y) - s.off, total = (s.horiz ? p.w : p.h) - gap;
+  const fresh = { right: p.x + p.w - L, left: L - p.x, bottom: p.y + p.h - L, top: L - p.y }[s.side];
+  let r = Math.max(0.2, Math.min(0.8, fresh / total));
+  for (const m of [0.25, 1 / 3, 0.5, 2 / 3, 0.75]) if (Math.abs(r - m) < 0.02) r = m;
+  if (!splitRects(p, s.side, r)) return;
+  ed.addRatio = r * 100;
+  setOverlay({});
+}
+
+
 // On attrape une gouttière n'importe où le long de son trait.
 function layoutDown(pt) {
   const R = pt.type === 'touch' ? 28 : 18, at = toScreen(pt.x, pt.y);
-  for (const h of gutterHandles()) {   // le « + » d'une gouttière ajoute une case
-    const pl = gutterPlus(h);
-    if (Math.hypot(at.x - pl.x, at.y - pl.y) <= pl.r + (pt.type === 'touch' ? 10 : 4)) {
-      if (addCase(h.L, h.axis)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
-      else toast('Les cases sont trop petites pour en ajouter une.');
-      return;
-    }
+  const ap = page().panels.find(p => p.id === ed.panelId), pc = ap && previewControls(ap), near = (c, r) => Math.hypot(at.x - c.x, at.y - c.y) <= r + (pt.type === 'touch' ? 6 : 2);
+  const added = () => toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+  if (pc) {   // aperçu en cours : ✓ ajoute, ✕ abandonne, la poignée de la ligne pointillée règle la part de la nouvelle case
+    if (near(pc.ok, pc.ok.r)) { if (confirmAdd()) added(); setOverlay({}); return; }
+    if (near(pc.no, pc.no.r)) { cancelAdd(); return; }
+    if (near(pc.handle, pc.handle.r)) { session = { kind: 'ratio', ap, side: pc.side, horiz: pc.horiz, off: (pc.horiz ? pt.x : pt.y) - pc.line }; return; }
+    cancelAdd(); return;   // un toucher ailleurs abandonne l'aperçu sans rien faire d'autre
+  }
+  if (ap && !pc) for (const m of mergeButtons(ap)) {   // bouton de fusion posé dans la case voisine : la case active l'absorbe
+    if (Math.hypot(at.x - m.x, at.y - m.y) > m.r + (pt.type === 'touch' ? 8 : 3)) continue;
+    if (mergePanels(ap.id, m.id)) toast('Cases fusionnées.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+    notify('tool'); setOverlay({}); return;
+  }
+  if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : montre la future case (réglée ensuite par sa poignée)
+    if (Math.hypot(at.x - pl.x, at.y - pl.y) > pl.r + (pt.type === 'touch' ? 10 : 4)) continue;
+    if (!splitRects(ap, pl.side, ed.addRatio / 100)) { toast('Cette case est trop petite pour être coupée de ce côté.'); return; }
+    ed.addPreview = { panelId: ap.id, side: pl.side }; ed.addRatio = 50;
+    notify('tool'); setOverlay({}); return;
   }
   let best = null;
   for (const h of gutterHandles()) {
@@ -270,7 +300,8 @@ function bubbleDown(pt) {
   if (sel && !sel.hidden) {
     if (near(at, bubbleCross(sel), R)) { deleteBubble(sel); return; }
     if (sel.locked) { /* verrouillée : sélectionnable, pas déplaçable */ }
-    else if (near(at, toScreen(sel.x + sel.w, sel.y + sel.h), R)) { start(sel, 'resize', pt); return; }
+    else if (near(at, bubbleRotHandle(sel), R)) { start(sel, 'rotate', pt); return; }
+    else if (near(at, bubbleCorner(sel), R)) { start(sel, 'resize', pt); return; }
     if (!sel.locked && sel.tail && near(at, toScreen(sel.tail.x, sel.tail.y), R)) { start(sel, 'tail', pt); return; }
     const o = sel.locked ? null : tailOrigin(sel);
     if (o && near(at, toScreen(o.x, o.y), R)) { start(sel, 'origin', pt); return; }
@@ -280,6 +311,8 @@ function bubbleDown(pt) {
     if (bb.hidden || pg.bubblesHidden) continue;
     if (hitBubble(bb, pt.x, pt.y)) { selectBubble(bb.id); if (!bb.locked) start(bb, 'move', pt); return; }
   }
+  const into = panelAt(pt.x, pt.y);
+  if (into) { selectPanel(into.id); addTemplateBubble({ x: pt.x, y: pt.y }); notify('bubble-added'); return; }   // un toucher dans une case y pose une bulle du modèle choisi
   selectBubble(null);
 }
 
@@ -291,13 +324,28 @@ function bubbleMove(pt) {
   const s = session, b = s.b, dx = pt.x - s.x0, dy = pt.y - s.y0, o = s.orig;
   if (s.mode === 'move') {
     b.x = Math.round(o.x + dx); b.y = Math.round(o.y + dy);
+    const into = panelAt(b.x + b.w / 2, b.y + b.h / 2);   // posée sur une autre case, la bulle s'y lie
+    if (into) b.panel = into.id;
     if (o.tail) b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
     if (o.path) b.path = o.path.map(q => ({ x: Math.round(q.x + dx), y: Math.round(q.y + dy) }));
   } else if (s.mode === 'resize') {
-    b.w = Math.max(80, Math.round(o.w + dx)); b.h = Math.max(60, Math.round(o.h + dy)); b.auto = false;
-    if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(o.x + (q.x - o.x) * kx), y: Math.round(o.y + (q.y - o.y) * ky) })); }
+    // le déplacement se mesure dans l'axe de la bulle tournée ; le centre bouge de moitié, donc on recale x, y pour garder le coin haut gauche en place
+    const a = (o.rot || 0) * Math.PI / 180, ld = { x: dx * Math.cos(a) + dy * Math.sin(a), y: -dx * Math.sin(a) + dy * Math.cos(a) };
+    b.w = Math.max(80, Math.round(o.w + ld.x)); b.h = Math.max(60, Math.round(o.h + ld.y)); b.auto = false;
+    if (a) {
+      const dw = b.w - o.w, dh = b.h - o.h, cs = Math.cos(a), sn = Math.sin(a);
+      b.x = Math.round(o.x + (dw / 2) * (cs - 1) - (dh / 2) * sn); b.y = Math.round(o.y + (dw / 2) * sn + (dh / 2) * (cs - 1));
+    }
+    if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(b.x + (q.x - o.x) * kx), y: Math.round(b.y + (q.y - o.y) * ky) })); }
+  } else if (s.mode === 'rotate') {
+    let deg = Math.atan2(pt.y - (o.y + o.h / 2), pt.x - (o.x + o.w / 2)) * 180 / Math.PI + 90;
+    deg = ((Math.round(deg) % 360) + 360) % 360;
+    const snap = Math.round(deg / 15) * 15;
+    if (Math.abs(deg - snap) <= 3) deg = snap % 360;   // aimante aux multiples de 15°
+    b.rot = deg || undefined; if (!b.rot) delete b.rot;
   } else if (s.mode === 'origin') {
-    b.tailAngle = Math.round(((Math.atan2(pt.y - (b.y + b.h / 2), pt.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
+    const q = bubbleToLocal(b, pt.x, pt.y);
+    b.tailAngle = Math.round(((Math.atan2(q.y - (b.y + b.h / 2), q.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
   } else if (s.mode === 'tail') b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
   setOverlay({});
 }

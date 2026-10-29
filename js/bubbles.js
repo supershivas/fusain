@@ -1,16 +1,18 @@
 // Bulles et textes : dessinés en vectoriel sur la page (aperçu écran et export PDF partagent ce code).
 // Coordonnées en pixels de page ; marge intérieure et trait en millimètres ; le reste en pourcentages.
+import { panelStroke } from './model.js';
 import { fontSpec, touchFont, DEFAULT_FONT } from './fonts.js';
 
 export const BUBBLE_KINDS = [
   { id: 'parole', name: 'Parole', icon: 'message-circle' },
   { id: 'pensee', name: 'Pensée', icon: 'cloud' },
+  { id: 'cri', name: 'Cri (éclair)', icon: 'bolt' },
   { id: 'narration', name: 'Narration', icon: 'square' },
   { id: 'texte', name: 'Texte libre', icon: 'typography' },
 ];
 
 export const SHAPES = [
-  { id: 'ellipse', name: 'Ellipse' }, { id: 'rect', name: 'Rectangle' }, { id: 'cloud', name: 'Nuage' },
+  { id: 'ellipse', name: 'Ellipse' }, { id: 'rect', name: 'Rectangle' }, { id: 'cloud', name: 'Nuage' }, { id: 'eclair', name: 'Éclair / explosion' },
   { id: 'libre', name: 'Dessinée à la main' }, { id: 'none', name: 'Sans contour' },
 ];
 export const TAILS = [
@@ -21,13 +23,24 @@ export const TAILS = [
 //  wobble : imperfection du contour (0 = géométrique, 100 = très tremblé)
 //  tailW : largeur de la base de la queue, en % du petit côté ; tailRound : -100 creuse … +100 bombée ;
 //  tailBend : courbure d'ensemble (-100 … +100) ; tailTip : pointe émoussée (0 = aiguë)
-const BASE = { radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
+const BASE = { lobes: 0, bulge: 30, cloudSoft: 0, valleyRound: 0, tipRound: 0, spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
 const PRESETS = {
   parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
   pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
+  cri: { ...BASE, shape: 'eclair', tailStyle: 'pointe', wobble: 30, stroke: 0.5, tailW: 20 },
   narration: { ...BASE, shape: 'rect', tailStyle: 'none', pad: 2, wobble: 12 },
   texte: { ...BASE, shape: 'none', tailStyle: 'none', pad: 0, wobble: 0 },
 };
+// Modèles proposés dans la liste de l'outil Bulle : un type de bulle + un style. `mon-style` reprend le style préféré de l'auteur.
+export const BUBBLE_TEMPLATES = [
+  { id: 'parole', name: 'Parole', kind: 'parole' }, { id: 'pensee', name: 'Pensée', kind: 'pensee' }, { id: 'cri', name: 'Cri (éclair)', kind: 'cri' },
+  { id: 'narration', name: 'Narration', kind: 'narration' }, { id: 'texte', name: 'Texte libre', kind: 'texte' },
+  { id: 'mon-style', name: 'Mon style BD', kind: 'parole', style: { shape: 'rect', radius: 10, wobble: 45, pad: 6, sameStroke: true, clip: true, noFrame: true,
+    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: false, auto: false } },
+  { id: 'eclair-fort', name: 'Cri très pointu', kind: 'cri', style: { spikes: 18, depth: 42, wobble: 45, stroke: 0.6 } },
+  { id: 'eclair-rond', name: 'Éclair arrondi', kind: 'cri', style: { spikes: 12, depth: 26, wobble: 25, valleyRound: 75, tipRound: 10 } },
+  { id: 'nuage-doux', name: 'Nuage doux', kind: 'pensee', style: { lobes: 9, bulge: 22, cloudSoft: 1, wobble: 20 } },
+];
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
 const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle']);
 
@@ -35,8 +48,18 @@ export function props(b) {
   const p = preset(b.kind);
   for (const k of KEYS) if (b[k] !== undefined && b[k] !== null) p[k] = b[k];
   if (!b.tail) p.tailStyle = 'none';
+  p.rot = b.rot || 0;
   return p;
 }
+
+// Rotation d'une bulle (degrés, autour de son centre) : on dessine la bulle tournée, la pointe de la queue reste à sa place sur la page.
+const spin = (b, x, y, deg) => {
+  const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = x - cx, dy = y - cy;
+  return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+};
+export const bubbleToPage = (b, x, y) => b.rot ? spin(b, x, y, b.rot) : { x, y };
+export const bubbleToLocal = (b, x, y) => b.rot ? spin(b, x, y, -b.rot) : { x, y };
+const localBubble = b => b.rot && b.tail ? { ...b, tail: bubbleToLocal(b, b.tail.x, b.tail.y) } : b;
 
 const mm = (v, dpi) => v / 25.4 * dpi;
 export const fontPx = (b, dpi) => b.pt / 72 * dpi;
@@ -44,7 +67,7 @@ export const lineWidth = dpi => Math.max(2, Math.round(0.35 / 25.4 * dpi));
 
 function setFont(ctx, b, dpi) { const p = props(b); touchFont(p.font); ctx.font = fontSpec(p.font, fontPx(b, dpi)); }
 const shown = b => (b.caps ? b.text.toLocaleUpperCase('fr') : b.text);
-const roundy = shape => shape === 'ellipse' || shape === 'cloud' || shape === 'libre';
+const roundy = shape => shape === 'ellipse' || shape === 'cloud' || shape === 'libre' || shape === 'eclair';
 
 // Coupe le texte en lignes qui tiennent dans maxW.
 export function wrapText(ctx, text, maxW) {
@@ -60,15 +83,29 @@ export function wrapText(ctx, text, maxW) {
   return lines;
 }
 
+// Part du cadre de la bulle qu'on peut remplir de texte sans toucher le contour : un ovale ne laisse que son rectangle inscrit, une étoile ou un nuage moins.
+function innerFactor(p) {
+  if (p.shape === 'eclair') return 0.707 * Math.max(0.4, 1 - p.depth / 100 * (1 + 0.5 * p.wobble / 100));
+  if (p.shape === 'cloud') return 0.707 * 0.93;
+  if (p.shape === 'ellipse') return 0.707 * 0.95;
+  if (p.shape === 'libre') return 0.6;
+  return 1;
+}
+// Marge intérieure réelle : en taille auto, jamais moins que ce qu'il faut pour que le texte ne touche pas le trait (épaisseur, imperfections, corps du texte).
+function padOf(b, p, dpi) {
+  const fp = fontPx(b, dpi), pad = mm(p.pad, dpi);
+  return b.auto ? Math.max(pad, mm(p.stroke, dpi) * 2 + fp * 0.3 + p.wobble / 100 * fp * 0.25) : pad;
+}
+
 // Taille qui contient le texte avec sa marge intérieure (un ovale demande plus de place qu'un rectangle).
 export function fitSize(ctx, b, dpi) {
   setFont(ctx, b, dpi);
-  const p = props(b), fp = fontPx(b, dpi), pad = mm(p.pad, dpi), text = shown(b) || ' ';
+  const p = props(b), fp = fontPx(b, dpi), pad = padOf(b, p, dpi), text = shown(b) || ' ';
   const target = Math.max(fp * 6, Math.min(fp * 14, Math.sqrt(ctx.measureText(text).width * fp * 3.2)));
   const lines = wrapText(ctx, text, target);
   const tw = Math.max(...lines.map(l => ctx.measureText(l).width)), th = lines.length * fp * 1.2;
-  const k = roundy(p.shape) ? 1.42 : 1;
-  return { w: Math.round(tw * k + pad * 2), h: Math.round(th * k + pad * 2) };
+  const f = innerFactor(p);
+  return { w: Math.round((tw + pad * 2) / f), h: Math.round((th + pad * 2) / f) };
 }
 
 export function autoSize(ctx, b, dpi) {
@@ -124,6 +161,17 @@ function outlinePoints(b, p) {
       const cur = corners[i], nxt = corners[(i + 1) % 4];
       pts.push(...cur, ...edge(cur[cur.length - 1], nxt[0]));
     }
+  } else if (p.shape === 'cloud') {
+    return cloudPoints(b, p, noise);
+  } else if (p.shape === 'eclair') {
+    // étoile à pointes irrégulières : pointes sur l'ellipse, creux à `depth` % vers le centre ; wobble = irrégularité des longueurs
+    const n = Math.max(4, Math.round(p.spikes)), j = p.wobble / 100;
+    for (let i = 0; i < n * 2; i++) {
+      const a = i / (n * 2) * Math.PI * 2 - Math.PI / 2, z = noise(i / (n * 2)), tip = i % 2 === 0;
+      const f = tip ? 1 + j * 0.22 * z : 1 - p.depth / 100 * (1 + j * 0.5 * z);
+      pts.push({ x: cx + Math.cos(a) * rx * f, y: cy + Math.sin(a) * ry * f });
+    }
+    return pts;
   } else {
     const n = p.shape === 'cloud' ? 96 : 72;
     for (let i = 0; i < n; i++) {
@@ -177,21 +225,41 @@ function polygon(ctx, pts) {
   ctx.closePath();
 }
 
-function traceCloud(ctx, b, p, lw) {
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2, noise = noiseFn(b);
-  const n = Math.max(10, Math.round((rx + ry) / (Math.max(lw, 2) * 4)));
-  const bump = i => 1.16 + p.wobble / 100 * 0.14 * noise((i + 0.5) / n);
+// Nuage : `lobes` bosses (0 = selon la taille, jamais selon le trait : le remplissage et le contour doivent coïncider), `bulge` = hauteur des bosses,
+// `cloudSoft` = creux arrondis (sinon pointus) ; `wobble` fait varier la hauteur de chaque bosse. Le même contour sert au tracé et à l'accroche de la queue.
+function cloudPoints(b, p, noise) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2;
+  const n = p.lobes > 0 ? Math.round(p.lobes) : Math.max(8, Math.min(40, Math.round((rx + ry) / 38)));
+  const base = 1.0, per = 16, pts = [];
+  const height = i => (0.04 + p.bulge / 100 * 0.4) * (1 + p.wobble / 100 * 0.6 * noise((i + 0.5) / n));
   for (let i = 0; i < n; i++) {
-    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2, k = bump(i);
-    if (i === 0) ctx.moveTo(cx + Math.cos(a0) * rx, cy + Math.sin(a0) * ry);
-    ctx.quadraticCurveTo(cx + Math.cos(am) * rx * k, cy + Math.sin(am) * ry * k, cx + Math.cos(a1) * rx, cy + Math.sin(a1) * ry);
+    const h = Math.max(0.02, height(i));
+    for (let s = 0; s < per; s++) {
+      const u = s / per, a = (i + u) / n * Math.PI * 2;
+      const bump = p.cloudSoft ? 0.5 - 0.5 * Math.cos(u * Math.PI * 2) : Math.pow(Math.sin(u * Math.PI), 0.62);   // creux arrondis ou pointus
+      const r = (base + h * bump) / (1 + h * 0.3);
+      pts.push({ x: cx + Math.cos(a) * rx * r * 1.0, y: cy + Math.sin(a) * ry * r * 1.0 });
+    }
+  }
+  return pts;
+}
+
+// Éclair : les creux (`valleyRound`) et les pointes (`tipRound`) peuvent être arrondis, en courbes (même rendu écran et PDF).
+function traceEclair(ctx, pts, p) {
+  const n = pts.length, mix = (a, c, f) => ({ x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f });
+  const round = i => (i % 2 === 0 ? p.tipRound : p.valleyRound) / 100 * 0.45;
+  for (let i = 0; i < n; i++) {
+    const v = pts[i], f = round(i), a = mix(v, pts[(i + n - 1) % n], f), c = mix(v, pts[(i + 1) % n], f);
+    if (i === 0) ctx.moveTo(a.x, a.y); else ctx.lineTo(a.x, a.y);
+    if (f > 0) ctx.quadraticCurveTo(v.x, v.y, c.x, c.y); else ctx.lineTo(v.x, v.y);
   }
   ctx.closePath();
 }
 
 function traceShape(ctx, b, p, pts, lw) {
   ctx.beginPath();
-  if (p.shape === 'cloud') traceCloud(ctx, b, p, lw);
+  if (p.shape === 'cloud') polygon(ctx, pts);
+  else if (p.shape === 'eclair') traceEclair(ctx, pts, p);
   else if (p.shape === 'rect') {
     if (p.wobble > 0) polygon(ctx, pts);
     else { const r = p.radius / 100 * Math.min(b.w, b.h) / 2; if (r > 0 && ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, r); else ctx.rect(b.x, b.y, b.w, b.h); }
@@ -215,10 +283,11 @@ function tailAnchor(pts, b, p) {
 
 // Origine actuelle de la queue (pour la poignée d'édition).
 export function tailOrigin(b) {
+  b = localBubble(b);
   const p = props(b);
   if (!b.tail || p.tailStyle === 'none') return null;
   const A = tailAnchor(outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p), b, p);
-  return A ? { x: A.x, y: A.y } : null;
+  return A ? bubbleToPage(b, A.x, A.y) : null;
 }
 
 function drawTail(ctx, b, p, pts, lw) {
@@ -227,12 +296,14 @@ function drawTail(ctx, b, p, pts, lw) {
   if (!A) return;
   const len = Math.hypot(t.x - A.x, t.y - A.y) || 1, ux = (t.x - A.x) / len, uy = (t.y - A.y) / len, nx = -uy, ny = ux;
   const half = p.tailW / 100 * small / 2;
+  // courbure : si la base de la queue est à droite de sa pointe, le sens s'inverse (la queue est le miroir de celle qui part vers la droite)
+  const tb = A.x > t.x ? -p.tailBend : p.tailBend;
 
   if (p.tailStyle === 'pointe') {
     // les deux coins de la base sont ramenés sur le contour, quelle que soit sa forme
     const hit = s => rayHit(pts, cx, cy, A.x + nx * half * s, A.y + ny * half * s) || A;
     const B1 = hit(1), B2 = hit(-1);
-    const round = Math.max(-half * 0.45, p.tailRound / 100 * len * 0.22), bend = p.tailBend / 100 * len * 0.4;
+    const round = Math.max(-half * 0.45, p.tailRound / 100 * len * 0.22), bend = tb / 100 * len * 0.4;
     const C1 = { x: (B1.x + t.x) / 2 + nx * (round + bend), y: (B1.y + t.y) / 2 + ny * (round + bend) };
     const C2 = { x: (B2.x + t.x) / 2 - nx * (round - bend), y: (B2.y + t.y) / 2 - ny * (round - bend) };
     const tw = p.tailTip / 100 * half * 0.9, T1 = { x: t.x + nx * tw, y: t.y + ny * tw }, T2 = { x: t.x - nx * tw, y: t.y - ny * tw };
@@ -245,7 +316,7 @@ function drawTail(ctx, b, p, pts, lw) {
     ctx.beginPath(); edges(); ctx.lineTo(inward(B2).x, inward(B2).y); ctx.lineTo(inward(B1).x, inward(B1).y); ctx.closePath(); ctx.fill();
     if (lw > 0) { ctx.beginPath(); edges(); ctx.stroke(); }
   } else if (p.tailStyle === 'fleche') {
-    const w = Math.max(lw, 2) * 1.3, bend = p.tailBend / 100 * len * 0.4, head = Math.max(w * 5, p.tailW / 100 * small * 0.7);
+    const w = Math.max(lw, 2) * 1.3, bend = tb / 100 * len * 0.4, head = Math.max(w * 5, p.tailW / 100 * small * 0.7);
     const C = { x: (A.x + t.x) / 2 + nx * bend, y: (A.y + t.y) / 2 + ny * bend };
     const ang = Math.atan2(t.y - C.y, t.x - C.x);
     ctx.save(); ctx.lineWidth = w;
@@ -257,28 +328,30 @@ function drawTail(ctx, b, p, pts, lw) {
     const sx = A.x + (A.x - cx) * 0.1, sy = A.y + (A.y - cy) * 0.1, k = p.tailW / 24;
     [0.3, 0.62, 0.92].forEach((s, i) => {
       const r = Math.max(lw * 1.5, small * (0.08 - i * 0.02) * k);
-      const bend = Math.sin(s * Math.PI) * p.tailBend / 100 * len * 0.4;
+      const bend = Math.sin(s * Math.PI) * tb / 100 * len * 0.4;
       ctx.beginPath(); ctx.arc(sx + (t.x - sx) * s + nx * bend, sy + (t.y - sy) * s + ny * bend, r, 0, Math.PI * 2); ctx.fill(); if (lw > 0) ctx.stroke();
     });
   }
 }
 
 // lwOverride : épaisseur du trait en pixels (le Labo compare des épaisseurs).
-export function drawBubble(ctx, b, dpi, lwOverride) {
+export function drawBubble(ctx, b, dpi, lwOverride, fillOnly = false) {
+  b = localBubble(b);
   const p = props(b), lw = lwOverride !== undefined ? lwOverride : mm(p.stroke, dpi);
   ctx.save();
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  if (b.rot) { ctx.translate(cx, cy); ctx.rotate(b.rot * Math.PI / 180); ctx.translate(-cx, -cy); }
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(lw, 0.001);
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
   const pts = outlinePoints(b, p.shape === 'none' ? { ...p, shape: 'ellipse', wobble: 0 } : p);
 
   if (p.shape !== 'none') { traceShape(ctx, b, p, pts, lw); ctx.fill(); if (lw > 0) ctx.stroke(); }
   if (b.tail && p.tailStyle !== 'none') drawTail(ctx, b, p, pts, lw);
 
-  if (b.text) {
+  if (b.text && !fillOnly) {
     setFont(ctx, b, dpi);
-    const fp = fontPx(b, dpi), pad = mm(p.pad, dpi);
-    const maxW = roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
+    const fp = fontPx(b, dpi), pad = padOf(b, p, dpi);
+    const maxW = b.auto ? b.w * innerFactor(p) - pad * 2 : roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
     const lines = wrapText(ctx, shown(b), Math.max(fp, maxW));
     ctx.fillStyle = '#000'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const top = cy - (lines.length * fp * 1.2) / 2 + fp * 0.6;
@@ -287,6 +360,29 @@ export function drawBubble(ctx, b, dpi, lwOverride) {
   ctx.restore();
 }
 
+// Case d'une bulle : celle à laquelle elle est liée, sinon celle qui contient son centre ou, à défaut, la première qu'elle touche.
+export function bubblePanelOf(b, panels) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  return panels.find(q => q.id === b.panel) || panels.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h)
+    || panels.find(q => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y) || null;
+}
+
+// Dessine une bulle sur la page. Options de trait : `sameStroke` (même épaisseur que le cadre de sa case), `clip` (rognée au cadre de sa case)
+// et `noFrame` (rognée, elle efface le trait du cadre là où elle le touche : son remplissage couvre le cadre, son contour reste dans la case).
+export function drawPageBubble(ctx, b, dpi, panels) {
+  const p = (b.clip || b.sameStroke) ? bubblePanelOf(b, panels) : null;
+  const lw = b.sameStroke && p ? mm(panelStroke(p), dpi) : undefined;
+  if (!b.clip || !p) { drawBubble(ctx, b, dpi, lw); return; }
+  if (b.noFrame) {
+    const bw = mm(panelStroke(p), dpi) + 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(p.x - bw, p.y - bw, p.w + bw * 2, p.h + bw * 2); ctx.clip();
+    drawBubble(ctx, b, dpi, 0, true); ctx.restore();
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
+  drawBubble(ctx, b, dpi, lw); ctx.restore();
+}
+
 export function hitBubble(b, x, y) {
+  ({ x, y } = bubbleToLocal(b, x, y));
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 }

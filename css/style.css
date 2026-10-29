@@ -62,8 +62,8 @@
 html, body { height: 100%; }
 /* Outil de dessin : rien du navigateur par-dessus (sélection, loupe, menu de pression longue, zoom, rebond de page). */
 html { touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
-input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+body { -moz-user-select: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+input, textarea, select, [contenteditable="true"] { -moz-user-select: text; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 img, svg, canvas { -webkit-user-drag: none; -webkit-touch-callout: none; }
 .home, .dock-body, .modal-body, .lab-stage, .lab-side { overscroll-behavior: contain; }
 body {
@@ -200,7 +200,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; min-height: 32px; 
 .toolbar .sep { width: 28px; height: 1px; background: var(--border); margin: 4px 0; flex: none; }
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--stage-bg); display: flex; flex-direction: column; }
 .canvas-wrap { position: relative; flex: 1; min-height: 0; }
-.canvas-wrap > canvas { position: absolute; inset: 0; display: block; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.canvas-wrap > canvas { position: absolute; inset: 0; display: block; touch-action: none; -moz-user-select: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .optbar { flex: none; z-index: 3; display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; background: var(--card-bg); border-top: 1px solid var(--border); padding: 6px 10px; }
 .optbar label.opt { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--text-secondary); }
 .optbar input[type=range] { width: 120px; }
@@ -333,7 +333,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swipe.dragging > .layer { transition: none; }
 .swipe.open > .layer { transform: translateX(-132px); }
 .swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
-.swipe-actions button { min-width: 66px; padding: 0 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
+.swipe-actions button { flex: 0 0 auto; width: max-content; min-width: 76px; padding: 0 12px; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
 .swipe-actions button.danger { background: var(--accent); }
 .swipe-actions button:only-child { min-width: 132px; }
 .swipe-actions .ti { font-size: 1.1rem; }
@@ -386,6 +386,32 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .lib-body .brush-row, .pop .brush-row { width: 100%; }
 @media (max-width: 768px) { .optbar .size input[type=range] { width: auto; } }
 
+/* Glisser-déposer des calques */
+.layer .grip { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 40px; color: var(--text-muted); cursor: grab; touch-action: none; font-size: 1.1rem; }
+.swipe.reordering { z-index: 5; outline: 2px solid var(--accent); opacity: .92; transition: none; }
+.swipe.reordering > .layer { transition: none; }
+.swipe.drop-above::before, .swipe.drop-below::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); z-index: 4; }
+.swipe.drop-above::before { top: 0; }
+.swipe.drop-below::after { bottom: 0; }
+
+/* Barre flottante de la bulle et saisie du texte sur la bulle */
+.bfloat { position: absolute; z-index: 6; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+.bfloat[hidden], .bedit[hidden] { display: none; }
+.bfbar { display: flex; align-items: center; gap: 2px; padding: 4px; background: #1c1c1e; border-radius: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+.bfbar > button { min-width: 44px; height: 44px; border-radius: 9px; color: #fff; font-size: 1.2rem; display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.bfbar > button.on, .bfbar > button.tab.on { background: var(--accent); }
+.bfbar > button.tab { padding: 0 8px; font-size: .78rem; font-weight: 500; }
+.bfbar > button.tab .ti { font-size: 1.05rem; }
+.bfbar > button.tab .ti-chevron-down { font-size: .8rem; opacity: .7; }
+.bfbar .sep { width: 1px; height: 26px; background: rgba(255,255,255,.2); margin: 0 3px; }
+.bfdrop { margin-top: 6px; width: 320px; max-width: calc(100vw - 24px); overflow-y: auto; padding: 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); color: var(--text-primary); }
+.bfdrop.side { position: absolute; top: 58px; margin-top: 0; }
+.bedit { position: absolute; z-index: 7; box-sizing: border-box; padding: 8px; text-align: center; font-size: 16px; line-height: 1.25; border: 2px solid var(--accent); border-radius: 14px; background: rgba(255,255,255,.96); color: #000; resize: none; margin: 0; -webkit-user-select: text; user-select: text; transform-origin: center; }
+@media (max-width: 520px) { .bfbar > button.tab span { display: none; } }
+
+.bl-step { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.bl-step button { min-width: 44px; height: 40px; border: 1px solid var(--border); border-radius: var(--radius-md); font-weight: 600; background: var(--card-bg); }
+.bl-step input[type=number] { width: 84px; height: 40px; text-align: center; font-size: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-primary); }
 /* ── Façon Procreate : propriétés de l'outil en bas de l'écran, boutons d'affichage en pied du panneau de droite ── */
 .optwrap { z-index: 9; }
 @media (min-width: 769px) { .optbar { padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); } }

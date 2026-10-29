@@ -1,13 +1,13 @@
 // Pointeur : Pointer Events, rejet de la paume, pincer pour zoomer, gestes à plusieurs doigts.
 // Repris de Pixel Studio (touch.js) : le stylet dessine toujours, ses appuis font ignorer les doigts ;
 // deux doigts zooment et déplacent (tape à deux doigts : annuler, à trois : rétablir).
-import { ed } from './editor.js';
+import { ed, page, selectPanel } from './editor.js';
 import { view, toPage, zoomAt, panBy, setView, setOverlay, canvasEl } from './view.js';
 import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null, lastTap = null;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
@@ -28,6 +28,8 @@ function point(e, el) {
 export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser }) {
   el.style.touchAction = 'none';
   el.addEventListener('contextmenu', e => e.preventDefault());
+  // WebKit (Safari, Firefox et Chrome sur iPad) lance toucher long et menu « Rechercher » sur touchstart, que pointerdown n'annule pas
+  el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
 
   el.addEventListener('pointerdown', e => {
     if (e.pointerType === 'pen') {
@@ -109,16 +111,12 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     if (e.pointerType === 'pen' && e.type === 'pointerup' && penInfo) {
       const info = penInfo; penInfo = null;
       if (info.erase && onPenEraser) onPenEraser(false);
-      // double tape du bout du stylet (sans tracer) : bascule plume ↔ gomme ; les deux points posés sont défaits
-      if (info.t && info.max < 8 && performance.now() - info.t < 300 && onPenToggle) {
-        const now = performance.now();
-        if (lastTap && now - lastTap.t < 500 && Math.hypot(info.x - lastTap.x, info.y - lastTap.y) < 30) {
-          while (ed.undo.ptr > lastTap.ptr && ed.undo.canUndo) ed.undo.undo();
-          lastTap = null; onPenToggle(true);
-        } else lastTap = { t: now, x: info.x, y: info.y, ptr: info.ptr };
-      } else lastTap = null;
     }
-    if (panning && panning.id === e.pointerId) stopPan();
+    if (panning && panning.id === e.pointerId) {
+      // un simple toucher en mode déplacement (main, ou doigt avec le stylet) change de case sans rien dessiner
+      if (!panning.moved && e.type === 'pointerup') { const q = toPage(e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top); const c = page().panels.find(p => q.x >= p.x && q.y >= p.y && q.x < p.x + p.w && q.y < p.y + p.h); if (c) selectPanel(c.id); }
+      stopPan();
+    }
     if (gesture && rec.type === 'touch' && touchCount() === 0) {
       const tap = !gesture.moved && performance.now() - gesture.t0 < 350 && e.type === 'pointerup';
       if (gesture.cleared) { /* le calque vient d'être vidé */ }
@@ -181,13 +179,13 @@ function stopPan() { panning = null; }
 
 function metrics() {
   const [a, b] = [...pointers.values()].filter(p => p.type === 'touch');
-  return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, ang: Math.atan2(b.y - a.y, b.x - a.x) };
 }
 
 function startGesture() {
   const m = metrics(), r = canvasEl().getBoundingClientRect();
   const anchor = toPage(m.mx - r.left, m.my - r.top);
-  gesture = { t0: performance.now(), dist0: m.dist, mx0: m.mx, my0: m.my, s0: view.s, anchor, moved: false, max: 2, left: r.left, top: r.top };
+  gesture = { t0: performance.now(), dist0: m.dist, mx0: m.mx, my0: m.my, s0: view.s, r0: view.r, ang0: m.ang, spin: 0, anchor, moved: false, max: 2, left: r.left, top: r.top };
 }
 
 // Frottement (va-et-vient du centre des trois doigts) ou rotation répétée : déclenche le vidage du calque.
@@ -216,9 +214,18 @@ function scrubbed() {
 function moveGesture() {
   if (touchCount() < 2) return;
   const m = metrics(), g = gesture;
-  if (!g.moved && (Math.abs(m.dist - g.dist0) > 14 || Math.hypot(m.mx - g.mx0, m.my - g.my0) > 14)) g.moved = true;
+  // rotation des deux doigts, comptée seulement au-delà de 8° (un zoom ne fait pas tourner la page)
+  let da = m.ang - g.ang0; da = Math.atan2(Math.sin(da), Math.cos(da));
+  if (Math.abs(da) > 0.14) g.spin = da - Math.sign(da) * 0.14; else if (!g.spin) g.spin = 0;
+  if (!g.moved && (Math.abs(m.dist - g.dist0) > 14 || Math.hypot(m.mx - g.mx0, m.my - g.my0) > 14 || g.spin)) g.moved = true;
   if (!g.moved) return;
   const s = g.s0 * m.dist / g.dist0;
-  // la page sous le milieu des doigts au départ reste sous le milieu des doigts : zoom ET déplacement
-  setView(s, (m.mx - g.left) - g.anchor.x * s, (m.my - g.top) - g.anchor.y * s);
+  let r = g.r0 + g.spin;
+  // aimant aux angles courants (0, 45, 90…) à moins de 5°
+  const step = Math.PI / 4, near = Math.round(r / step) * step;
+  if (g.spin && Math.abs(r - near) < 0.087) r = near;
+  r = ((r + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  const c = Math.cos(r), sn = Math.sin(r), ax = g.anchor.x * s, ay = g.anchor.y * s;
+  // la page sous le milieu des doigts au départ reste sous le milieu des doigts : zoom, rotation ET déplacement
+  setView(s, (m.mx - g.left) - (ax * c - ay * sn), (m.my - g.top) - (ax * sn + ay * c), r);
 }

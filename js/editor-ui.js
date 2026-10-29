@@ -1,17 +1,17 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
-  ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
-  clearLayer, mergeDown, clearMask, invertMask, addCase, setNote, addBubble, deleteBubble, selectBubble, commitBubbleEdit, refitBubble,
+  ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
+  clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
-import { attach, fit, view, zoomAt, requestRender, resize, invalidate } from './view.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
-import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset } from './bubbles.js';
+import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
@@ -54,7 +54,9 @@ export function loadPrefs() {
     if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
     if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
-    if (typeof p.tool === 'string') ed.tool = ['bubble', 'layout', 'select'].includes(p.tool) ? 'pencil' : p.tool;
+    if (Array.isArray(p.bubbleTemplates)) ed.bubbleTemplates = p.bubbleTemplates;
+    if (typeof p.bubbleTemplate === 'string') ed.bubbleTemplate = p.bubbleTemplate;
+        if (typeof p.tool === 'string') ed.tool = ['bubble', 'layout', 'select'].includes(p.tool) ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
 // Préférences de l'appareil : réglages de chaque outil, dernier style de chaque type de bulle, options d'image tramée.
@@ -63,7 +65,7 @@ export function savePrefs() {
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
-      customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets }));
+      customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets, bubbleTemplates: ed.bubbleTemplates, bubbleTemplate: ed.bubbleTemplate }));
   } catch { /* */ }
 }
 
@@ -77,6 +79,8 @@ export function mountEditor(el) {
     <section class="stage" id="stage">
       <div class="canvas-wrap">
         <canvas id="view" aria-label="Page de BD"></canvas>
+        <div class="bfloat" id="bfloat" hidden></div>
+        <textarea class="bedit" id="bedit" hidden aria-label="Texte de la bulle"></textarea>
         <div class="zoombar" id="zoombar"></div>
       </div>
       <div class="optwrap"><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div><div class="optbar" id="optbar"></div></div>
@@ -84,6 +88,8 @@ export function mountEditor(el) {
     <aside class="dock ${dockOpen ? '' : 'closed'}" id="dock"></aside>
   </div>`;
   attach($('#view', root));
+  hooks.afterRender = placeBubbleUI;
+  initBubbleUI();
   attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser });
   fit();
   renderAll();
@@ -92,10 +98,10 @@ export function mountEditor(el) {
   $('#zoombar', root).onclick = onZoombar;
   $('#optbar', root).addEventListener('click', onOptbar);
   $('#optbar', root).addEventListener('input', onOptInput);
-  $('#dock', root).addEventListener('pointerdown', swipeDown);
-  $('#dock', root).addEventListener('pointermove', swipeMove);
-  $('#dock', root).addEventListener('pointerup', swipeUp);
-  $('#dock', root).addEventListener('pointercancel', swipeUp);
+  $('#dock', root).addEventListener('pointerdown', e => { if (!gripDown(e)) swipeDown(e); });
+  $('#dock', root).addEventListener('pointermove', e => { gripMove(e); swipeMove(e); });
+  $('#dock', root).addEventListener('pointerup', e => { gripUp(e); swipeUp(e); });
+  $('#dock', root).addEventListener('pointercancel', e => { gripUp(e, true); swipeUp(e); });
   $('#dock', root).addEventListener('click', onDock);
   $('#dock', root).addEventListener('click', onDockFoot);
   $('#dock', root).addEventListener('toggle', onSecToggle, true);
@@ -115,6 +121,7 @@ export function mountEditor(el) {
     else if (what === 'layers') renderDock();
     else if (what === 'bubbles') { renderDock(); if (ed.tool === 'bubble') renderOptbar(); }
     else if (what === 'tool') { renderOptbar(); renderDock(); }
+    else if (what === 'bubble-added') { renderOptbar(); renderDock(); setTimeout(openBubbleEdit, 0); }
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
@@ -151,7 +158,7 @@ function updateUndo() {
   }
 }
 
-// Stylet : bascule plume ↔ gomme (double tape ou bouton du flanc) ; le bout gomme du stylet gomme le temps d'un trait.
+// Stylet : bascule plume ↔ gomme (bouton du flanc) ; le bout gomme du stylet gomme le temps d'un trait.
 let penBefore = null;
 function penToggle(fromTap) {
   if (fromTap) { markChanged(); requestRender(); }
@@ -234,16 +241,22 @@ function onZoombar(e) {
 
 // ───────────────────────── Options de l'outil ─────────────────────────
 
+// Corps du texte : 5 à 200 pt sur un curseur logarithmique, arrondi (0,5 jusqu'à 24 pt, 1 jusqu'à 60, 2 au-delà).
+const ptToV = pt => Math.round(100 * Math.log(pt / 5) / Math.log(40) * 2) / 2;
+const vToPt = v => { const pt = 5 * Math.pow(40, v / 100); return pt < 24 ? Math.round(pt * 2) / 2 : pt < 60 ? Math.round(pt) : Math.round(pt / 2) * 2; };
 const fmtMm = v => String(+v.toFixed(2)).replace('.', ',');
-const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(600));
+const sizeSpan = () => maxSizeMm() / 0.05;
+const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(sizeSpan()));
 const vToSize = v => {
-  const mm = 0.05 * Math.pow(600, v / 100);
+  const mm = 0.05 * Math.pow(sizeSpan(), v / 100);
   return +(mm < 1 ? Math.round(mm / 0.05) * 0.05 : mm < 5 ? Math.round(mm / 0.1) * 0.1 : Math.round(mm / 0.5) * 0.5).toFixed(2);
 };
+// Remplissage : tolérance aux contours ouverts (0 = fermés seulement).
+const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" min="0" max="100" value="${ed.fillGap}" aria-label="Tolérance aux trous du contour"><span class="unit" id="o-gap-v">${ed.fillGap} %</span></span>`;
 // Taille : un seul curseur et un champ en millimètres.
 function sizeControl() {
   return `<span class="opt size"><input type="range" id="o-size" min="0" max="100" value="${sizeToV(ed.sizeMm)}" aria-label="Taille du trait">
-    <input type="number" id="o-mm" class="num" min="0.05" max="30" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span>`;
+    <input type="number" id="o-mm" class="num" min="0.05" max="${maxSizeMm()}" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span>`;
 }
 // Interrupteur de la pression du stylet, à côté de la taille.
 const pressureControl = () => `<button class="icon-btn icon-only" data-opt="pressure" aria-pressed="${ed.pressure}" title="Pression du stylet : ${ed.pressure ? 'active' : 'désactivée'}" aria-label="Pression du stylet">${icon('gauge')}</button>`;
@@ -264,8 +277,8 @@ export function renderOptbar() {
     html = brushControl() + sizeControl() + pressureControl() + inkControl() + popBtn('brush');
   }
   else if (t === 'eraser') html = brushControl() + sizeControl() + pressureControl() + popBtn('brush');
-  else if (t === 'texture') html = tramaControl() + sizeControl() + pressureControl() + inkControl() + popBtn('trama');
-  else if (t === 'fill') html = tramaControl() + inkControl() + popBtn('trama');
+  else if (t === 'texture') html = brushControl() + tramaControl() + sizeControl() + pressureControl() + inkControl() + popBtn('brush') + popBtn('trama');
+  else if (t === 'fill') html = tramaControl() + gapControl() + inkControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
@@ -282,15 +295,17 @@ export function renderOptbar() {
     const b = bubble();
     html = ed.bubbleDraw
       ? `<span class="hint">Trace le contour de la bulle d'un seul geste.</span><button class="btn small" data-freebubble="0">Annuler</button>`
-      : `<span class="row tight" role="group" aria-label="Ajouter une bulle">${BUBBLE_KINDS.map(k => `<button class="icon-btn icon-only" data-addb="${k.id}" title="Ajouter : ${k.name}" aria-label="Ajouter : ${k.name}">${icon(k.icon)}</button>`).join('')}
+      : `<button class="swatch-btn tpl-btn ${popId === 'lib-bubble' ? 'on' : ''}" data-pop="lib-bubble" aria-expanded="${popId === 'lib-bubble'}" title="Modèle de bulle : ${esc(currentTemplate().name)}" aria-label="Choisir le modèle de bulle, actuel : ${esc(currentTemplate().name)}">${icon((BUBBLE_KINDS.find(k => k.id === currentTemplate().kind) || BUBBLE_KINDS[0]).icon)} <span>${esc(currentTemplate().name)}</span>${icon('chevron-down')}</button>
+        <span class="row tight">
           <button class="icon-btn icon-only" data-freebubble="1" title="Dessiner une bulle à la main" aria-label="Dessiner une bulle à la main">${icon('writing')}</button></span>`
-        + (b ? popBtn('btext') + popBtn('bshape') + popBtn('btail') + `<button class="icon-btn icon-only" data-delbubble="1" title="Supprimer la bulle" aria-label="Supprimer la bulle">${icon('trash')}</button>`
-          : `<span class="hint">Touche une bulle pour la régler ; points rouges : taille et queue.</span>`);
+        + (b ? `<span class="hint">Barre sur la bulle : écrire, forme, queue, réglages.</span>`
+          : `<span class="hint">Touche une case pour y poser une bulle, une bulle pour la régler.</span>`);
   } else if (t === 'layout') {
     const pn = panel(), idx = page().panels.indexOf(pn), ARROW = { left: 'arrow-left', right: 'arrow-right', up: 'arrow-up', down: 'arrow-down' };
-    html = `<span class="hint">Glisse une gouttière ; « + » ajoute une case. Case ${idx + 1} :</span>
-      <button class="btn small" data-split="v" title="Couper la case en deux, côte à côte">${icon('layout-columns')} Ajouter à côté</button>
-      <button class="btn small" data-split="h" title="Couper la case en deux, l'une sous l'autre">${icon('layout-rows')} Ajouter dessous</button>`
+    const pv = ed.addPreview && ed.addPreview.panelId === pn.id ? ed.addPreview : null;
+    html = (pv
+      ? `<span class="hint">Glisse la poignée sur la ligne pointillée pour régler la taille, puis ✓ pour ajouter (✕ ou un toucher ailleurs pour abandonner).</span>`
+      : `<span class="hint">Glisse une gouttière, ou touche un « + » au bord de la case ${idx + 1} pour ajouter une case de ce côté.</span>`)
       + mergeCandidates(pn).map(c => `<button class="btn small" data-merge="${c.id}" title="La case ${idx + 1} absorbe la case ${c.index + 1}">${icon(ARROW[c.dir])} Fusionner avec la ${c.index + 1}</button>`).join('')
       + (page().panels.length > 1 ? `<button class="btn small danger" data-delpanel="1">${icon('trash')} Supprimer la case</button>` : '');
   } else if (t === 'select') html = selectBar();
@@ -352,7 +367,7 @@ function eraseSelection() {
 
 const POP_BTN = { brush: ['adjustments-horizontal', 'Réglages'], trama: ['adjustments-horizontal', 'Réglages'], btext: ['typography', 'Texte'], bshape: ['shape', 'Forme'], btail: ['message-circle-plus', 'Queue'] };
 const popBtn = id => id === 'brush' || id === 'trama'
-  ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="Réglages" aria-label="Réglages">${icon('adjustments-horizontal')}</button>`
+  ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="${id === 'brush' ? 'Réglages du pinceau' : 'Réglages de la trame'}" aria-label="${id === 'brush' ? 'Réglages du pinceau' : 'Réglages de la trame'}">${icon('adjustments-horizontal')}</button>`
   : `<button class="btn small ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}">${icon(POP_BTN[id][0])} ${POP_BTN[id][1]}</button>`;
 
 function paintSwatches(scope) {
@@ -377,6 +392,7 @@ function onOptbar(e) {
   else if (b.dataset.opt === 'pressure') { ed.pressure = !ed.pressure; savePrefs(); renderOptbar(); toast(ed.pressure ? 'Pression du stylet activée.' : 'Pression du stylet désactivée.', { duration: 1500 }); }
   else if (b.dataset.pop) { popId = popId === b.dataset.pop ? null : b.dataset.pop; renderOptbar(); renderPop(); }
   else if (b.dataset.addb) { addBubble(b.dataset.addb); popId = 'btext'; renderOptbar(); renderPop(); }
+  else if (b.dataset.dupbubble) duplicateBubble();
   else if (b.dataset.delbubble) { const bb = bubble(); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
 }
 
@@ -390,6 +406,7 @@ function onOptInput(e) {
   const id = e.target.id;
   if (id === 'o-size') { setSizeMm(vToSize(+e.target.value)); showSize('o-size'); }
   else if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); showSize('o-mm'); } }
+  else if (id === 'o-gap') { ed.fillGap = +e.target.value; const v = $('#o-gap-v', root); if (v) v.textContent = ed.fillGap + ' %'; savePrefs(); }
   else if (id === 'o-filled') { ed.shapeFilled = e.target.checked; savePrefs(); }
 }
 
@@ -405,6 +422,42 @@ try { secState = JSON.parse(localStorage.getItem(SEC_KEY)) || {}; } catch { /* *
 const sec = (id, title, body, def = true, extra = '') =>
   `<details class="sec" data-sec="${id}" ${(secState[id] ?? def) ? 'open' : ''}><summary><span>${title}</span>${extra}</summary><div class="sec-body">${body}</div></details>`;
 // Glisser une ligne de calque (ou de bulle) vers la gauche découvre « Dupliquer » et « Supprimer », comme dans Procreate.
+// Glisser-déposer des calques : la poignée à gauche de la ligne ; la ligne suit le doigt, un trait rouge montre où elle ira.
+let gripGest = null;
+function gripRows() { return $$('.swipe', root).filter(w => w.querySelector('[data-layer]')); }
+function gripDown(e) {
+  const g = e.target.closest && e.target.closest('[data-grip]');
+  if (!g) return false;
+  const wrap = g.closest('.swipe'), rows = gripRows();
+  e.preventDefault(); g.setPointerCapture(e.pointerId);
+  gripGest = { id: e.pointerId, wrap, layer: g.dataset.grip, y0: e.clientY, rows, on: false, drop: null };
+  return true;
+}
+function gripMove(e) {
+  const s = gripGest;
+  if (!s || e.pointerId !== s.id) return;
+  const dy = e.clientY - s.y0;
+  if (!s.on) { if (Math.abs(dy) < 6) return; s.on = true; s.wrap.classList.add('reordering'); }
+  s.wrap.style.transform = `translateY(${dy}px)`;
+  const others = s.rows.filter(w => w !== s.wrap);
+  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
+  const mid = r => r.top + r.height / 2, y = e.clientY;
+  const d = others.filter(w => mid(w.getBoundingClientRect()) < y).length;   // position d dans la liste (0 = en haut = au-dessus de la pile)
+  s.drop = d;
+  if (d < others.length) others[d].classList.add('drop-above'); else others[others.length - 1].classList.add('drop-below');
+}
+function gripUp(e, cancel) {
+  const s = gripGest;
+  if (!s || e.pointerId !== s.id) return;
+  gripGest = null;
+  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
+  s.wrap.classList.remove('reordering'); s.wrap.style.transform = '';
+  if (!s.on) return;
+  swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);
+  if (cancel) return;
+  moveLayerTo(s.layer, panel().layers.length - 1 - s.drop);   // la liste est affichée à l'envers (le dernier calque est en haut)
+}
+
 let swipeGest = null, swipeJustDone = false;
 function swipeDown(e) {
   const row = e.target.closest('.swipe > .layer');
@@ -464,13 +517,24 @@ export function renderDock() {
   renderPop();
 }
 
+// Liste déroulante de l'outil Bulle : modèles du programme puis « Mes modèles » ; un toucher sur la page y pose une bulle de ce modèle.
+function bubbleTplList() {
+  const all = allBubbleTemplates(), cust = all.filter(t => t.id.startsWith('bt')), std = all.filter(t => !t.id.startsWith('bt'));
+  const ic = t => icon((BUBBLE_KINDS.find(k => k.id === t.kind) || BUBBLE_KINDS[0]).icon);
+  const row = t => `<div class="row tight" style="margin-bottom:4px"><button class="btn ${t.id === ed.bubbleTemplate ? 'primary' : ''}" data-tpl="${t.id}" style="flex:1;justify-content:flex-start">${ic(t)} ${esc(t.name)}</button>${t.id.startsWith('bt') ? `<button class="icon-btn icon-only" data-tpldel="${t.id}" aria-label="Supprimer le modèle ${esc(t.name)}">${icon('trash')}</button>` : ''}</div>`;
+  return std.map(row).join('')
+    + (cust.length ? sec('btpl', 'Mes modèles', cust.map(row).join(''), true) : '')
+    + `<div class="row tight" style="margin:8px 0 2px"><button class="btn small primary" data-act="tpl-save" ${bubble() ? '' : 'disabled'}>${icon('device-floppy')} Enregistrer la bulle sélectionnée…</button></div>
+       <small class="note">Touche une case avec l'outil Bulle pour y poser une bulle du modèle choisi.</small>`;
+}
+
 // Réglages détaillés de l'outil : fenêtre flottante au-dessus de la barre du bas, jamais dans le volet.
 const TOOL_TRAMA = ['texture', 'fill', 'shape'];
 function renderPop() {
   const el = $('#pop', root);
   if (!el || !ed.project) return;
   const bubbleOnly = /^b(text|shape|tail)$/.test(popId || '');
-  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && ed.tool !== 'pencil' && ed.tool !== 'eraser') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
+  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && !['pencil', 'eraser', 'texture'].includes(ed.tool)) || (popId === 'lib-bubble' && ed.tool !== 'bubble') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
   if (!popId) { el.hidden = true; el.innerHTML = ''; el.dataset.id = ''; el._html = ''; return; }
   const a = document.activeElement;
   if (el.dataset.id === popId && el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type === 'text'))) return;   // on ne reconstruit pas sous les doigts qui tapent
@@ -492,7 +556,7 @@ function syncPop() { const el = $('#pop', root); if (el && popId && el.dataset.i
 function popHtml() {
   const b = bubble();
   const [title, body] = {
-    brush: [`Pinceau · ${esc(currentBrush().name)}`, brushPop], 'lib-brush': ['Pinceaux', () => brushesTab()], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
+    brush: [`Pinceau · ${esc(currentBrush().name)}`, brushPop], 'lib-brush': ['Pinceaux', () => brushesTab()], 'lib-bubble': ['Modèles de bulles', bubbleTplList], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
     btext: ['Texte de la bulle', () => bubbleText(b)], bshape: ['Forme de la bulle', () => bubbleShape(b)], btail: ['Queue de la bulle', () => bubbleTail(b)],
   }[popId];
   return `<div class="pop-head"><b>${title}</b><button class="icon-btn icon-only" data-act="pop-close" aria-label="Fermer">${icon('x')}</button></div><div class="pop-body">${body()}</div>`;
@@ -503,15 +567,16 @@ function pageTab() { return pagesTab() + caseTab(); }
 function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
-  const dot = l => l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
-  const BICON = { parole: 'message-circle', pensee: 'cloud', narration: 'square', texte: 'typography' };
+  const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
+  const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
       <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
-      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
+      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button><span class="tag" title="Case liée">C${pg.panels.findIndex(q => q.id === b.panel) + 1 || '?'}</span>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
-      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
+      <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
   const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
+      <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
       ${dot(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
@@ -532,6 +597,9 @@ function layersTab() {
   const props = `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>
     ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
+    ${cur.kind !== 'draft' ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
+      <input type="color" id="l-tint" value="${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? cur.color : '#000000'}" aria-label="Couleur du calque" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg)">
+      <button class="btn small" data-act="tint-reset" ${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? '' : 'disabled'}>Noir</button></div>` : ''}
     <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
     <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
@@ -553,7 +621,7 @@ const GRAIN_TYPES = [['none', 'Aucun (plein)'], ['noise', 'Grain fin'], ['paper'
 
 function brushesTab() { return brushesParts().list; }
 function brushesParts() {
-  const cur = ed.brushParams, groups = [...BRUSH_GROUPS, 'Mes pinceaux'], list = allBrushes();
+  const cur = ed.brushParams, groups = [...BRUSH_GROUPS, 'Mes pinceaux', 'Mes gommes'], list = allBrushes();
   const sl = ([k, label, min, max, step, fmt]) => `<label class="field inline"><span>${label} : ${fmt(cur[k])}</span><input type="range" id="p-${k}" min="${min}" max="${max}" step="${step}" value="${cur[k]}"></label>`;
   const custom = currentBrush().custom, here = currentBrush().group;
   const lists = groups.map(g => { const items = list.filter(b => b.group === g); return items.length ? sec('bg-' + g, esc(g), items.map(b =>
@@ -570,7 +638,8 @@ function brushesParts() {
       <button class="btn small" data-act="brush-reset" title="Rétablir les réglages du pinceau">${icon('refresh')} Rétablir</button>
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
-  return { pop: buttons + settings, list: lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du bas. Les pinceaux enregistrés restent sur cet appareil.</small>' };
+  const addBtn = `<div class="row tight" style="margin-bottom:6px"><button class="btn small primary" data-act="brush-save">${icon('plus')} Enregistrer ${ed.tool === 'eraser' ? 'cette gomme' : 'ce pinceau'}…</button></div>`;
+  return { pop: buttons + settings, list: addBtn + lists + '<small class="note">Réglages du pinceau : bouton « Réglages » de la barre du bas. Les pinceaux enregistrés restent sur cet appareil.</small>' };
 }
 const brushPop = () => brushesParts().pop;
 
@@ -588,6 +657,7 @@ function tramasTab() {
   const cur = tramaById(ed.project, ed.tramaId);
   const settings = `<div class="row tight" style="margin:4px 0 6px">
       <button class="btn small" data-act="new-trame">${icon('plus')} Nouvelle trame</button>
+      <button class="btn small" data-act="tpreset-save" title="Enregistrer la trame, l'échelle et le fond actuels">${icon('plus')} Enregistrer le réglage…</button>
       ${cur.builtin === false ? `<button class="btn small" data-act="edit-trame" aria-label="Modifier la trame">${icon('pencil')}</button><button class="btn small danger" data-act="del-trame" aria-label="Supprimer la trame">${icon('trash')}</button>` : ''}</div>`;
   const presets = ed.tramaPresets.map(t => `<div class="row tight" style="margin-bottom:4px"><button class="btn small" data-tpreset="${t.id}" style="flex:1;justify-content:flex-start">${esc(t.name)}</button><button class="icon-btn icon-only" data-tpdel="${t.id}" aria-label="Supprimer le réglage ${esc(t.name)}">${icon('trash')}</button></div>`).join('');
   const open = g => g === 'Plein' || g === 'Gris' || g === 'Ma bibliothèque' || g === cur.group;
@@ -628,6 +698,10 @@ function pagesTab() {
 const SLIDERS = {
   'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
   'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-lobes': ['lobes', v => `Lobes : ${v ? v : 'auto'}`], 'b-bulge': ['bulge', v => `Bombé des lobes : ${v} %`],
+  'b-vround': ['valleyRound', v => `Creux arrondis : ${v} %`], 'b-tround': ['tipRound', v => `Pointes arrondies : ${v} %`],
+  'b-spikes': ['spikes', v => `Pointes : ${v}`], 'b-depth': ['depth', v => `Profondeur : ${v} %`],
+  'b-rot': ['rot', v => `Rotation : ${v}°`],
   'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
   'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
   'b-tailbend': ['tailBend', v => `Courbure : ${v > 0 ? '+' : ''}${v}`], 'b-tailtip': ['tailTip', v => `Pointe émoussée : ${v} %`],
@@ -636,19 +710,28 @@ const slider = (id, p, min, max, step = 1) => `<label class="field inline"><span
 
 function bubbleText(b) {
   const p = props(b);
-  return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
-      <textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
+  return `<textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
       <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
-      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="24" step="0.5" value="${b.pt}"></label>
+      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-ptr" min="0" max="100" step="0.5" value="${ptToV(b.pt)}" aria-label="Corps du texte"></label>
+      <div class="bl-step"><button data-act="pt-" aria-label="Plus petit">A−</button><input type="number" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}" aria-label="Corps en points"><span>pt</span><button data-act="pt+" aria-label="Plus grand">A+</button></div>
       <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
         <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
 }
 function bubbleShape(b) {
   const p = props(b);
-  return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+  return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+      <label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
-      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}${slider('b-stroke', p, 0, 2, 0.05)}`;
+      ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) + slider('b-vround', p, 0, 100, 5) + slider('b-tround', p, 0, 100, 5) : ''}
+      ${p.shape === 'cloud' ? slider('b-lobes', p, 0, 40) + slider('b-bulge', p, 0, 100, 5) + `<label class="check compact"><input type="checkbox" id="b-cloudsoft" ${p.cloudSoft ? 'checked' : ''}> Creux arrondis (nuage doux)</label>` : ''}
+      ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' || p.shape === 'eclair' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
+      ${slider('b-pad', p, 0, 10, 0.5)}${b.auto ? '<small class="note">En taille auto, la marge garde toujours le texte à distance du trait.</small>' : ''}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
+      <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
+      <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
+      ${b.clip ? `<label class="check compact"><input type="checkbox" id="b-noframe" ${b.noFrame ? 'checked' : ''}> Pas de trait de case là où la bulle la touche</label>` : ''}
+      <button class="btn small" data-act="bubble-lines-all" style="margin:2px 0 8px">Appliquer ces traits à toutes les bulles</button>
+      ${slider('b-rot', p, 0, 359)}
+      <button class="btn small" data-act="tpl-save" style="margin-top:6px">${icon('device-floppy')} Enregistrer comme modèle…</button>`;
 }
 function bubbleTail(b) {
   const p = props(b);
@@ -682,9 +765,12 @@ async function onDock(e) {
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   const br = e.target.closest('[data-brush]');
   if (br) {
-    if (ed.tool !== 'pencil' && ed.tool !== 'eraser') setTool('pencil');   // seuls ces outils utilisent un pinceau
+    if (!['pencil', 'eraser', 'texture'].includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent un pinceau
     selectBrush(br.dataset.brush); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); return;
   }
+  const tpl = e.target.closest('[data-tpl]'), tpld = e.target.closest('[data-tpldel]');
+  if (tpld) { deleteBubbleTemplate(tpld.dataset.tpldel); savePrefs(); renderOptbar(); renderPop(); return; }
+  if (tpl) { ed.bubbleTemplate = tpl.dataset.tpl; savePrefs(); popId = null; renderOptbar(); renderPop(); return; }
   const tp = e.target.closest('[data-tpreset]'), tpd = e.target.closest('[data-tpdel]');
   if (tpd) { ed.tramaPresets = ed.tramaPresets.filter(x => x.id !== tpd.dataset.tpdel); savePrefs(); renderDock(); return; }
   if (tp) { applyTramaPreset(tp.dataset.tpreset); return; }
@@ -715,6 +801,9 @@ async function onDock(e) {
     if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   }
   else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'tint-reset') { setLayerProp(activeLayer().id, 'color', undefined); }
+  else if (a === 'bubble-lines-all') { const n = applyBubbleLines(bubble()); if (n) toast(`Traits appliqués à ${n} bulle${n > 1 ? 's' : ''}.`); }
+  else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
   else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
   else if (a === 'del-layer') { if (!deleteLayer()) toast('Une case garde au moins un calque.'); }
@@ -751,10 +840,19 @@ async function onDock(e) {
   else if (a === 'pick-font') fontModal();
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
+  else if (a === 'pt-' || a === 'pt+') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.pt = Math.max(5, Math.min(200, +(b.pt + (a === 'pt+' ? 1 : -1) * (b.pt < 24 ? 0.5 : b.pt < 60 ? 1 : 2)).toFixed(1))); refitBubble(b); commitBubbleEdit(b, before); renderDock(); const fl = $('#bfloat', root); if (fl) fl._html = ''; placeBubbleUI(); renderPop(); } }
+  else if (a === 'tpl-save') {
+    bfTab = null; placeBubbleUI();
+    const b = bubble();
+    if (!b) { toast('Sélectionne d\'abord une bulle.'); return; }
+    const name = await promptModal({ title: 'Enregistrer le modèle de bulle', label: 'Nom', value: 'Ma bulle' });
+    if (name) { saveBubbleTemplate(name, b); savePrefs(); renderOptbar(); renderPop(); toast('Modèle enregistré.'); }
+  }
   else if (a === 'brush-reset') { resetBrush(); renderDock(); renderOptbar(); }
   else if (a === 'brush-save') {
-    const name = await promptModal({ title: 'Enregistrer le pinceau', label: 'Nom', value: 'Mon pinceau' });
-    if (name) { saveBrushAs(name); savePrefs(); renderDock(); renderOptbar(); toast('Pinceau enregistré.'); }
+    const eraser = ed.tool === 'eraser';
+    const name = await promptModal({ title: eraser ? 'Enregistrer la gomme' : 'Enregistrer le pinceau', label: 'Nom', value: eraser ? 'Ma gomme' : 'Mon pinceau' });
+    if (name) { saveBrushAs(name, eraser ? 'Mes gommes' : 'Mes pinceaux'); savePrefs(); renderDock(); renderOptbar(); renderPop(); toast(eraser ? 'Gomme enregistrée.' : 'Pinceau enregistré.'); }
   }
   else if (a === 'brush-update') { updateBrush(); savePrefs(); toast('Pinceau mis à jour.'); }
   else if (a === 'brush-del') {
@@ -779,11 +877,113 @@ function setTail(b, on) {
 }
 
 // Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
-const STYLE_KEYS = ['pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+const STYLE_KEYS = ['lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
 function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
   ed.bubbleDefaults[b.kind] = d; savePrefs();
+}
+
+// ───────────── Barre flottante de la bulle sélectionnée et saisie du texte sur la bulle ─────────────
+
+const SHAPE_ORDER = [['ellipse', 'circle', 'Ellipse'], ['rect', 'square-rounded', 'Rectangle'], ['cloud', 'cloud', 'Nuage'], ['eclair', 'bolt', 'Éclair']];
+const tailMemory = new Map();
+let bfTab = null, editBefore = null;   // bfTab : liste déroulante ouverte sous la barre ('text' | 'shape' | 'tail')
+const STRUCTURAL = ['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto', 'b-clip', 'b-samestroke'];   // ces réglages changent les curseurs affichés
+
+function initBubbleUI() {
+  const fl = $('#bfloat', root), ta = $('#bedit', root);
+  // la liste déroulante réutilise les gestionnaires du volet (curseurs, cases, police, modèle…)
+  fl.addEventListener('click', e => {
+    if (e.target.closest('[data-act]')) { onDock(e); return; }
+    const t = e.target.closest('[data-bf]'), b = bubble();
+    if (!t || !b) return;
+    const a = t.dataset.bf;
+    if (a === 'text') { bfTab = null; openBubbleEdit(); return; }
+    if (a === 'tab-text' || a === 'tab-shape' || a === 'tab-tail') { const k = a.slice(4); bfTab = bfTab === k ? null : k; placeBubbleUI(); return; }
+    if (a === 'shape') {
+      const cur = props(b).shape, i = SHAPE_ORDER.findIndex(s => s[0] === cur), next = SHAPE_ORDER[(i + 1) % SHAPE_ORDER.length];
+      const before = snapshotBubble(b); b.shape = next[0]; refitBubble(b); commitBubbleEdit(b, before); rememberBubble(b); toast(next[2], { duration: 900 });
+    } else if (a === 'tail') {
+      const before = snapshotBubble(b);
+      if (b.tail) { tailMemory.set(b.id, b.tail); setTail(b, false); }
+      else { setTail(b, true); if (tailMemory.has(b.id)) b.tail = tailMemory.get(b.id); if (b.tailStyle === 'none') delete b.tailStyle; }
+      commitBubbleEdit(b, before); rememberBubble(b);
+    } else if (a === 'dup') duplicateBubble(b);
+    else if (a === 'del') { deleteBubble(b); bfTab = null; toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); }
+    fl._html = ''; placeBubbleUI();
+  });
+  fl.addEventListener('input', e => { onDockInput0(e); const id = e.target.id; if (STRUCTURAL.includes(id)) { fl._html = ''; placeBubbleUI(); } });
+  fl.addEventListener('change', e => { onDockChange(e); fl._html = ''; placeBubbleUI(); });
+  fl.addEventListener('focusin', onDockFocus);
+  // pendant qu'on règle un curseur, la barre et la liste ne suivent plus la bulle (elle grossit avec le corps du texte : la liste fuirait sous le doigt)
+  fl.addEventListener('pointerdown', () => { fl._frozen = true; });
+  // le dégel attend un peu : reconstruire la barre entre le relâchement et le « click » ferait perdre le toucher
+  const thaw = () => { if (fl._frozen) setTimeout(() => { fl._frozen = false; fl._html = ''; placeBubbleUI(); }, 80); };
+  window.addEventListener('pointerup', thaw); window.addEventListener('pointercancel', thaw);
+  ta.addEventListener('input', () => { const b = bubble(); if (!b) return; b.text = ta.value; refitBubble(b); markChanged(); requestRender(); });
+  ta.addEventListener('blur', () => {
+    const b = bubble();
+    ta.hidden = true;
+    if (b && editBefore) commitBubbleEdit(b, editBefore);
+    editBefore = null; renderDock(); placeBubbleUI();
+  });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); ta.blur(); } });
+}
+
+function openBubbleEdit() {
+  const b = bubble(), ta = $('#bedit', root);
+  if (!b || !ta) return;
+  editBefore = snapshotBubble(b);
+  ta.value = b.text || ''; ta.hidden = false; placeBubbleUI(); ta.focus(); ta.select();
+}
+
+// Posé après chaque image : la barre au-dessus de la poignée de rotation (en dessous si elle sortirait de l'écran), le champ de saisie sur la bulle.
+function placeBubbleUI() {
+  const fl = $('#bfloat', root), ta = $('#bedit', root);
+  if (!fl || !ta) return;
+  const b = ed.tool === 'bubble' && !ed.bubbleDraw ? bubble() : null;
+  if (!b || b.hidden) { fl.hidden = true; bfTab = null; if (!ta.hidden) ta.hidden = true; return; }
+  const k = view.s, c = toScreen(b.x + b.w / 2, b.y + b.h / 2);
+  if (!ta.hidden) {
+    const tw = Math.max(b.w * k, 170), th = Math.max(b.h * k, 76);   // champ assez grand pour taper même si la bulle est petite
+    ta.style.width = tw + 'px'; ta.style.height = th + 'px'; ta.style.left = c.x - tw / 2 + 'px'; ta.style.top = c.y - th / 2 + 'px';
+    ta.style.transform = `rotate(${(b.rot || 0) * Math.PI / 180 + view.r}rad)`;
+  }
+  const cur = props(b).shape, sh = SHAPE_ORDER.find(s => s[0] === cur) || SHAPE_ORDER[0];
+  const tab = (id, ico, label) => `<button data-bf="tab-${id}" class="tab ${bfTab === id ? 'on' : ''}" aria-expanded="${bfTab === id}" title="Réglages : ${label}">${icon(ico)}<span>${label}</span>${icon('chevron-down')}</button>`;
+  const drop = bfTab === 'text' ? bubbleText(b) : bfTab === 'shape' ? bubbleShape(b) : bfTab === 'tail' ? bubbleTail(b) : '';
+  const html = `<div class="bfbar"><button data-bf="text" title="Écrire" aria-label="Écrire le texte">${icon('writing')}</button>
+    <button data-bf="shape" title="Forme : ${sh[2]} (touche pour changer)" aria-label="Changer la forme, actuelle : ${sh[2]}">${icon(sh[1])}</button>
+    <button data-bf="tail" class="${b.tail ? 'on' : ''}" title="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-label="${b.tail ? 'Retirer la queue' : 'Ajouter une queue'}" aria-pressed="${!!b.tail}">${icon(b.tail ? 'message-circle' : 'message-circle-off')}</button>
+    <i class="sep"></i>${tab('text', 'typography', 'Texte')}${tab('shape', 'shape', 'Forme')}${tab('tail', 'message-circle-plus', 'Queue')}<i class="sep"></i>
+    <button data-bf="dup" title="Dupliquer" aria-label="Dupliquer la bulle">${icon('copy')}</button>
+    <button data-bf="del" title="Supprimer" aria-label="Supprimer la bulle">${icon('trash')}</button></div>${drop ? `<div class="bfdrop">${drop}</div>` : ''}`;
+  const a = document.activeElement, typing = fl.contains(a) && a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
+  if (fl._html !== html) {
+    fl._html = html;
+    if (!typing && !fl._frozen) {   // pas de reconstruction sous un doigt qui règle un curseur ou tape (Safari ne donne pas le focus aux curseurs : on regarde aussi le doigt posé)
+      const keep = fl.querySelector('.bfdrop') ? fl.querySelector('.bfdrop').scrollTop : 0;
+      fl.innerHTML = html; const d = fl.querySelector('.bfdrop'); if (d) d.scrollTop = keep;
+    }
+  }
+  fl.hidden = !ta.hidden || !!b.locked;
+  if (fl.hidden || fl._frozen) return;
+  const bar = fl.querySelector('.bfbar'), w = Math.max(bar ? bar.offsetWidth : 360, drop ? 330 : 0), barH = 52, rh = bubbleRotHandle(b);
+  let top = rh.y - 20 - barH;
+  if (top < 6) { const bottom = toScreen(b.x + b.w / 2, b.y + b.h); top = Math.min(view.h - barH - 6, bottom.y + 44); }
+  const left = Math.max(w / 2 + 6, Math.min(view.w - w / 2 - 6, rh.x));
+  fl.style.left = left + 'px'; fl.style.top = Math.max(6, top) + 'px';
+  const d = fl.querySelector('.bfdrop');
+  if (d) {
+    d.style.maxHeight = Math.max(160, view.h - Math.max(6, top) - barH - 20) + 'px';
+    // la liste se range à côté de la bulle (jamais dessus : on veut voir l'effet des réglages) ; à défaut, sous la barre
+    const xs = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([x, y]) => { const q = bubbleToPage(b, x, y); return toScreen(q.x, q.y).x; });
+    const minX = Math.min(...xs), maxX = Math.max(...xs), dw = 320, barLeft = left - (bar ? bar.offsetWidth : 360) / 2;
+    const roomR = view.w - 6 - (maxX + 16 + dw), roomL = minX - 16 - dw - 6;
+    d.classList.toggle('side', roomR >= 0 || roomL >= 0);
+    if (roomR >= 0 || roomL >= 0) d.style.left = ((roomR >= roomL ? maxX + 16 : minX - 16 - dw) - barLeft) + 'px'; else d.style.left = '';
+  }
 }
 
 let bubbleBefore = null;
@@ -818,6 +1018,7 @@ function onDockInput0(e) {
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
+  if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
   if (id === 'l-solo') { setSolo(activeLayer().id); return; }
@@ -826,7 +1027,14 @@ function onDockInput0(e) {
   if (!b || !/^b-/.test(id)) return;
   if (!bubbleBefore) bubbleBefore = snapshotBubble(b);
   if (id === 'b-text') { b.text = e.target.value; refitBubble(b); }
-  else if (id === 'b-pt') { b.pt = +e.target.value; e.target.previousElementSibling.textContent = `Corps : ${b.pt} pt`; refitBubble(b); }
+  else if (id === 'b-ptr' || id === 'b-pt') {   // curseur logarithmique (fin pour les petits corps, large pour les gros) ou champ numérique
+    const v = +e.target.value;
+    if (id === 'b-ptr') b.pt = vToPt(v); else if (v >= 5 && v <= 200) b.pt = v; else return;
+    const host = e.target.closest('.bfdrop, .pop-body') || root, lab = host.querySelector('#b-ptr') && host.querySelector('#b-ptr').previousElementSibling, num = host.querySelector('#b-pt'), rng = host.querySelector('#b-ptr');
+    if (lab) lab.textContent = `Corps : ${b.pt} pt`;
+    if (id === 'b-ptr' && num) num.value = b.pt; if (id === 'b-pt' && rng) rng.value = ptToV(b.pt);
+    refitBubble(b);
+  }
   else if (id === 'b-caps') { b.caps = e.target.checked; refitBubble(b); }
   else if (id === 'b-auto') { b.auto = e.target.checked; refitBubble(b); }
   else if (id === 'b-kind') {
@@ -838,11 +1046,16 @@ function onDockInput0(e) {
   else if (SLIDERS[id]) {
     const [key, label] = SLIDERS[id];
     b[key] = +e.target.value; e.target.previousElementSibling.textContent = label(b[key]);
+    if (key === 'rot' && !b.rot) delete b.rot;
     if (key === 'pad') refitBubble(b);
   }
+  else if (id === 'b-cloudsoft') { if (e.target.checked) b.cloudSoft = 1; else b.cloudSoft = 0; }
+  else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else { delete b.clip; delete b.noFrame; } }
+  else if (id === 'b-noframe') { if (e.target.checked) b.noFrame = true; else delete b.noFrame; }
+  else if (id === 'b-samestroke') { if (e.target.checked) b.sameStroke = true; else delete b.sameStroke; }
   else if (id === 'b-origin-auto') {
     if (e.target.checked) delete b.tailAngle;
-    else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) + 360) % 360);
+    else if (b.tail) b.tailAngle = Math.round(((Math.atan2(b.tail.y - (b.y + b.h / 2), b.tail.x - (b.x + b.w / 2)) * 180 / Math.PI) - (b.rot || 0) + 720) % 360);
   } else if (id === 'b-tailstyle') { b.tailStyle = e.target.value; setTail(b, b.tailStyle !== 'none'); }
   requestRender();
 }
@@ -855,7 +1068,7 @@ function onDockChange(e) {
     commitBubbleEdit(b, bubbleBefore); bubbleBefore = null;
     if (e.target.id !== 'b-text' && e.target.id !== 'b-kind') rememberBubble(b);
     // Pas de reconstruction du volet à chaque champ : un toucher sur un bouton qui suit la sortie d'un champ serait perdu.
-    if (['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto'].includes(e.target.id)) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); }
+    if (['b-kind', 'b-shape', 'b-tailstyle', 'b-origin-auto', 'b-clip', 'b-samestroke'].includes(e.target.id)) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); }
     renderDock();
   } else if (/^n-/.test(e.target.id || '')) markChanged();
 }
@@ -1109,19 +1322,19 @@ function libraryModal(mode) {
     const seg = `<div class="seg" role="group" aria-label="Bibliothèque" style="margin-bottom:10px">${[['brushes', 'Pinceaux', 'brush'], ['tramas', 'Trames', 'texture'], ['bubbles', 'Bulles', 'message-circle']].map(([id, n, ic]) =>
       `<button data-lib="${id}" class="${mode === id ? 'on' : ''}">${icon(ic)} ${n}</button>`).join('')}</div>`;
     const bubbles = `<p style="margin-bottom:8px;color:var(--text-secondary)">Choisis un modèle : la bulle est posée dans la case ouverte.</p>
-      <div class="row tight">${BUBBLE_KINDS.map(k => `<button class="btn" data-addb="${k.id}">${icon(k.icon)} ${k.name}</button>`).join('')}
+      <div class="row tight">${allBubbleTemplates().map(t => `<button class="btn" data-addtpl="${t.id}">${icon((BUBBLE_KINDS.find(k => k.id === t.kind) || BUBBLE_KINDS[0]).icon)} ${esc(t.name)}</button>`).join('')}
       <button class="btn" data-freebubble="1">${icon('writing')} Dessinée à la main</button></div>`;
     body.innerHTML = seg + (mode === 'brushes' ? brushesParts().list : mode === 'tramas' ? tramasTab() : bubbles);
     paintSwatches(body); paintLibrary(body);
   };
   draw();
   m.el.addEventListener('click', async e => {
-    const lib = e.target.closest('[data-lib]'), add = e.target.closest('[data-addb]'), free = e.target.closest('[data-freebubble]');
+    const lib = e.target.closest('[data-lib]'), add = e.target.closest('[data-addtpl]'), free = e.target.closest('[data-freebubble]');
     if (lib) { mode = lib.dataset.lib; draw(); return; }
     if (add || free) {
       m.close();
       if (ed.tool !== 'bubble') setTool('bubble');
-      if (add) { addBubble(add.dataset.addb); popId = 'btext'; } else ed.bubbleDraw = true;
+      if (add) { ed.bubbleTemplate = add.dataset.addtpl; savePrefs(); addTemplateBubble(); setTimeout(openBubbleEdit, 0); } else ed.bubbleDraw = true;
       renderOptbar(); renderPop(); return;
     }
     const closes = e.target.closest('[data-brush],[data-trama]');
@@ -1151,7 +1364,8 @@ const COMMANDS = {
   frame: () => { secState.cf = true; showDock('page'); },
   dither: ditherModal,
   'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
-  'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
+  'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
+  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
   'solo-layer': () => setSolo(activeLayer().id),
   'add-page': async () => { const id = await pickLayout('Nouvelle page'); if (id) await addPage(id); },
@@ -1172,6 +1386,10 @@ export function runCommand(id) {
 // ───────────────────────── Clavier ─────────────────────────
 
 function onKey(e) {
+  if (ed.tool === 'layout' && ed.addPreview && !typing(e) && !modalOpen()) {   // aperçu d'ajout de case : Entrée ajoute, Échap abandonne
+    if (e.key === 'Enter') { e.preventDefault(); if (confirmAdd()) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: undo }); return; }
+    if (e.key === 'Escape') { e.preventDefault(); cancelAdd(); return; }
+  }
   if (e.key === 'Escape' && popId && !modalOpen()) { popId = null; renderOptbar(); renderPop(); return; }
   if (e.key === 'Escape' && ed.tool === 'select' && !modalOpen() && !typing(e)) { polyCancel(); clearSelection(); renderOptbar(); return; }
   if (typing(e) || modalOpen()) return;

@@ -85,7 +85,7 @@ export const DRAFT_COLORS = {
 export function newLayer(name, w, h, opts = {}) {
   const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
   return {
-    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : undefined,
+    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : opts.color,
     w, h, data: null, loaded: true, dirty: false, rev: null,
   };
 }
@@ -133,8 +133,8 @@ export function newProject({ title, format, dpi, layoutId }) {
 export function newBubble(kind, x, y) {
   const textual = kind === 'texte';
   return {
-    id: uid(), kind, x, y, w: 500, h: 300, text: '', pt: 9, caps: !textual, auto: true,
-    tail: kind === 'parole' || kind === 'pensee' ? { x: x + 120, y: y + 460 } : null,
+    id: uid(), kind, x, y, w: 500, h: 300, text: '', pt: 9, caps: false, auto: true, font: 'architects',
+    tail: kind === 'parole' || kind === 'pensee' || kind === 'cri' ? { x: x + 120, y: y + 460 } : null,
   };
 }
 

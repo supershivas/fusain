@@ -1,5 +1,5 @@
 {
-  "version": "1.11.0",
+  "version": "1.26.0",
   "date": "2026-10-29",
   "changes": [
     "Nouvel outil Sélection : automatique, main levée, polygone, rectangle, ellipse ; on déplace le contenu d'une case (ou toute la case)",
