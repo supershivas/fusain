@@ -1,6 +1,6 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
-  ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, toggleLayer, renameLayer,
+  ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
@@ -90,10 +90,10 @@ export function mountEditor(el) {
   $('#zoombar', root).onclick = onZoombar;
   $('#optbar', root).addEventListener('click', onOptbar);
   $('#optbar', root).addEventListener('input', onOptInput);
-  $('#dock', root).addEventListener('pointerdown', swipeDown);
-  $('#dock', root).addEventListener('pointermove', swipeMove);
-  $('#dock', root).addEventListener('pointerup', swipeUp);
-  $('#dock', root).addEventListener('pointercancel', swipeUp);
+  $('#dock', root).addEventListener('pointerdown', e => { if (!gripDown(e)) swipeDown(e); });
+  $('#dock', root).addEventListener('pointermove', e => { gripMove(e); swipeMove(e); });
+  $('#dock', root).addEventListener('pointerup', e => { gripUp(e); swipeUp(e); });
+  $('#dock', root).addEventListener('pointercancel', e => { gripUp(e, true); swipeUp(e); });
   $('#dock', root).addEventListener('click', onDock);
   $('#dock', root).addEventListener('toggle', onSecToggle, true);
   $('#dock', root).addEventListener('input', onDockInput);
@@ -349,6 +349,42 @@ try { secState = JSON.parse(localStorage.getItem(SEC_KEY)) || {}; } catch { /* *
 const sec = (id, title, body, def = true, extra = '') =>
   `<details class="sec" data-sec="${id}" ${(secState[id] ?? def) ? 'open' : ''}><summary><span>${title}</span>${extra}</summary><div class="sec-body">${body}</div></details>`;
 // Glisser une ligne de calque (ou de bulle) vers la gauche découvre « Dupliquer » et « Supprimer », comme dans Procreate.
+// Glisser-déposer des calques : la poignée à gauche de la ligne ; la ligne suit le doigt, un trait rouge montre où elle ira.
+let gripGest = null;
+function gripRows() { return $$('.swipe', root).filter(w => w.querySelector('[data-layer]')); }
+function gripDown(e) {
+  const g = e.target.closest && e.target.closest('[data-grip]');
+  if (!g) return false;
+  const wrap = g.closest('.swipe'), rows = gripRows();
+  e.preventDefault(); g.setPointerCapture(e.pointerId);
+  gripGest = { id: e.pointerId, wrap, layer: g.dataset.grip, y0: e.clientY, rows, on: false, drop: null };
+  return true;
+}
+function gripMove(e) {
+  const s = gripGest;
+  if (!s || e.pointerId !== s.id) return;
+  const dy = e.clientY - s.y0;
+  if (!s.on) { if (Math.abs(dy) < 6) return; s.on = true; s.wrap.classList.add('reordering'); }
+  s.wrap.style.transform = `translateY(${dy}px)`;
+  const others = s.rows.filter(w => w !== s.wrap);
+  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
+  const mid = r => r.top + r.height / 2, y = e.clientY;
+  const d = others.filter(w => mid(w.getBoundingClientRect()) < y).length;   // position d dans la liste (0 = en haut = au-dessus de la pile)
+  s.drop = d;
+  if (d < others.length) others[d].classList.add('drop-above'); else others[others.length - 1].classList.add('drop-below');
+}
+function gripUp(e, cancel) {
+  const s = gripGest;
+  if (!s || e.pointerId !== s.id) return;
+  gripGest = null;
+  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
+  s.wrap.classList.remove('reordering'); s.wrap.style.transform = '';
+  if (!s.on) return;
+  swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);
+  if (cancel) return;
+  moveLayerTo(s.layer, panel().layers.length - 1 - s.drop);   // la liste est affichée à l'envers (le dernier calque est en haut)
+}
+
 let swipeGest = null, swipeJustDone = false;
 function swipeDown(e) {
   const row = e.target.closest('.swipe > .layer');
@@ -454,6 +490,7 @@ function layersTab() {
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
       <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
   const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
+      <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
       ${dot(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}

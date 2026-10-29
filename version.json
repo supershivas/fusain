@@ -1,8 +1,7 @@
 {
-  "version": "1.19.1",
+  "version": "1.20.0",
   "date": "2026-10-29",
   "changes": [
-    "Ajout de case : une case assez grande peut toujours être coupée (la part s'adapte), et chaque aperçu repart à 50 %",
-    "Déplacer une gouttière montre en direct le nouveau cadre et les dimensions (en mm) des cases touchées"
+    "Les calques se déplacent en glisser-déposer par la poignée à gauche de chaque ligne (annulable)"
   ]
 }

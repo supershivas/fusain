@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.20.0 — 2026-10-29
+- Les calques se déplacent en glisser-déposer par la poignée à gauche de chaque ligne (annulable)
+
 ## 1.19.1 — 2026-10-29
 - Ajout de case : une case assez grande peut toujours être coupée (la part s'adapte), et chaque aperçu repart à 50 %
 - Déplacer une gouttière montre en direct le nouveau cadre et les dimensions (en mm) des cases touchées

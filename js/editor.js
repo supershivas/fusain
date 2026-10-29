@@ -640,6 +640,16 @@ export function moveLayer(dir) {
   swap(i, j); ed.undo.pushAction('Ordre des calques', () => swap(j, i), () => swap(i, j));
 }
 
+// Glisser-déposer dans la liste : le calque `id` va à la position `to` du tableau (0 = tout en bas de la pile).
+export function moveLayerTo(id, to) {
+  const p = panel(), i = p.layers.findIndex(l => l.id === id), order = p.layers.slice();
+  if (i < 0 || to < 0 || to >= order.length || to === i) return false;
+  const apply = () => { const [l] = p.layers.splice(i, 1); p.layers.splice(to, 0, l); invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(0, p.layers.length, ...order); invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Ordre des calques', unapply, apply);
+  return true;
+}
+
 export function toggleLayer(id, prop) {
   const l = panel().layers.find(x => x.id === id);
   if (!l) return;

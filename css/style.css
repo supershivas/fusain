@@ -385,3 +385,11 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swatch-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 .lib-body .brush-row, .pop .brush-row { width: 100%; }
 @media (max-width: 768px) { .optbar .size input[type=range] { width: auto; } }
+
+/* Glisser-déposer des calques */
+.layer .grip { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 40px; color: var(--text-muted); cursor: grab; touch-action: none; font-size: 1.1rem; }
+.swipe.reordering { z-index: 5; outline: 2px solid var(--accent); opacity: .92; transition: none; }
+.swipe.reordering > .layer { transition: none; }
+.swipe.drop-above::before, .swipe.drop-below::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); z-index: 4; }
+.swipe.drop-above::before { top: 0; }
+.swipe.drop-below::after { bottom: 0; }
