@@ -318,7 +318,7 @@ function drawGutters(pg, accent) {
     for (const k of [-1, 0, 1]) { ctx.beginPath(); ctx.arc(v ? mx : mx + k * 10, v ? my + k * 10 : my, 2, 0, Math.PI * 2); ctx.fill(); }
   }
   const ap = pg.panels.find(p => p.id === ed.panelId);
-  if (ap) {
+  if (ap && !g) {   // pas de « + » pendant qu'on déplace une gouttière
     const pv = ed.addPreview && ed.addPreview.panelId === ap.id ? ed.addPreview : null, sp = pv && splitRects(ap, pv.side, ed.addRatio / 100);
     if (sp) {   // aperçu : la future case en pointillés, la case coupée en fond
       const poly = r => { ctx.beginPath(); [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].forEach(([x, y], i) => { const q = toScreen(x, y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }); ctx.closePath(); };
@@ -356,6 +356,17 @@ function drawGutters(pg, accent) {
   if (g) {
     const v = g.axis === 'v', a = toScreen(v ? g.pos : g.s0, v ? g.s0 : g.pos), b = toScreen(v ? g.pos : g.s1, v ? g.s1 : g.pos);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+    // les cases touchées : nouveau cadre et dimensions en direct (en mm)
+    const mmOf = px => Math.round(px / ed.project.dpi * 25.4);
+    for (const { rect: r } of g.panels || []) {
+      const c = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].map(([x, y]) => toScreen(x, y));
+      ctx.save(); ctx.globalAlpha = 0.12; ctx.fillStyle = accent; ctx.beginPath(); c.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); c.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.stroke();
+      const m = toScreen(r.x + r.w / 2, r.y + r.h / 2), t = `${mmOf(r.w)} × ${mmOf(r.h)} mm`;
+      ctx.font = "600 12px 'Inter', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(t).width + 16;
+      ctx.fillStyle = 'rgba(28,28,30,.85)'; ctx.beginPath(); ctx.roundRect(m.x - tw / 2, m.y - 12, tw, 24, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(t, m.x, m.y);
+    }
   }
 }
 

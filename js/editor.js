@@ -312,6 +312,16 @@ export function clampGutter(h, d) {
   return Math.round(Math.max(lo, Math.min(hi, d)));
 }
 
+// Rectangles des cases touchées par une gouttière déplacée de `d` : [{ id, rect }], pour l'aperçu en direct.
+export function gutterPreview(h, d) {
+  const v = h.axis === 'v';
+  return page().panels.flatMap(p => {
+    if (h.L.includes(p.id)) return [{ id: p.id, rect: v ? { x: p.x, y: p.y, w: p.w + d, h: p.h } : { x: p.x, y: p.y, w: p.w, h: p.h + d } }];
+    if (h.R.includes(p.id)) return [{ id: p.id, rect: v ? { x: p.x + d, y: p.y, w: p.w - d, h: p.h } : { x: p.x, y: p.y + d, w: p.w, h: p.h - d } }];
+    return [];
+  });
+}
+
 export function resizeGutter(h, d) {
   d = clampGutter(h, d);
   if (!d) return;
@@ -477,8 +487,9 @@ export function addCase(ids, axis) {
 export function splitRects(p, side, ratio = 0.5) {
   const gap = mmToPx(ed.project.gutter, ed.project.dpi), { w: pw, h: ph } = pageSize(ed.project), min = Math.round(Math.min(pw, ph) * 0.1);
   const horiz = side === 'left' || side === 'right', total = (horiz ? p.w : p.h) - gap;
-  const fresh = Math.round(total * ratio), old = total - fresh;
-  if (fresh < min || old < min) return null;
+  if (total < 2 * min) return null;
+  // la part demandée est ramenée dans ce que la taille minimale permet : une case coupable ne refuse jamais l'ajout
+  const share = Math.max(min / total, Math.min(1 - min / total, ratio)), fresh = Math.round(total * share), old = total - fresh;
   if (side === 'right') return { old: { x: p.x, y: p.y, w: old, h: p.h }, fresh: { x: p.x + old + gap, y: p.y, w: fresh, h: p.h } };
   if (side === 'left') return { fresh: { x: p.x, y: p.y, w: fresh, h: p.h }, old: { x: p.x + fresh + gap, y: p.y, w: old, h: p.h } };
   if (side === 'bottom') return { old: { x: p.x, y: p.y, w: p.w, h: old }, fresh: { x: p.x, y: p.y + old + gap, w: p.w, h: fresh } };

@@ -1,7 +1,7 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
@@ -141,7 +141,7 @@ export function move(pt) {
   } else if (session.kind === 'gutter') {
     const h = session.h, v = h.axis === 'v', d = clampGutter(h, (v ? pt.x - session.x0 : pt.y - session.y0));
     session.d = d;
-    setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1] } });
+    setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1], panels: gutterPreview(h, d) } });
   } else if (session.kind === 'ratio') {
     ratioMove(pt);
   } else if (session.kind === 'free') {
@@ -226,7 +226,7 @@ function layoutDown(pt) {
   if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : montre la future case (réglée ensuite par sa poignée)
     if (Math.hypot(at.x - pl.x, at.y - pl.y) > pl.r + (pt.type === 'touch' ? 10 : 4)) continue;
     if (!splitRects(ap, pl.side, ed.addRatio / 100)) { toast('Cette case est trop petite pour être coupée de ce côté.'); return; }
-    ed.addPreview = { panelId: ap.id, side: pl.side };
+    ed.addPreview = { panelId: ap.id, side: pl.side }; ed.addRatio = 50;
     notify('tool'); setOverlay({}); return;
   }
   let best = null;

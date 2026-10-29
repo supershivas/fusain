@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.19.1 — 2026-10-29
+- Ajout de case : une case assez grande peut toujours être coupée (la part s'adapte), et chaque aperçu repart à 50 %
+- Déplacer une gouttière montre en direct le nouveau cadre et les dimensions (en mm) des cases touchées
+
 ## 1.19.0 — 2026-10-29
 - Ajout de case : la taille se règle en faisant glisser la poignée sur la ligne pointillée (aimant à 25, 33, 50, 67 et 75 %)
 - Pilule ✕ ✓ au centre de la nouvelle case pour abandonner ou ajouter ; les poignées de gouttière sont masquées pendant l'ajout
