@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.25.1 — 2026-10-29
+- Taille du texte des bulles : curseur logarithmique (précis pour les petits corps), champ numérique et boutons A− / A+
+- La liste de réglages ne bouge plus sous le doigt quand la bulle grossit pendant le réglage
+
 ## 1.25.0 — 2026-10-29
 - Bulles : trois listes déroulantes Texte / Forme / Queue dans la barre flottante (l'onglet Texte n'a plus que le texte, le modèle passe dans Forme)
 - Nouvelles bulles : majuscules décochées et police Architects Daughter par défaut

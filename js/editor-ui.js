@@ -226,6 +226,9 @@ function onZoombar(e) {
 
 // ───────────────────────── Options de l'outil ─────────────────────────
 
+// Corps du texte : 5 à 200 pt sur un curseur logarithmique, arrondi (0,5 jusqu'à 24 pt, 1 jusqu'à 60, 2 au-delà).
+const ptToV = pt => Math.round(100 * Math.log(pt / 5) / Math.log(40) * 2) / 2;
+const vToPt = v => { const pt = 5 * Math.pow(40, v / 100); return pt < 24 ? Math.round(pt * 2) / 2 : pt < 60 ? Math.round(pt) : Math.round(pt / 2) * 2; };
 const fmtMm = v => String(+v.toFixed(2)).replace('.', ',');
 const sizeSpan = () => maxSizeMm() / 0.05;
 const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(sizeSpan()));
@@ -645,7 +648,8 @@ function bubbleText(b) {
   const p = props(b);
   return `<textarea id="b-text" rows="2" aria-label="Texte de la bulle" style="width:100%;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg);color:var(--text-primary);margin-bottom:8px">${esc(b.text)}</textarea>
       <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
-      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}"></label>
+      <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-ptr" min="0" max="100" step="0.5" value="${ptToV(b.pt)}" aria-label="Corps du texte"></label>
+      <div class="bl-step"><button data-act="pt-" aria-label="Plus petit">A−</button><input type="number" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}" aria-label="Corps en points"><span>pt</span><button data-act="pt+" aria-label="Plus grand">A+</button></div>
       <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
         <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
 }
@@ -772,6 +776,7 @@ async function onDock(e) {
   else if (a === 'pick-font') fontModal();
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
+  else if (a === 'pt-' || a === 'pt+') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.pt = Math.max(5, Math.min(200, +(b.pt + (a === 'pt+' ? 1 : -1) * (b.pt < 24 ? 0.5 : b.pt < 60 ? 1 : 2)).toFixed(1))); refitBubble(b); commitBubbleEdit(b, before); renderDock(); const fl = $('#bfloat', root); if (fl) fl._html = ''; placeBubbleUI(); renderPop(); } }
   else if (a === 'tpl-save') {
     bfTab = null; placeBubbleUI();
     const b = bubble();
@@ -847,6 +852,10 @@ function initBubbleUI() {
   fl.addEventListener('input', e => { onDockInput0(e); const id = e.target.id; if (STRUCTURAL.includes(id)) { fl._html = ''; placeBubbleUI(); } });
   fl.addEventListener('change', e => { onDockChange(e); fl._html = ''; placeBubbleUI(); });
   fl.addEventListener('focusin', onDockFocus);
+  // pendant qu'on règle un curseur, la barre et la liste ne suivent plus la bulle (elle grossit avec le corps du texte : la liste fuirait sous le doigt)
+  fl.addEventListener('pointerdown', () => { fl._frozen = true; });
+  const thaw = () => { if (fl._frozen) { fl._frozen = false; placeBubbleUI(); } };
+  window.addEventListener('pointerup', thaw); window.addEventListener('pointercancel', thaw);
   ta.addEventListener('input', () => { const b = bubble(); if (!b) return; b.text = ta.value; refitBubble(b); markChanged(); requestRender(); });
   ta.addEventListener('blur', () => {
     const b = bubble();
@@ -894,7 +903,7 @@ function placeBubbleUI() {
     }
   }
   fl.hidden = !ta.hidden || !!b.locked;
-  if (fl.hidden) return;
+  if (fl.hidden || fl._frozen) return;
   const bar = fl.querySelector('.bfbar'), w = Math.max(bar ? bar.offsetWidth : 360, drop ? 330 : 0), barH = 52, rh = bubbleRotHandle(b);
   let top = rh.y - 20 - barH;
   if (top < 6) { const bottom = toScreen(b.x + b.w / 2, b.y + b.h); top = Math.min(view.h - barH - 6, bottom.y + 44); }
@@ -953,7 +962,14 @@ function onDockInput0(e) {
   if (!b || !/^b-/.test(id)) return;
   if (!bubbleBefore) bubbleBefore = snapshotBubble(b);
   if (id === 'b-text') { b.text = e.target.value; refitBubble(b); }
-  else if (id === 'b-pt') { b.pt = +e.target.value; e.target.previousElementSibling.textContent = `Corps : ${b.pt} pt`; refitBubble(b); }
+  else if (id === 'b-ptr' || id === 'b-pt') {   // curseur logarithmique (fin pour les petits corps, large pour les gros) ou champ numérique
+    const v = +e.target.value;
+    if (id === 'b-ptr') b.pt = vToPt(v); else if (v >= 5 && v <= 200) b.pt = v; else return;
+    const host = e.target.closest('.bfdrop, .pop-body') || root, lab = host.querySelector('#b-ptr') && host.querySelector('#b-ptr').previousElementSibling, num = host.querySelector('#b-pt'), rng = host.querySelector('#b-ptr');
+    if (lab) lab.textContent = `Corps : ${b.pt} pt`;
+    if (id === 'b-ptr' && num) num.value = b.pt; if (id === 'b-pt' && rng) rng.value = ptToV(b.pt);
+    refitBubble(b);
+  }
   else if (id === 'b-caps') { b.caps = e.target.checked; refitBubble(b); }
   else if (id === 'b-auto') { b.auto = e.target.checked; refitBubble(b); }
   else if (id === 'b-kind') {

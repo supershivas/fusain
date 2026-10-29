@@ -408,3 +408,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .bfdrop.side { position: absolute; top: 58px; margin-top: 0; }
 .bedit { position: absolute; z-index: 7; box-sizing: border-box; padding: 8px; text-align: center; font-size: 16px; line-height: 1.25; border: 2px solid var(--accent); border-radius: 14px; background: rgba(255,255,255,.96); color: #000; resize: none; margin: 0; -webkit-user-select: text; user-select: text; transform-origin: center; }
 @media (max-width: 520px) { .bfbar > button.tab span { display: none; } }
+
+.bl-step { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.bl-step button { min-width: 44px; height: 40px; border: 1px solid var(--border); border-radius: var(--radius-md); font-weight: 600; background: var(--card-bg); }
+.bl-step input[type=number] { width: 84px; height: 40px; text-align: center; font-size: 16px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-primary); }
