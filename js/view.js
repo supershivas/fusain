@@ -290,10 +290,26 @@ export function edgePluses(p) {
   });
 }
 
+// Aperçu d'ajout de case : poignée sur la ligne pointillée (elle règle la part de la nouvelle case) et pilule ✕ ✓ au centre de la nouvelle case
+// (au centre de la case coupée si la nouvelle est trop étroite à l'écran). Positions en pixels d'écran ; `line` = position de la ligne dans la page.
+export function previewControls(ap) {
+  const pv = ed.addPreview;
+  if (!pv || pv.panelId !== ap.id) return null;
+  const sp = splitRects(ap, pv.side, ed.addRatio / 100);
+  if (!sp) return null;
+  const f = sp.fresh, horiz = pv.side === 'left' || pv.side === 'right';
+  const line = { right: f.x, left: f.x + f.w, bottom: f.y, top: f.y + f.h }[pv.side];
+  const hp = horiz ? toScreen(line, f.y + f.h / 2) : toScreen(f.x + f.w / 2, line);
+  const room = f.w * view.s >= 130 && f.h * view.s >= 70, r = room ? f : sp.old;
+  const c = toScreen(r.x + r.w / 2, r.y + r.h / 2);
+  return { side: pv.side, horiz, line, fresh: f, handle: { x: hp.x, y: hp.y, r: 22 }, ok: { x: c.x + 27, y: c.y, r: 22 }, no: { x: c.x - 27, y: c.y, r: 22 } };
+}
+
 // Poignées des gouttières : un trait le long de chaque gouttière, une tirette en son milieu et un « + » pour ajouter une case.
 function drawGutters(pg, accent) {
   const g = overlay.guide;
-  for (const h of gutterHandles()) {
+  const adding = !!(ed.addPreview && ed.addPreview.panelId === ed.panelId);   // pendant un ajout de case, les poignées de gouttière sont masquées
+  for (const h of adding ? [] : gutterHandles()) {
     const v = h.axis === 'v', a = toScreen(v ? h.pos : h.span[0], v ? h.span[0] : h.pos), b = toScreen(v ? h.pos : h.span[1], v ? h.span[1] : h.pos);
     ctx.strokeStyle = accent; ctx.globalAlpha = 0.35; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.globalAlpha = 1;
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, w = v ? 16 : 44, hh = v ? 44 : 16;
@@ -309,12 +325,32 @@ function drawGutters(pg, accent) {
       ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = accent; poly(sp.fresh); ctx.fill(); ctx.restore();
       ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([7, 5]); poly(sp.fresh); ctx.stroke(); ctx.setLineDash([]);
     }
-    for (const pl of edgePluses(ap)) {
-      const ok = !!splitRects(ap, pl.side, ed.addRatio / 100), on = pv && pv.side === pl.side;
-      ctx.globalAlpha = ok ? 1 : 0.35;
-      ctx.fillStyle = on ? accent : '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = on ? '#fff' : accent; ctx.beginPath(); ctx.moveTo(pl.x - 6, pl.y); ctx.lineTo(pl.x + 6, pl.y); ctx.moveTo(pl.x, pl.y - 6); ctx.lineTo(pl.x, pl.y + 6); ctx.stroke();
-      ctx.globalAlpha = 1;
+    const pc = pv && sp ? previewControls(ap) : null;
+    if (pc) {
+      // poignée de la ligne pointillée
+      const hd = pc.handle, w = pc.horiz ? 18 : 48, hh = pc.horiz ? 48 : 18;
+      ctx.fillStyle = accent; ctx.beginPath(); ctx.roundRect(hd.x - w / 2, hd.y - hh / 2, w, hh, 9); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
+      if (pc.horiz) { ctx.moveTo(hd.x - 3, hd.y - 6); ctx.lineTo(hd.x - 6, hd.y); ctx.lineTo(hd.x - 3, hd.y + 6); ctx.moveTo(hd.x + 3, hd.y - 6); ctx.lineTo(hd.x + 6, hd.y); ctx.lineTo(hd.x + 3, hd.y + 6); }
+      else { ctx.moveTo(hd.x - 6, hd.y - 3); ctx.lineTo(hd.x, hd.y - 6); ctx.lineTo(hd.x + 6, hd.y - 3); ctx.moveTo(hd.x - 6, hd.y + 3); ctx.lineTo(hd.x, hd.y + 6); ctx.lineTo(hd.x + 6, hd.y + 3); }
+      ctx.stroke();
+      ctx.font = "600 12px 'Inter', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const label = Math.round(ed.addRatio) + ' %', lx = pc.horiz ? hd.x + (pc.side === 'right' ? -34 : 34) : hd.x + 40, ly = pc.horiz ? hd.y - 40 : hd.y + (pc.side === 'bottom' ? -18 : 18);
+      ctx.fillStyle = 'rgba(28,28,30,.85)'; ctx.beginPath(); ctx.roundRect(lx - 22, ly - 11, 44, 22, 6); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(label, lx, ly);
+      // pilule ✕ ✓
+      const mx = (pc.ok.x + pc.no.x) / 2, my = pc.ok.y;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(mx - 52, my - 26, 104, 52, 26); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = '#555'; ctx.beginPath(); ctx.moveTo(pc.no.x - 7, my - 7); ctx.lineTo(pc.no.x + 7, my + 7); ctx.moveTo(pc.no.x + 7, my - 7); ctx.lineTo(pc.no.x - 7, my + 7); ctx.stroke();
+      ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(pc.ok.x, my, 20, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.moveTo(pc.ok.x - 8, my); ctx.lineTo(pc.ok.x - 2, my + 7); ctx.lineTo(pc.ok.x + 9, my - 7); ctx.stroke();
+    } else {
+      for (const pl of edgePluses(ap)) {
+        const ok = !!splitRects(ap, pl.side, ed.addRatio / 100);
+        ctx.globalAlpha = ok ? 1 : 0.35;
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pl.x - 6, pl.y); ctx.lineTo(pl.x + 6, pl.y); ctx.moveTo(pl.x, pl.y - 6); ctx.lineTo(pl.x, pl.y + 6); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
   }
   if (g) {

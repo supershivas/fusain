@@ -497,6 +497,13 @@ export function addCaseAt(panelId, side, ratio = 0.5) {
   return np;
 }
 
+// Valide ou abandonne l'aperçu d'ajout de case (`ed.addPreview`).
+export function confirmAdd() {
+  const pv = ed.addPreview; ed.addPreview = null; notify('tool');
+  return pv ? addCaseAt(pv.panelId, pv.side, ed.addRatio / 100) : null;
+}
+export function cancelAdd() { if (!ed.addPreview) return; ed.addPreview = null; notify('tool'); requestRender(); }
+
 export function deletePanel() {
   const pg = page(), p = panel();
   if (pg.panels.length < 2) return false;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.19.0 — 2026-10-29
+- Ajout de case : la taille se règle en faisant glisser la poignée sur la ligne pointillée (aimant à 25, 33, 50, 67 et 75 %)
+- Pilule ✕ ✓ au centre de la nouvelle case pour abandonner ou ajouter ; les poignées de gouttière sont masquées pendant l'ajout
+
 ## 1.18.0 — 2026-10-29
 - Ajout de case : un « + » sur chaque bord de la case active, avec aperçu de la nouvelle case et part réglable (20 à 80 %), puis Valider
 - On peut maintenant diviser une page à case unique ; les « + » des gouttières disparaissent

@@ -1,13 +1,14 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, addCaseAt, splitRects, targetLayer, deleteBubble,
+  ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses } from './view.js';
+import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls } from './view.js';
+import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 
@@ -141,6 +142,8 @@ export function move(pt) {
     const h = session.h, v = h.axis === 'v', d = clampGutter(h, (v ? pt.x - session.x0 : pt.y - session.y0));
     session.d = d;
     setOverlay({ guide: { axis: h.axis, pos: h.pos + d, s0: h.span[0], s1: h.span[1] } });
+  } else if (session.kind === 'ratio') {
+    ratioMove(pt);
   } else if (session.kind === 'free') {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
@@ -196,20 +199,36 @@ export function cancel() {
 
 // ───────────────────────── Gouttières ─────────────────────────
 
+// La poignée de l'aperçu d'ajout suit le doigt : la part de la nouvelle case s'ajuste (20 à 80 %), avec un aimant à 25, 33, 50, 67 et 75 %.
+function ratioMove(pt) {
+  const s = session, p = s.ap, gap = mmToPx(ed.project.gutter, ed.project.dpi);
+  const L = (s.horiz ? pt.x : pt.y) - s.off, total = (s.horiz ? p.w : p.h) - gap;
+  const fresh = { right: p.x + p.w - L, left: L - p.x, bottom: p.y + p.h - L, top: L - p.y }[s.side];
+  let r = Math.max(0.2, Math.min(0.8, fresh / total));
+  for (const m of [0.25, 1 / 3, 0.5, 2 / 3, 0.75]) if (Math.abs(r - m) < 0.02) r = m;
+  if (!splitRects(p, s.side, r)) return;
+  ed.addRatio = r * 100;
+  setOverlay({});
+}
+
+
 // On attrape une gouttière n'importe où le long de son trait.
 function layoutDown(pt) {
   const R = pt.type === 'touch' ? 28 : 18, at = toScreen(pt.x, pt.y);
-  const ap = page().panels.find(p => p.id === ed.panelId);
-  if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : un premier toucher montre la case, un second (ou « Valider ») l'ajoute
+  const ap = page().panels.find(p => p.id === ed.panelId), pc = ap && previewControls(ap), near = (c, r) => Math.hypot(at.x - c.x, at.y - c.y) <= r + (pt.type === 'touch' ? 6 : 2);
+  const added = () => toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
+  if (pc) {   // aperçu en cours : ✓ ajoute, ✕ abandonne, la poignée de la ligne pointillée règle la part de la nouvelle case
+    if (near(pc.ok, pc.ok.r)) { if (confirmAdd()) added(); setOverlay({}); return; }
+    if (near(pc.no, pc.no.r)) { cancelAdd(); return; }
+    if (near(pc.handle, pc.handle.r)) { session = { kind: 'ratio', ap, side: pc.side, horiz: pc.horiz, off: (pc.horiz ? pt.x : pt.y) - pc.line }; return; }
+    cancelAdd(); return;   // un toucher ailleurs abandonne l'aperçu sans rien faire d'autre
+  }
+  if (ap) for (const pl of edgePluses(ap)) {   // « + » d'un bord de la case active : montre la future case (réglée ensuite par sa poignée)
     if (Math.hypot(at.x - pl.x, at.y - pl.y) > pl.r + (pt.type === 'touch' ? 10 : 4)) continue;
     if (!splitRects(ap, pl.side, ed.addRatio / 100)) { toast('Cette case est trop petite pour être coupée de ce côté.'); return; }
-    if (ed.addPreview && ed.addPreview.panelId === ap.id && ed.addPreview.side === pl.side) {
-      ed.addPreview = null;
-      if (addCaseAt(ap.id, pl.side, ed.addRatio / 100)) toast('Case ajoutée.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
-    } else ed.addPreview = { panelId: ap.id, side: pl.side };
+    ed.addPreview = { panelId: ap.id, side: pl.side };
     notify('tool'); setOverlay({}); return;
   }
-  if (ed.addPreview) { ed.addPreview = null; notify('tool'); setOverlay({}); }
   let best = null;
   for (const h of gutterHandles()) {
     const v = h.axis === 'v', along = v ? pt.y : pt.x, across = Math.abs((v ? pt.x : pt.y) - h.pos) * view.s;
