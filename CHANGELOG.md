@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.25.2 — 2026-10-29
+- Taille du texte des bulles : le curseur ne saute plus à 200 pt sur iPad (la liste n'est plus reconstruite sous le doigt)
+
 ## 1.25.1 — 2026-10-29
 - Taille du texte des bulles : curseur logarithmique (précis pour les petits corps), champ numérique et boutons A− / A+
 - La liste de réglages ne bouge plus sous le doigt quand la bulle grossit pendant le réglage

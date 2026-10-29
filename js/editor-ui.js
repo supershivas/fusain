@@ -854,7 +854,8 @@ function initBubbleUI() {
   fl.addEventListener('focusin', onDockFocus);
   // pendant qu'on règle un curseur, la barre et la liste ne suivent plus la bulle (elle grossit avec le corps du texte : la liste fuirait sous le doigt)
   fl.addEventListener('pointerdown', () => { fl._frozen = true; });
-  const thaw = () => { if (fl._frozen) { fl._frozen = false; placeBubbleUI(); } };
+  // le dégel attend un peu : reconstruire la barre entre le relâchement et le « click » ferait perdre le toucher
+  const thaw = () => { if (fl._frozen) setTimeout(() => { fl._frozen = false; fl._html = ''; placeBubbleUI(); }, 80); };
   window.addEventListener('pointerup', thaw); window.addEventListener('pointercancel', thaw);
   ta.addEventListener('input', () => { const b = bubble(); if (!b) return; b.text = ta.value; refitBubble(b); markChanged(); requestRender(); });
   ta.addEventListener('blur', () => {
@@ -897,7 +898,7 @@ function placeBubbleUI() {
   const a = document.activeElement, typing = fl.contains(a) && a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
   if (fl._html !== html) {
     fl._html = html;
-    if (!typing) {   // pas de reconstruction sous un doigt qui règle un curseur ou tape
+    if (!typing && !fl._frozen) {   // pas de reconstruction sous un doigt qui règle un curseur ou tape (Safari ne donne pas le focus aux curseurs : on regarde aussi le doigt posé)
       const keep = fl.querySelector('.bfdrop') ? fl.querySelector('.bfdrop').scrollTop : 0;
       fl.innerHTML = html; const d = fl.querySelector('.bfdrop'); if (d) d.scrollTop = keep;
     }
