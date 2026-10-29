@@ -1,7 +1,8 @@
 {
-  "version": "1.21.1",
+  "version": "1.22.0",
   "date": "2026-10-29",
   "changes": [
-    "Bulles : quand la base de la queue est à droite de sa pointe, la courbure s'inverse automatiquement (queue en miroir)"
+    "Bulles nuage : plus d'artefacts dans les creux, et de vrais réglages (nombre de lobes, bombé, creux arrondis)",
+    "Bulles éclair : creux et pointes arrondis réglables ; nouveaux modèles « Nuage doux » et « Éclair arrondi »"
   ]
 }

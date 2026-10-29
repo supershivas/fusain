@@ -627,6 +627,8 @@ function pagesTab() {
 const SLIDERS = {
   'b-radius': ['radius', v => `Angles arrondis : ${v} %`], 'b-wobble': ['wobble', v => `Imperfections : ${v} %`],
   'b-pad': ['pad', v => `Marge intérieure : ${String(v).replace('.', ',')} mm`], 'b-stroke': ['stroke', v => `Trait : ${v.toFixed(2).replace('.', ',')} mm`],
+  'b-lobes': ['lobes', v => `Lobes : ${v ? v : 'auto'}`], 'b-bulge': ['bulge', v => `Bombé des lobes : ${v} %`],
+  'b-vround': ['valleyRound', v => `Creux arrondis : ${v} %`], 'b-tround': ['tipRound', v => `Pointes arrondies : ${v} %`],
   'b-spikes': ['spikes', v => `Pointes : ${v}`], 'b-depth': ['depth', v => `Profondeur : ${v} %`],
   'b-rot': ['rot', v => `Rotation : ${v}°`],
   'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
@@ -648,7 +650,8 @@ function bubbleShape(b) {
   const p = props(b);
   return `<label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
-      ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) : ''}
+      ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) + slider('b-vround', p, 0, 100, 5) + slider('b-tround', p, 0, 100, 5) : ''}
+      ${p.shape === 'cloud' ? slider('b-lobes', p, 0, 40) + slider('b-bulge', p, 0, 100, 5) + `<label class="check compact"><input type="checkbox" id="b-cloudsoft" ${p.cloudSoft ? 'checked' : ''}> Creux arrondis (nuage doux)</label>` : ''}
       ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' || p.shape === 'eclair' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
       ${slider('b-pad', p, 0, 10, 0.5)}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
       <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
@@ -799,7 +802,7 @@ function setTail(b, on) {
 }
 
 // Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
-const STYLE_KEYS = ['spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+const STYLE_KEYS = ['lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
 function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
@@ -862,6 +865,7 @@ function onDockInput0(e) {
     if (key === 'rot' && !b.rot) delete b.rot;
     if (key === 'pad') refitBubble(b);
   }
+  else if (id === 'b-cloudsoft') { if (e.target.checked) b.cloudSoft = 1; else b.cloudSoft = 0; }
   else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else { delete b.clip; delete b.noFrame; } }
   else if (id === 'b-noframe') { if (e.target.checked) b.noFrame = true; else delete b.noFrame; }
   else if (id === 'b-samestroke') { if (e.target.checked) b.sameStroke = true; else delete b.sameStroke; }

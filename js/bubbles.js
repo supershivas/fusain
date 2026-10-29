@@ -23,7 +23,7 @@ export const TAILS = [
 //  wobble : imperfection du contour (0 = géométrique, 100 = très tremblé)
 //  tailW : largeur de la base de la queue, en % du petit côté ; tailRound : -100 creuse … +100 bombée ;
 //  tailBend : courbure d'ensemble (-100 … +100) ; tailTip : pointe émoussée (0 = aiguë)
-const BASE = { spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
+const BASE = { lobes: 0, bulge: 30, cloudSoft: 0, valleyRound: 0, tipRound: 0, spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
 const PRESETS = {
   parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
   pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
@@ -38,6 +38,8 @@ export const BUBBLE_TEMPLATES = [
   { id: 'mon-style', name: 'Mon style BD', kind: 'parole', style: { shape: 'rect', radius: 10, wobble: 45, pad: 6, sameStroke: true, clip: true, noFrame: true,
     tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: true, auto: false } },
   { id: 'eclair-fort', name: 'Cri très pointu', kind: 'cri', style: { spikes: 18, depth: 42, wobble: 45, stroke: 0.6 } },
+  { id: 'eclair-rond', name: 'Éclair arrondi', kind: 'cri', style: { spikes: 12, depth: 26, wobble: 25, valleyRound: 75, tipRound: 10 } },
+  { id: 'nuage-doux', name: 'Nuage doux', kind: 'pensee', style: { lobes: 9, bulge: 22, cloudSoft: 1, wobble: 20 } },
 ];
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
 const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle']);
@@ -145,6 +147,8 @@ function outlinePoints(b, p) {
       const cur = corners[i], nxt = corners[(i + 1) % 4];
       pts.push(...cur, ...edge(cur[cur.length - 1], nxt[0]));
     }
+  } else if (p.shape === 'cloud') {
+    return cloudPoints(b, p, noise);
   } else if (p.shape === 'eclair') {
     // étoile à pointes irrégulières : pointes sur l'ellipse, creux à `depth` % vers le centre ; wobble = irrégularité des longueurs
     const n = Math.max(4, Math.round(p.spikes)), j = p.wobble / 100;
@@ -207,22 +211,41 @@ function polygon(ctx, pts) {
   ctx.closePath();
 }
 
-function traceCloud(ctx, b, p, lw) {
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2, noise = noiseFn(b);
-  const n = Math.max(10, Math.round((rx + ry) / (Math.max(lw, 2) * 4)));
-  const bump = i => 1.16 + p.wobble / 100 * 0.14 * noise((i + 0.5) / n);
+// Nuage : `lobes` bosses (0 = selon la taille, jamais selon le trait : le remplissage et le contour doivent coïncider), `bulge` = hauteur des bosses,
+// `cloudSoft` = creux arrondis (sinon pointus) ; `wobble` fait varier la hauteur de chaque bosse. Le même contour sert au tracé et à l'accroche de la queue.
+function cloudPoints(b, p, noise) {
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, rx = b.w / 2, ry = b.h / 2;
+  const n = p.lobes > 0 ? Math.round(p.lobes) : Math.max(8, Math.min(40, Math.round((rx + ry) / 38)));
+  const base = 1.0, per = 16, pts = [];
+  const height = i => (0.04 + p.bulge / 100 * 0.4) * (1 + p.wobble / 100 * 0.6 * noise((i + 0.5) / n));
   for (let i = 0; i < n; i++) {
-    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2, am = (a0 + a1) / 2, k = bump(i);
-    if (i === 0) ctx.moveTo(cx + Math.cos(a0) * rx, cy + Math.sin(a0) * ry);
-    ctx.quadraticCurveTo(cx + Math.cos(am) * rx * k, cy + Math.sin(am) * ry * k, cx + Math.cos(a1) * rx, cy + Math.sin(a1) * ry);
+    const h = Math.max(0.02, height(i));
+    for (let s = 0; s < per; s++) {
+      const u = s / per, a = (i + u) / n * Math.PI * 2;
+      const bump = p.cloudSoft ? 0.5 - 0.5 * Math.cos(u * Math.PI * 2) : Math.pow(Math.sin(u * Math.PI), 0.62);   // creux arrondis ou pointus
+      const r = (base + h * bump) / (1 + h * 0.3);
+      pts.push({ x: cx + Math.cos(a) * rx * r * 1.0, y: cy + Math.sin(a) * ry * r * 1.0 });
+    }
+  }
+  return pts;
+}
+
+// Éclair : les creux (`valleyRound`) et les pointes (`tipRound`) peuvent être arrondis, en courbes (même rendu écran et PDF).
+function traceEclair(ctx, pts, p) {
+  const n = pts.length, mix = (a, c, f) => ({ x: a.x + (c.x - a.x) * f, y: a.y + (c.y - a.y) * f });
+  const round = i => (i % 2 === 0 ? p.tipRound : p.valleyRound) / 100 * 0.45;
+  for (let i = 0; i < n; i++) {
+    const v = pts[i], f = round(i), a = mix(v, pts[(i + n - 1) % n], f), c = mix(v, pts[(i + 1) % n], f);
+    if (i === 0) ctx.moveTo(a.x, a.y); else ctx.lineTo(a.x, a.y);
+    if (f > 0) ctx.quadraticCurveTo(v.x, v.y, c.x, c.y); else ctx.lineTo(v.x, v.y);
   }
   ctx.closePath();
 }
 
 function traceShape(ctx, b, p, pts, lw) {
   ctx.beginPath();
-  if (p.shape === 'cloud') traceCloud(ctx, b, p, lw);
-  else if (p.shape === 'eclair') polygon(ctx, pts);
+  if (p.shape === 'cloud') polygon(ctx, pts);
+  else if (p.shape === 'eclair') traceEclair(ctx, pts, p);
   else if (p.shape === 'rect') {
     if (p.wobble > 0) polygon(ctx, pts);
     else { const r = p.radius / 100 * Math.min(b.w, b.h) / 2; if (r > 0 && ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, r); else ctx.rect(b.x, b.y, b.w, b.h); }

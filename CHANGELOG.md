@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.22.0 — 2026-10-29
+- Bulles nuage : plus d'artefacts dans les creux, et de vrais réglages (nombre de lobes, bombé, creux arrondis)
+- Bulles éclair : creux et pointes arrondis réglables ; nouveaux modèles « Nuage doux » et « Éclair arrondi »
+
 ## 1.21.1 — 2026-10-29
 - Bulles : quand la base de la queue est à droite de sa pointe, la courbure s'inverse automatiquement (queue en miroir)
 
