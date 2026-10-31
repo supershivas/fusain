@@ -54,9 +54,14 @@ export const toScreen = (px, py) => {
 
 export function clampView() {
   const { w, h } = pageDims(), m = 80;
-  if (view.r) {   // page tournée : on garde seulement son centre dans la zone
-    const c = toScreen(w / 2, h / 2), dx = Math.min(view.w - m, Math.max(m, c.x)) - c.x, dy = Math.min(view.h - m, Math.max(m, c.y)) - c.y;
-    view.ox += dx; view.oy += dy; return;
+  if (view.r) {   // page tournée : le centre de la zone visible doit rester sur la page (marge m), sans jamais ramener la page vers son centre
+    const p = toPage(view.w / 2, view.h / 2), k = m / view.s;
+    const qx = Math.min(w + k, Math.max(-k, p.x)), qy = Math.min(h + k, Math.max(-k, p.y));
+    if (qx !== p.x || qy !== p.y) {
+      const a = toScreen(qx, qy);   // où se trouverait le point autorisé ; on le ramène au centre de la zone
+      view.ox += view.w / 2 - a.x; view.oy += view.h / 2 - a.y;
+    }
+    return;
   }
   view.ox = Math.min(view.w - m, Math.max(m - w * view.s, view.ox));
   view.oy = Math.min(view.h - m, Math.max(m - h * view.s, view.oy));

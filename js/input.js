@@ -2,7 +2,7 @@
 // Repris de Pixel Studio (touch.js) : le stylet dessine toujours, ses appuis font ignorer les doigts ;
 // deux doigts zooment et déplacent (tape à deux doigts : annuler, à trois : rétablir).
 import { ed, page, selectPanel } from './editor.js';
-import { view, toPage, zoomAt, panBy, setView, setOverlay, canvasEl } from './view.js';
+import { view, toPage, zoomAt, panBy, setView, setOverlay, canvasEl, pageDims } from './view.js';
 import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
@@ -219,7 +219,8 @@ function moveGesture() {
   if (Math.abs(da) > 0.14) g.spin = da - Math.sign(da) * 0.14; else if (!g.spin) g.spin = 0;
   if (!g.moved && (Math.abs(m.dist - g.dist0) > 14 || Math.hypot(m.mx - g.mx0, m.my - g.my0) > 14 || g.spin)) g.moved = true;
   if (!g.moved) return;
-  const s = g.s0 * m.dist / g.dist0;
+  const { w: pw } = pageDims(), minS = Math.min(view.w / pw, 0.5) * 0.4;
+  const s = Math.max(minS, Math.min(16, g.s0 * m.dist / g.dist0));   // même borne que setView : le point d'ancrage reste exact
   let r = g.r0 + g.spin;
   // aimant aux angles courants (0, 45, 90…) à moins de 5°
   const step = Math.PI / 4, near = Math.round(r / step) * step;

@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.26.1 — 2026-10-31
+- Zoom à deux doigts avec la page tournée : il zoome bien sous les doigts au lieu de revenir vers le centre de la page
+
 ## 1.26.0 — 2026-10-29
 - Nouvel outil Sélection : automatique, main levée, polygone, rectangle, ellipse ; on déplace le contenu d'une case (ou toute la case)
 - Interface façon Procreate : réglages de l'outil en bas de l'écran, plein écran et masquage du panneau en bas du panneau de droite
