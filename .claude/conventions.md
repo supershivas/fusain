@@ -312,6 +312,10 @@ c'est une app à part.
    roue crantée à droite) avec version et changelog dans les réglages,
    et la vérification de mise à jour.
 4. Propose-moi d'ajouter l'app au tableau du README de `design-system`.
+5. Le hub (`supershivas/hub`, https://supershivas.github.io/hub/) ajoute tout seul
+   chaque nouveau dépôt public, toutes les 6 heures. Pour qu'il le classe bien,
+   donne au dépôt une description GitHub et, pour un jeu ou un site, le topic
+   `game` (ou `jeu`) ou `site`. Rien d'autre à faire.
 
 ## Évolution de ces règles
 
