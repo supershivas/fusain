@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.27.0 — 2026-10-31
+- Annuler / rétablir tiennent aussi compte de la sélection (créer, ajouter, retirer, tout, inverser, désélectionner)
+- Déplacer une sélection s'annule d'un seul coup : pixels et sélection reviennent ensemble
+
 ## 1.26.1 — 2026-10-31
 - Zoom à deux doigts avec la page tournée : il zoome bien sous les doigts au lieu de revenir vers le centre de la page
 

@@ -112,7 +112,7 @@ export function mountEditor(el) {
   pop.addEventListener('click', onDock); pop.addEventListener('input', onDockInput); pop.addEventListener('change', onDockChange); pop.addEventListener('focusin', onDockFocus);
 
   unsub = subscribe(what => {
-    if (what === 'panels' || what === 'page' || what === 'project') { polyCancel(); clearSelection(); }
+    if (what === 'panels' || what === 'page' || what === 'project') { polyCancel(); clearSelection(false); }
     if (what === 'undo') { updateUndo(); if (ed.tool === 'layout') renderOptbar(); }
     else if (what === 'sel') renderOptbar();
     else if (what === 'panels') renderAll();
@@ -182,7 +182,7 @@ export function undo() { ed.undo.undo(); markChanged(); requestRender(); }
 export function redo() { ed.undo.redo(); markChanged(); requestRender(); }
 
 function setTool(id) {
-  if (ed.tool === 'select' && id !== 'select') { polyCancel(); clearSelection(); }
+  if (ed.tool === 'select' && id !== 'select') { polyCancel(); clearSelection(false); }
   storeToolSettings();   // l'outil quitté garde ses réglages ; celui qu'on prend retrouve les siens
   ed.tool = id;
   applyToolSettings();

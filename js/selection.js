@@ -14,8 +14,15 @@ export function currentSelection(p = panel()) {
   return s && s.panelId === p.id && s.ew === p.ew && s.eh === p.eh ? s : null;
 }
 
-function setSel(sel) { ed.sel = sel; notify('sel'); requestRender(); }
-export function clearSelection() { if (ed.sel) setSel(null); }
+// Un changement de sélection voulu par l'utilisateur est une entrée d'historique (annuler / rétablir) ; record = false pour les effacements automatiques.
+function applySel(sel) { ed.sel = sel; notify('sel'); requestRender(); }
+ed.undo.onSelect = sel => { if (ed.tool === 'select') applySel(sel); };   // hors de l'outil Sélection, elle n'existe pas
+function setSel(sel, record = true) {
+  const before = ed.sel;
+  applySel(sel);
+  if (record && before !== sel) ed.undo.pushAction('Sélection', () => ed.undo.onSelect(before), () => ed.undo.onSelect(sel));
+}
+export function clearSelection(record = true) { if (ed.sel) setSel(null, record); }
 
 function boundsOf(mask, ew, box) {
   let x0 = ew, y0 = 1e9, x1 = -1, y1 = -1;
@@ -82,11 +89,11 @@ export function selectShape(p, kind, pts, op) {
   return true;
 }
 
-export function selectAll(p = panel()) {
+export function selectAll(p = panel(), record = true) {
   const f = frameOf(p), mask = new Uint8Array(p.ew * p.eh);
   for (let y = f.y0; y < f.y1; y++) mask.fill(1, y * p.ew + f.x0, y * p.ew + f.x1);
   const s = build(p, mask, f);
-  setSel(s);
+  setSel(s, record);
   return s;
 }
 
@@ -147,9 +154,9 @@ export function clearSelectionContent(p = panel()) {
 // Sans sélection, c'est tout le contenu de la case qui se déplace.
 export function beginMove(p, pt) {
   let s = currentSelection(p), implicit = false;
-  if (!s) { s = selectAll(p); implicit = true; }
+  if (!s) { s = selectAll(p, false); implicit = true; }
   const ls = targets(p);
-  if (!ls.length) { toast('Aucun calque visible et déverrouillé à déplacer.'); if (implicit) clearSelection(); return null; }
+  if (!ls.length) { toast('Aucun calque visible et déverrouillé à déplacer.'); if (implicit) clearSelection(false); return null; }
   const bw = s.x1 - s.x0, bh = s.y1 - s.y0, W = p.ew, floats = [];
   for (const l of ls) {
     if (!l.data) continue;
@@ -168,7 +175,7 @@ export function beginMove(p, pt) {
     if (x < cx0) cx0 = x; if (x >= cx1) cx1 = x + 1; if (y < cy0) cy0 = y; if (y >= cy1) cy1 = y + 1;
   }
   const limit = { x0: -(s.x0 + cx0), x1: p.ew - (s.x0 + cx1), y0: -(s.y0 + cy0), y1: p.eh - (s.y0 + cy1) };
-  if (!floats.length) { toast('Rien à déplacer dans la sélection.', { duration: 1600 }); if (implicit) clearSelection(); return null; }
+  if (!floats.length) { toast('Rien à déplacer dans la sélection.', { duration: 1600 }); if (implicit) clearSelection(false); return null; }
   ed.undo.begin(ed.selCopy ? 'Copier la sélection' : 'Déplacer');
   if (!ed.selCopy) {
     for (const f of floats) {
@@ -195,6 +202,7 @@ export function moveMove(m, pt) {
 
 export function endMove(m) {
   const { p, s, floats, bw, bh } = m, dx = s.dx, dy = s.dy;
+  s.dx = s.dy = 0;   // l'ancienne sélection, rétablie par « annuler », doit être à sa place d'origine
   for (const f of floats) {
     const l = f.layer, data = ensureData(l);
     ed.undo.touch(l, s.x0 + dx, s.y0 + dy, s.x1 + dx, s.y1 + dy);
@@ -205,20 +213,22 @@ export function endMove(m) {
       if (tx >= 0 && ty >= 0 && tx < l.w && ty < l.h) data[ty * l.w + tx] = v;
     }
   }
-  ed.undo.commit();
+  // la sélection suit son contenu, dans la même entrée d'historique que les pixels
+  let next = null;
+  if (!m.implicit) {
+    const W = p.ew, mask = new Uint8Array(W * p.eh);
+    for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) {
+      if (!s.mask[y * W + x]) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < W && ny < p.eh) mask[ny * W + nx] = 1;
+    }
+    next = build(p, mask, { x0: Math.max(0, s.x0 + dx), y0: Math.max(0, s.y0 + dy), x1: Math.min(W, s.x1 + dx), y1: Math.min(p.eh, s.y1 + dy) });
+  }
+  ed.undo.commit(m.implicit ? undefined : { before: s, after: next });
   ed.selFloat = null;
   invalidate(p, { x: Math.min(s.x0, s.x0 + dx), y: Math.min(s.y0, s.y0 + dy), w: bw + Math.abs(dx), h: bh + Math.abs(dy) });
   markChanged();
-  if (m.implicit) { setSel(null); return; }
-  // la sélection suit son contenu
-  const W = p.ew, mask = new Uint8Array(W * p.eh);
-  for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) {
-    if (!s.mask[y * W + x]) continue;
-    const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && ny >= 0 && nx < W && ny < p.eh) mask[ny * W + nx] = 1;
-  }
-  const box = { x0: Math.max(0, s.x0 + dx), y0: Math.max(0, s.y0 + dy), x1: Math.min(W, s.x1 + dx), y1: Math.min(p.eh, s.y1 + dy) };
-  setSel(build(p, mask, box));
+  applySel(next);   // pour une sélection implicite : next vaut null, la case entière n'était qu'un moyen
 }
 
 // Geste interrompu : tout revient en place, sans rien empiler.
@@ -226,5 +236,5 @@ export function cancelMove(m) {
   ed.undo.rollback();
   ed.selFloat = null; m.s.dx = m.s.dy = 0;
   invalidate(m.p, { x: m.s.x0, y: m.s.y0, w: m.bw, h: m.bh });
-  if (m.implicit) setSel(null); else requestRender();
+  if (m.implicit) applySel(null); else requestRender();
 }

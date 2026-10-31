@@ -12,7 +12,7 @@ export const INK = 1, PAPER = 2;
 export class UndoStack {
   constructor(limitBytes = 96 * 1024 * 1024) {
     this.stack = []; this.ptr = 0; this.bytes = 0; this.limit = limitBytes;
-    this.cur = null; this.onApply = () => {}; this.onChange = () => {};
+    this.cur = null; this.onApply = () => {}; this.onChange = () => {}; this.onSelect = () => {};
   }
   get canUndo() { return this.ptr > 0; }
   get canRedo() { return this.ptr < this.stack.length; }
@@ -42,7 +42,8 @@ export class UndoStack {
   }
 
   // Termine l'action : ne garde que les tuiles réellement modifiées.
-  commit() {
+  // sel = { before, after } : la sélection fait partie de la même entrée (annuler / rétablir la remettent avec les pixels).
+  commit(sel) {
     const cur = this.cur; this.cur = null;
     if (!cur) return null;
     const ops = [];
@@ -57,7 +58,7 @@ export class UndoStack {
       if (!same) ops.push({ ...t, after });
     }
     if (!ops.length) return null;
-    return this._push({ label: cur.label, ops, bytes: ops.reduce((s, o) => s + o.before.length * 2, 0) });
+    return this._push({ label: cur.label, ops, sel, bytes: ops.reduce((s, o) => s + o.before.length * 2, 0) });
   }
 
   // Annule l'action en cours (geste interrompu) : remet les tuiles d'origine sans rien empiler.
@@ -90,6 +91,7 @@ export class UndoStack {
     if (!this.canUndo) return null;
     const e = this.stack[--this.ptr];
     if (e.ops) for (const t of e.ops) this._write(t, t.before); else e.undo();
+    if (e.sel) this.onSelect(e.sel.before);
     this.onChange();
     return e;
   }
@@ -97,6 +99,7 @@ export class UndoStack {
     if (!this.canRedo) return null;
     const e = this.stack[this.ptr++];
     if (e.ops) for (const t of e.ops) this._write(t, t.after); else e.redo();
+    if (e.sel) this.onSelect(e.sel.after);
     this.onChange();
     return e;
   }

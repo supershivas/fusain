@@ -1,7 +1,8 @@
 {
-  "version": "1.26.1",
+  "version": "1.27.0",
   "date": "2026-10-31",
   "changes": [
-    "Zoom à deux doigts avec la page tournée : il zoome bien sous les doigts au lieu de revenir vers le centre de la page"
+    "Annuler / rétablir tiennent aussi compte de la sélection (créer, ajouter, retirer, tout, inverser, désélectionner)",
+    "Déplacer une sélection s'annule d'un seul coup : pixels et sélection reviennent ensemble"
   ]
 }
