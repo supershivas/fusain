@@ -1,7 +1,7 @@
 {
-  "version": "1.27.1",
+  "version": "1.28.0",
   "date": "2026-10-31",
   "changes": [
-    "Zoom à deux doigts avec la page tournée : le point sous les doigts reste en place, y compris près des bords de la page"
+    "Bulles : on peut aligner le texte à gauche, au centre ou à droite, et en haut, au milieu ou en bas (onglet Texte)"
   ]
 }

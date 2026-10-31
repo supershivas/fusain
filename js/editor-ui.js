@@ -714,6 +714,10 @@ function bubbleText(b) {
       <button class="btn small" data-act="pick-font" style="justify-content:flex-start;width:100%;margin-bottom:6px">${icon('typography')} ${esc(fontName(p.font))}</button>
       <label class="field inline"><span>Corps : ${b.pt} pt</span><input type="range" id="b-ptr" min="0" max="100" step="0.5" value="${ptToV(b.pt)}" aria-label="Corps du texte"></label>
       <div class="bl-step"><button data-act="pt-" aria-label="Plus petit">A−</button><input type="number" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}" aria-label="Corps en points"><span>pt</span><button data-act="pt+" aria-label="Plus grand">A+</button></div>
+      <div class="row tight" style="margin:2px 0 6px;align-items:center;gap:6px 10px">
+        <span class="seg" role="group" aria-label="Alignement horizontal du texte">${[['left', 'align-left', 'À gauche'], ['center', 'align-center', 'Centré'], ['right', 'align-right', 'À droite']].map(([id, ic, n]) => `<button type="button" data-act="talign" data-v="${id}" class="${p.align === id ? 'on' : ''}" aria-label="${n}" aria-pressed="${p.align === id}" title="${n}">${icon(ic)}</button>`).join('')}</span>
+        <span class="seg" role="group" aria-label="Alignement vertical du texte">${[['top', 'layout-align-top', 'En haut'], ['middle', 'layout-align-middle', 'Au milieu'], ['bottom', 'layout-align-bottom', 'En bas']].map(([id, ic, n]) => `<button type="button" data-act="tvalign" data-v="${id}" class="${p.valign === id ? 'on' : ''}" aria-label="${n}" aria-pressed="${p.valign === id}" title="${n}">${icon(ic)}</button>`).join('')}</span></div>
+      ${b.auto && p.valign !== 'middle' ? '<small class="note">L\'alignement vertical se voit quand « Taille auto » est décoché.</small>' : ''}
       <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
         <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
 }
@@ -841,6 +845,10 @@ async function onDock(e) {
   else if (a === 'reseed') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.seed = Math.floor(Math.random() * 1e6); commitBubbleEdit(b, before); requestRender(); } }
   else if (a === 'copy-case') copyModal();
   else if (a === 'pt-' || a === 'pt+') { const b = bubble(); if (b) { const before = snapshotBubble(b); b.pt = Math.max(5, Math.min(200, +(b.pt + (a === 'pt+' ? 1 : -1) * (b.pt < 24 ? 0.5 : b.pt < 60 ? 1 : 2)).toFixed(1))); refitBubble(b); commitBubbleEdit(b, before); renderDock(); const fl = $('#bfloat', root); if (fl) fl._html = ''; placeBubbleUI(); renderPop(); } }
+  else if (a === 'talign' || a === 'tvalign') {
+    const b = bubble(), v = act.dataset.v;
+    if (b && v) { const before = snapshotBubble(b); b[a === 'talign' ? 'align' : 'valign'] = v; commitBubbleEdit(b, before); rememberBubble(b); renderDock(); const fl = $('#bfloat', root); if (fl) fl._html = ''; placeBubbleUI(); renderPop(); requestRender(); }
+  }
   else if (a === 'tpl-save') {
     bfTab = null; placeBubbleUI();
     const b = bubble();
@@ -877,7 +885,7 @@ function setTail(b, on) {
 }
 
 // Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
-const STYLE_KEYS = ['lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+const STYLE_KEYS = ['align', 'valign', 'lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
 function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];

@@ -23,7 +23,7 @@ export const TAILS = [
 //  wobble : imperfection du contour (0 = géométrique, 100 = très tremblé)
 //  tailW : largeur de la base de la queue, en % du petit côté ; tailRound : -100 creuse … +100 bombée ;
 //  tailBend : courbure d'ensemble (-100 … +100) ; tailTip : pointe émoussée (0 = aiguë)
-const BASE = { lobes: 0, bulge: 30, cloudSoft: 0, valleyRound: 0, tipRound: 0, spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT };
+const BASE = { lobes: 0, bulge: 30, cloudSoft: 0, valleyRound: 0, tipRound: 0, spikes: 14, depth: 30, radius: 0, pad: 2.5, stroke: 0.35, wobble: 18, tailW: 24, tailRound: 25, tailBend: 0, tailTip: 0, font: DEFAULT_FONT, align: 'center', valign: 'middle' };
 const PRESETS = {
   parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
   pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
@@ -353,9 +353,14 @@ export function drawBubble(ctx, b, dpi, lwOverride, fillOnly = false) {
     const fp = fontPx(b, dpi), pad = padOf(b, p, dpi);
     const maxW = b.auto ? b.w * innerFactor(p) - pad * 2 : roundy(p.shape) ? b.w * 0.74 - pad : b.w - pad * 2;
     const lines = wrapText(ctx, shown(b), Math.max(fp, maxW));
-    ctx.fillStyle = '#000'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const top = cy - (lines.length * fp * 1.2) / 2 + fp * 0.6;
-    lines.forEach((l, i) => ctx.fillText(l, cx, top + i * fp * 1.2));
+    // zone de texte : le rectangle inscrit (même calcul en largeur et en hauteur) ; le bloc s'y aligne à gauche / droite et en haut / bas
+    const maxH = b.auto ? b.h * innerFactor(p) - pad * 2 : roundy(p.shape) ? b.h * 0.74 - pad : b.h - pad * 2;
+    const th = lines.length * fp * 1.2, boxW = Math.max(fp, maxW), boxH = Math.max(th, maxH);
+    const al = p.align === 'left' || p.align === 'right' ? p.align : 'center';
+    const tx = al === 'left' ? cx - boxW / 2 : al === 'right' ? cx + boxW / 2 : cx;
+    const y0 = p.valign === 'top' ? cy - boxH / 2 : p.valign === 'bottom' ? cy + boxH / 2 - th : cy - th / 2;
+    ctx.fillStyle = '#000'; ctx.textAlign = al; ctx.textBaseline = 'middle';
+    lines.forEach((l, i) => ctx.fillText(l, tx, y0 + fp * 0.6 + i * fp * 1.2));
   }
   ctx.restore();
 }

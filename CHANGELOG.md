@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.28.0 — 2026-10-31
+- Bulles : on peut aligner le texte à gauche, au centre ou à droite, et en haut, au milieu ou en bas (onglet Texte)
+
 ## 1.27.1 — 2026-10-31
 - Zoom à deux doigts avec la page tournée : le point sous les doigts reste en place, y compris près des bords de la page
 

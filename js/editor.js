@@ -744,7 +744,7 @@ export function addBubble(kind, at, style) {
 export const allBubbleTemplates = () => BUBBLE_TEMPLATES.concat(ed.bubbleTemplates);
 export const currentTemplate = () => allBubbleTemplates().find(t => t.id === ed.bubbleTemplate) || BUBBLE_TEMPLATES[0];
 export function addTemplateBubble(at) { const t = currentTemplate(); return addBubble(t.kind, at, t.style ? { ...t.style } : undefined); }
-const TEMPLATE_KEYS = ['lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'spikes', 'depth', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip', 'sameStroke', 'clip', 'noFrame'];
+const TEMPLATE_KEYS = ['align', 'valign', 'lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'spikes', 'depth', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip', 'sameStroke', 'clip', 'noFrame'];
 export function saveBubbleTemplate(name, b) {
   const style = {};
   for (const k of TEMPLATE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) style[k] = b[k];
