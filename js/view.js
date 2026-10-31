@@ -54,11 +54,16 @@ export const toScreen = (px, py) => {
 
 export function clampView() {
   const { w, h } = pageDims(), m = 80;
-  if (view.r) {   // page tournée : le centre de la zone visible doit rester sur la page (marge m), sans jamais ramener la page vers son centre
-    const p = toPage(view.w / 2, view.h / 2), k = m / view.s;
-    const qx = Math.min(w + k, Math.max(-k, p.x)), qy = Math.min(h + k, Math.max(-k, p.y));
-    if (qx !== p.x || qy !== p.y) {
-      const a = toScreen(qx, qy);   // où se trouverait le point autorisé ; on le ramène au centre de la zone
+  if (view.r) {   // page tournée : comme sans rotation, la page doit rester visible (marge m) ; on ne la déplace que si elle est perdue
+    const c = Math.cos(view.r), sn = Math.sin(view.r), pc = toPage(view.w / 2, view.h / 2);
+    const hx = Math.max(0, view.w / 2 - m) / view.s, hy = Math.max(0, view.h / 2 - m) / view.s;   // zone visible réduite de m, exprimée dans la page
+    const dx = pc.x - w / 2, dy = pc.y - h / 2, ux = c, uy = -sn, vx = sn, vy = c;   // axes de l'écran dans la page
+    const apart = Math.abs(dx) > w / 2 + hx * Math.abs(ux) + hy * Math.abs(vx)
+      || Math.abs(dy) > h / 2 + hx * Math.abs(uy) + hy * Math.abs(vy)
+      || Math.abs(dx * ux + dy * uy) > w / 2 * Math.abs(ux) + h / 2 * Math.abs(uy) + hx
+      || Math.abs(dx * vx + dy * vy) > w / 2 * Math.abs(vx) + h / 2 * Math.abs(vy) + hy;
+    if (apart) {   // page perdue : on ramène le centre de la zone sur la page
+      const a = toScreen(Math.min(w, Math.max(0, pc.x)), Math.min(h, Math.max(0, pc.y)));
       view.ox += view.w / 2 - a.x; view.oy += view.h / 2 - a.y;
     }
     return;
