@@ -2,6 +2,7 @@
 // dans Supabase, IndexedDB ou localStorage. Ajouter un sujet ou une variante = ajouter une entrée à GROUPS.
 import { BUILTIN_TRAMAS, drawTramaSwatch } from './tramas.js';
 import { drawBubble, lineWidth } from './bubbles.js';
+import { previewBrush, brushSpec } from './raster.js';
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -215,7 +216,189 @@ function bubbleLab(el, mode) {
   if (document.fonts) document.fonts.ready.then(redraw);
 }
 
+// ───────────────────────── Dessin, couleur, planche : nouveautés de la v1.29 à la v1.39 ─────────────────────────
+// Démonstrations avec le vrai moteur (previewBrush) ; rien n'est lu ni écrit ailleurs que dans la page.
+
+const BR = id => brushSpec(id);
+const TR = id => BUILTIN_TRAMAS.find(t => t.id === id) || null;
+const PALETTE_DEMO = [['Stylo rond', 'stylo', null], ['Plume G', 'plumeg', null], ['Brush pen', 'brushpen', null], ['Crayon HB', 'hb', null], ['Fusain', 'fusain', null], ['Trame 25 %', 'stylo', 'g25'], ['Trame 50 %', 'stylo', 'g50'], ['Fusain tramé', 'fusain', 'g25']];
+const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
+function stroke(spec, size, { w = 112, hgt = 52, alpha = 1, trame = null, color = null } = {}) {
+  const c = document.createElement('canvas'); c.width = w; c.height = hgt;
+  previewBrush(c, spec, size, alpha, trame, 1, color); return c;
+}
+
+// Palette de pinceaux : A = emplacements du projet dans la barre ; B = un bouton et sa liste (ancienne).
+function paletteDemo(el, mode) {
+  if (mode === 'A') {
+    const bar = h('div', 'lab-bar-mock');
+    PALETTE_DEMO.forEach(([name, id, tid], i) => { const b = h('button', 'lab-slot' + (i === 0 ? ' on' : '')); b.title = name; b.append(stroke(BR(id), 7, { w: 56, hgt: 28, trame: TR(tid) })); b.onclick = () => { bar.querySelectorAll('.lab-slot').forEach(x => x.classList.toggle('on', x === b)); cap.textContent = name + ' : un toucher le choisit, un second ouvre ses réglages, un appui long le retire.'; }; bar.append(b); });
+    bar.append(h('button', 'lab-slot add', '<i class="ti ti-plus"></i>'));
+    const cap = h('p', 'lab-cap', 'Stylo rond : un toucher le choisit, un second ouvre ses réglages, un appui long le retire.');
+    el.append(bar, cap);
+  } else {
+    const wrap = h('div', 'lab-col');
+    const btn = h('button', 'lab-slot on'); btn.append(stroke(BR('stylo'), 7, { w: 64, hgt: 30 }));
+    const list = h('div', 'lab-list');
+    ['Encrage', 'Esquisse', 'Pinceaux', 'Calligraphie', 'Texture', 'Mes pinceaux'].forEach(g => list.append(h('div', 'lab-group', g)));
+    PALETTE_DEMO.slice(0, 5).forEach(([name, id]) => { const r = h('div', 'lab-row'); r.append(stroke(BR(id), 6, { w: 120, hgt: 28 }), h('span', '', name)); list.append(r); });
+    wrap.append(btn, list, h('p', 'lab-cap', 'Un seul bouton : il faut ouvrir la liste et la parcourir à chaque changement ; « Mes pinceaux » tout en bas, sur l\'appareil seulement.'));
+    el.append(wrap);
+  }
+}
+
+// Curseur de taille : même course, trois répartitions des tailles.
+const CURVES = {
+  log: v => 0.05 * Math.pow(1000, v),
+  p2: v => 0.05 + 49.95 * Math.pow(v, 2),
+  p25: v => 0.05 + 49.95 * Math.pow(v, 2.5),
+};
+function sizeDemo(el, curve) {
+  const f = CURVES[curve], fmt = mm => (mm < 1 ? mm.toFixed(2) : mm < 10 ? mm.toFixed(1) : Math.round(mm)).toString().replace('.', ',') + ' mm';
+  const scale = h('div', 'lab-scale');
+  for (let i = 0; i <= 10; i++) { const s = h('span', '', fmt(f(i / 10))); s.style.left = i * 10 + '%'; scale.append(s); }
+  const range = h('input'); range.type = 'range'; range.min = 0; range.max = 1000; range.value = 300; range.className = 'lab-range';
+  const out = h('div', 'lab-out'), prev = h('div', 'lab-prev');
+  const upd = () => { const mm = f(range.value / 1000); out.textContent = fmt(mm); prev.replaceChildren(stroke(BR('stylo'), Math.max(1, Math.min(90, mm * 3)), { w: 320, hgt: 110 })); };
+  range.oninput = upd; upd();
+  el.append(range, scale, out, prev, h('p', 'lab-cap', 'Aperçu au zoom « page entière » (environ 3 px par mm). Les repères du dessous montrent la taille tous les 10 % de la course.'));
+}
+
+// Opacité : 25, 50, 75, 100 %.
+function opacityDemo(el, color) {
+  const row = h('div', 'lab-row-strokes');
+  [0.25, 0.5, 0.75, 1].forEach(a => { const f = h('figure'); f.append(stroke(BR('feutre'), 22, { w: 150, hgt: 80, alpha: a, color }), h('figcaption', '', Math.round(a * 100) + ' %')); row.append(f); });
+  el.append(row);
+}
+
+// Réglages du pinceau : A = une fenêtre en groupes ; B = onglets Pinceau / Trame (ancienne).
+function settingsDemo(el, mode) {
+  const pop = h('div', 'lab-pop');
+  const head = h('div', 'lab-pop-head', '<b>Trame 25 %</b>');
+  pop.append(head);
+  const prev = stroke(BR('stylo'), 14, { w: 300, hgt: 60, trame: TR('g25') }); prev.className = 'lab-wide';
+  if (mode === 'A') {
+    pop.append(prev);
+    [['Trait', 'Taille · Opacité · Pression du stylet'], ['Trame', 'Vignette de la trame · Échelle · Fond blanc'], ['Forme et texture', 'Forme · Grain · Dispersion · Espacement'], ['Dynamique', 'Pression → taille · Vitesse · Départ effilé · Stabilisation'], ['Ce pinceau', 'Renommer · Déplacer · Retirer · Enregistrer']]
+      .forEach(([t, d]) => pop.append(h('div', 'lab-pgroup', `<div class="lab-clabel">${t}</div><div>${d}</div>`)));
+  } else {
+    const tabs = h('div', 'lab-tabs', '<button class="on">Pinceau</button><button>Trame</button>');
+    const body = h('div', 'lab-pgroup', '<div>Renommer · Taille exacte · Opacité · Pression · Rétablir · Enregistrer · Forme · Pression → taille · Taille à pression nulle · Vitesse · Départ effilé · Stabilisation · Dispersion · Espacement · Grain</div>');
+    tabs.querySelectorAll('button').forEach((b, i) => b.onclick = () => { tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); body.innerHTML = i ? '<div>Échelle · Fond blanc · Enregistrer le réglage (la trame se choisit ailleurs)</div>' : '<div>Renommer · Taille exacte · Opacité · Pression · Rétablir · Enregistrer · Forme · Pression → taille · Taille à pression nulle · Vitesse · Départ effilé · Stabilisation · Dispersion · Espacement · Grain</div>'; });
+    pop.append(tabs, body);
+  }
+  el.append(pop);
+}
+
+// Couleurs : A = deux couleurs entre les curseurs ; B = pastilles noir / blanc / couleur dans la barre (ancienne).
+function colorChoiceDemo(el, mode) {
+  const stageEl = h('div', 'lab-canvas-mock');
+  if (mode === 'A') {
+    let c1 = '#C0392B', c2 = '#F4D03F';
+    const col = h('div', 'lab-quick');
+    const w = h('div', 'lab-cw');
+    const draw = () => { w.innerHTML = `<button class="p" style="background:${c1}" title="Couleur principale"></button><button class="s" style="background:${c2}" title="Toucher : échanger"></button><button class="x" title="Échanger"><i class="ti ti-arrows-exchange"></i></button><button class="r" title="Noir et blanc"><i></i><i></i></button>`;
+      w.querySelector('.s').onclick = w.querySelector('.x').onclick = () => { [c1, c2] = [c2, c1]; draw(); };
+      w.querySelector('.r').onclick = () => { c1 = '#000000'; c2 = '#FFFFFF'; draw(); }; };
+    draw();
+    col.append(h('div', 'lab-track'), w, h('div', 'lab-track'));
+    stageEl.append(col, h('p', 'lab-cap', 'Taille en haut, opacité en bas, les deux couleurs entre les deux. Essaie la flèche et le mini noir et blanc.'));
+  } else {
+    stageEl.append(h('div', 'lab-bottom', '<span class="lab-ink" style="background:#000"></span><span class="lab-ink" style="background:#fff"></span><span class="lab-ink on" style="background:#2E86DE"></span>'),
+      h('p', 'lab-cap', 'Noir, blanc et une couleur dans la barre du bas : le noir et le blanc avaient un statut à part, et la barre était plus chargée.'));
+  }
+  el.append(stageEl);
+}
+
+// Palette de couleurs : A = sélecteur, nuances, harmonies, palettes nommées ; B = grille du projet seule (ancienne).
+const hsv2hex = (H, S, V) => { const f = n => { const k = (n + H / 60) % 6; return V - V * S * Math.max(0, Math.min(k, 4 - k, 1)); }; return '#' + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('').toUpperCase(); };
+const SAMPLE = ['#000000', '#FFFFFF', '#F2D3B3', '#D9A57A', '#8D5524', '#C0392B', '#E67E22', '#F4D03F', '#27AE60', '#1ABC9C', '#2E86DE', '#1F3A93', '#8E44AD', '#E84393', '#7F8C8D', '#2C3E50'];
+function paletteColorsDemo(el, mode) {
+  const box = h('div', 'lab-pop');
+  if (mode === 'A') {
+    let H = 8, S = 0.7, V = 0.76;
+    const hue = h('input'); hue.type = 'range'; hue.min = 0; hue.max = 359; hue.value = H; hue.className = 'lab-hue';
+    const now = h('div', 'lab-now'), shades = h('div', 'lab-sw'), harm = h('div', 'lab-sw');
+    const tabs = h('div', 'lab-pals', '<button class="on">Projet</button><button>Peaux</button><button>Nuit</button><button class="add"><i class="ti ti-plus"></i></button>');
+    const grid = h('div', 'lab-sw');
+    const sets = [SAMPLE, ['#F2D3B3', '#E8B894', '#D9A57A', '#B07A4F', '#8D5524', '#5C3A1A'], ['#0B1026', '#1F3A93', '#2C3E50', '#5D6D7E', '#AEB6BF', '#F4D03F']];
+    const sw = (c, on) => `<span style="background:${c}" class="${on ? 'on' : ''}" title="${c}"></span>`;
+    const upd = () => {
+      const c = hsv2hex(H, S, V); now.style.background = c; now.textContent = c;
+      shades.innerHTML = [-0.6, -0.4, -0.2, 0, 0.25, 0.5, 0.75].map(t => sw(t < 0 ? hsv2hex(H, S, V * (1 + t)) : hsv2hex(H, S * (1 - t), V + (1 - V) * t), t === 0)).join('');
+      harm.innerHTML = [-30, 30, 120, 240, 150, 180, 210].map(d => sw(hsv2hex((H + d + 360) % 360, S, V))).join('');
+    };
+    hue.oninput = () => { H = +hue.value; upd(); };
+    tabs.querySelectorAll('button:not(.add)').forEach((b, i) => b.onclick = () => { tabs.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); grid.innerHTML = sets[i].map(c => sw(c)).join(''); });
+    grid.innerHTML = SAMPLE.map(c => sw(c)).join('');
+    upd();
+    box.append(h('div', 'lab-clabel', 'Teinte'), hue, now, h('div', 'lab-clabel', 'Nuances'), shades, h('div', 'lab-clabel', 'Harmonies · voisines · triade · complémentaires'), harm, tabs, grid,
+      h('p', 'lab-cap', 'Dans l\'app : carré saturation × luminosité, code hex, récentes, pipette (bouton ou appui long d\'un doigt sur le dessin).'));
+  } else {
+    box.append(h('div', 'lab-sw', SAMPLE.slice(2).map(c => `<span style="background:${c}"></span>`).join('')), h('p', 'lab-cap', 'Une grille de 15 couleurs, des récentes et « Autre couleur… » (sélecteur du système) : pas de nuances sur le moment, une seule palette par projet.'));
+  }
+  el.append(box);
+}
+
+// Planche et case : A = deux niveaux ; B = tout sur la page (ancienne).
+function levelsDemo(el, mode) {
+  const row = h('div', 'lab-levels');
+  const page = (title, tools, dock, caseOpen) => {
+    const card = h('div', 'lab-level');
+    card.append(h('div', 'lab-clabel', title));
+    const body = h('div', 'lab-level-body');
+    const tb = h('div', 'lab-tools', tools.map(i => `<i class="ti ti-${i}"></i>`).join(''));
+    const pg = h('div', 'lab-page' + (caseOpen ? ' open' : ''), caseOpen ? '<div class="c big"></div>' : '<div class="c on"></div><div class="c"></div><div class="c"></div><div class="c"></div>');
+    body.append(tb, pg, h('div', 'lab-dock', dock));
+    card.append(body);
+    return card;
+  };
+  if (mode === 'A') {
+    row.append(page('Planche : cases et pages', ['layout-board-split', 'hand-stop', 'pencil'], 'Page<br><small>pages, notes, cadre, copie</small>', false),
+      page('Case ouverte : dessin', ['brush', 'eraser', 'bucket-droplet', 'square', 'mask', 'marquee-2', 'message-circle', 'hand-stop'], 'Calques<br><small>bulles, calques, masque</small>', true));
+    el.append(row, h('p', 'lab-cap', 'Double toucher sur une case pour l\'ouvrir ; « Page », Échap ou Entrée pour revenir.'));
+  } else {
+    row.append(page('Tout sur la page', ['pencil', 'texture', 'eraser', 'bucket-droplet', 'square', 'mask', 'marquee-2', 'message-circle', 'layout-board-split', 'hand-stop'], 'Calques · Page<br><small>deux onglets</small>', false));
+    el.append(row, h('p', 'lab-cap', 'On dessinait directement sur la planche ; la taille des cases et le dessin se mêlaient.'));
+  }
+}
+
 export const GROUPS = [
+  { id: 'dessin', label: 'Dessin', icon: 'brush', subjects: [
+    { id: 'palette', label: 'Palette de pinceaux', icon: 'brush', variants: [
+      { title: 'Palette du projet', actuelle: true, retenue: true, say: 'Les pinceaux du projet sont dans la barre du bas, en un toucher ; ils suivent le projet sur tous les appareils (jusqu\'à 10, pinceaux et pinceaux tramés réunis).', render: el => paletteDemo(el, 'A') },
+      { title: 'Un bouton et sa liste', ancienne: true, say: 'Un seul bouton de pinceau ouvrait toute la bibliothèque ; les pinceaux enregistrés restaient sur l\'appareil.', render: el => paletteDemo(el, 'B') },
+    ] },
+    { id: 'taille', label: 'Curseur de taille', icon: 'adjustments-vertical', variants: [
+      { title: 'Courbe 2,5', actuelle: true, retenue: true, say: 'Courbe en puissance (exposant 2,5) : 0,05–1 mm sur un cinquième de la course, les grandes tailles se règlent au millimètre.', render: el => sizeDemo(el, 'p25') },
+      { title: 'Logarithmique', ancienne: true, say: 'Chaque tiers de la course multipliait la taille par dix : trop de place pour les petites tailles, des sauts de 2 mm en haut.', render: el => sizeDemo(el, 'log') },
+      { title: 'Courbe 2', say: 'Plus de place pour les grandes tailles, un peu moins de finesse sous 1 mm.', render: el => sizeDemo(el, 'p2') },
+    ] },
+    { id: 'opacite', label: 'Opacité du trait', icon: 'contrast', variants: [
+      { title: 'Noir et blanc : gris tramé', actuelle: true, say: 'En noir ou blanc, l\'opacité est un gris tramé (grille de Bayer accrochée à la page), comme à l\'impression 1 bit.', render: el => opacityDemo(el, '#000000') },
+      { title: 'Couleur : vraie transparence', actuelle: true, say: 'Avec une couleur, le calque passe en couleur et l\'opacité est une vraie transparence ; un trait ne fonce pas là où il repasse.', render: el => opacityDemo(el, '#2E86DE') },
+    ] },
+    { id: 'reglages', label: 'Réglages du pinceau', icon: 'adjustments-horizontal', variants: [
+      { title: 'Une fenêtre en groupes', actuelle: true, retenue: true, say: 'Aperçu en direct puis Trait, Trame, Forme et texture, Dynamique, Ce pinceau, sans onglets.', render: el => settingsDemo(el, 'A') },
+      { title: 'Onglets Pinceau / Trame', ancienne: true, say: 'Deux onglets, et deux icônes « Réglages » identiques dans la barre pour le pinceau trame.', render: el => settingsDemo(el, 'B') },
+    ] },
+  ] },
+  { id: 'couleur', label: 'Couleur', icon: 'palette', subjects: [
+    { id: 'choix', label: 'Choix des couleurs', icon: 'color-swatch', variants: [
+      { title: 'Deux couleurs à gauche', actuelle: true, retenue: true, say: 'Entre les curseurs de taille et d\'opacité : principale et secondaire, flèche pour échanger (X), mini noir et blanc (D).', render: el => colorChoiceDemo(el, 'A') },
+      { title: 'Pastilles dans la barre', ancienne: true, say: 'Noir, blanc et une couleur dans la barre du bas.', render: el => colorChoiceDemo(el, 'B') },
+    ] },
+    { id: 'nuancier', label: 'Palette de couleurs', icon: 'palette', variants: [
+      { title: 'Sélecteur, nuances et palettes', actuelle: true, retenue: true, say: 'Nuances sur le moment, harmonies, plusieurs palettes nommées par projet (Projet, Peaux, Nuit…). Fais glisser la teinte.', render: el => paletteColorsDemo(el, 'A') },
+      { title: 'Grille seule', ancienne: true, say: 'Une grille de couleurs et le sélecteur du système.', render: el => paletteColorsDemo(el, 'B') },
+    ] },
+  ] },
+  { id: 'planche', label: 'Planche', icon: 'layout-board', subjects: [
+    { id: 'niveaux', label: 'Planche et case', icon: 'layout-board-split', variants: [
+      { title: 'Deux niveaux', actuelle: true, retenue: true, say: 'La planche gère les cases et les pages sans rien dessiner ; la case ouverte est le seul canevas, avec ses calques et ses bulles.', render: el => levelsDemo(el, 'A') },
+      { title: 'Tout sur la page', ancienne: true, say: 'Dessin et mise en page sur le même écran, deux onglets Calques et Page.', render: el => levelsDemo(el, 'B') },
+    ] },
+  ] },
   { id: 'trames', label: 'Trames', icon: 'texture', subjects: [
     { id: 'biblio', label: 'Bibliothèque', icon: 'texture', variants: [
       { title: 'Grille de tuiles', actuelle: true, say: 'Les trames en grille de quatre colonnes dans le volet, sans nom : on choisit à l\'œil.',

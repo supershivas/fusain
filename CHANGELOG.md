@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.40.0 — 2026-11-22
+- Labo : trois nouveaux groupes avec les nouveautés face aux anciennes versions : Dessin (palette de pinceaux, curseur de taille à comparer, opacité, réglages du pinceau), Couleur (deux couleurs, palette de couleurs interactive) et Planche (planche et case)
+
 ## 1.39.2 — 2026-11-22
 - Volet Calques simplifié : trois ajouts (Encre, Trame, Brouillon) puis renommer, dupliquer, fusionner, vider, supprimer ; l'ordre se change en glissant la poignée
 - Propriétés du calque réduites à l'opacité, au verrou, à « Afficher seul » et à une case « Brouillon » ; plus de type ni de teinte à part, la couleur se choisit à gauche pour tous les calques
