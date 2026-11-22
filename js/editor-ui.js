@@ -47,7 +47,8 @@ let popBack = null;   // fenêtre à rouvrir après un choix dans la bibliothèq
 let root, dockTab = 'layers', popId = null, dockOpen = true, unsub = null, keyHandler = null;
 // Volet de droite : complet (dockOpen), réduit à une colonne de vignettes (dockMini), ou masqué (ni l'un ni l'autre).
 let dockMini = false;
-let layerOpts = null;   // calque dont les options sont dépliées (toucher le calque actif)
+let layerOpts = null;
+let miniDragged = false;   // une vignette vient d'être tirée : le clic qui suit ne la choisit pas   // calque dont les options sont dépliées (toucher le calque actif)
 const narrow = () => window.matchMedia('(max-width: 768px)').matches;
 const DOCK_KEY = 'fusain:dock';
 
@@ -732,21 +733,24 @@ const sec = (id, title, body, def = true, extra = '') =>
 // Glisser une ligne de calque (ou de bulle) vers la gauche découvre « Dupliquer » et « Supprimer », comme dans Procreate.
 // Glisser-déposer des calques : la poignée à gauche de la ligne ; la ligne suit le doigt, un trait rouge montre où elle ira.
 let gripGest = null;
-function gripRows() { return $$('.swipe', root).filter(w => w.querySelector('[data-layer]')); }
+function gripRows(mini) { return mini ? $$('.dock-mini .mini-layer', root) : $$('.swipe', root).filter(w => w.querySelector('[data-layer]')); }
 // Glisser une ligne par sa poignée : les autres lignes s'écartent en direct pour montrer où elle tombera.
 // Les positions sont mesurées au départ (une seule fois) : le décalage des cartes ne fausse pas le calcul.
 function gripDown(e) {
-  const g = e.target.closest && e.target.closest('[data-grip]');
-  if (!g) return false;
-  const wrap = g.closest('.swipe');
-  e.preventDefault(); g.setPointerCapture(e.pointerId);
-  gripGest = { id: e.pointerId, wrap, layer: g.dataset.grip, y0: e.clientY, on: false, drop: null };
-  return true;
+  if (!e.target.closest) return false;
+  const g = e.target.closest('[data-grip]'), thumb = !g && e.target.closest('.dock-mini .mini-thumb');
+  if (!g && !thumb) return false;
+  if (g) { e.preventDefault(); g.setPointerCapture(e.pointerId); }
+  const wrap = g ? g.closest('.swipe') : thumb.closest('.mini-layer');
+  // volet réduit : la vignette se tire au-delà de 8 px (sinon c'est un simple toucher, qui choisit le calque)
+  gripGest = { id: e.pointerId, wrap, layer: g ? g.dataset.grip : wrap.dataset.layer, y0: e.clientY, on: false, drop: null, mini: !g, el: g || thumb };
+  return !!g;
 }
 function gripStart(s) {
-  const opts = $('.lopts', root);
+  const opts = !s.mini && $('.lopts', root);
   if (opts) { opts.style.display = 'none'; s.opts = opts; }   // options repliées le temps du geste
-  s.rows = gripRows();
+  if (s.mini) { try { s.el.setPointerCapture(s.id); } catch { /* */ } }
+  s.rows = gripRows(s.mini);
   s.i0 = s.rows.indexOf(s.wrap);
   s.rects = s.rows.map(w => w.getBoundingClientRect());
   const r = s.rects[s.i0], next = s.rects[s.i0 + 1], prev = s.rects[s.i0 - 1];
@@ -758,7 +762,8 @@ function gripMove(e) {
   const s = gripGest;
   if (!s || e.pointerId !== s.id) return;
   const dy = e.clientY - s.y0;
-  if (!s.on) { if (Math.abs(dy) < 6) return; s.on = true; gripStart(s); }
+  if (!s.on) { if (Math.abs(dy) < (s.mini ? 8 : 6)) return; s.on = true; gripStart(s); }
+  e.preventDefault();
   const r0 = s.rects[s.i0], first = s.rects[0], last = s.rects[s.rects.length - 1];
   const ddy = Math.max(first.top - r0.top, Math.min(last.top - r0.top, dy));   // la carte reste dans la liste
   s.wrap.style.transform = `translateY(${ddy}px)`;
@@ -778,6 +783,7 @@ function gripUp(e, cancel) {
   if (!s || e.pointerId !== s.id) return;
   gripGest = null;
   if (!s.on) return;
+  if (s.mini) { miniDragged = true; setTimeout(() => { miniDragged = false; }, 120); }
   s.rows.forEach(w => { w.classList.remove('shifting', 'reordering'); w.style.transform = ''; });
   if (s.opts) s.opts.style.display = '';
   swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);
@@ -838,7 +844,7 @@ export function renderDock() {
   d.innerHTML = dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}`
     : `<div class="dock-mini" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Pages'}">${dockTab === 'layers' ? miniLayers() : miniPages()}</div>${foot}`;
   if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
-  if (dockMini) paintMiniThumbs(d);
+  if (dockMini || (dockOpen && ed.focus)) paintMiniThumbs(d);
   renderPop();
 }
 
@@ -887,7 +893,7 @@ function paintMiniThumbs(scope) {
   });
 }
 let miniTimer = null;
-function refreshMiniSoon() { if (!dockMini) return; clearTimeout(miniTimer); miniTimer = setTimeout(() => { const d = $('#dock', root); if (d && dockMini) paintMiniThumbs(d); }, 350); }
+function refreshMiniSoon() { if (!dockMini && !(dockOpen && ed.focus)) return; clearTimeout(miniTimer); miniTimer = setTimeout(() => { const d = $('#dock', root); if (d && (dockMini || dockOpen)) paintMiniThumbs(d); }, 350); }
 
 // Liste déroulante de l'outil Bulle : modèles du programme puis « Mes modèles » ; un toucher sur la page y pose une bulle de ce modèle.
 function bubbleTplList() {
@@ -1127,6 +1133,7 @@ function layersTab() {
   const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${l.alphaLock ? 'alpha-locked' : ''} ${layerOpts === l.id ? 'open' : ''}" data-layer="${l.id}">
       <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
+      <span class="lthumb ${l.visible ? '' : 'off'}" data-act="select-layer" aria-hidden="true"><canvas width="72" height="72" data-mthumb="${l.id}"></canvas></span>
       <button class="name" data-act="select-layer" aria-expanded="${layerOpts === l.id}" title="${l.id === p.active ? 'Toucher pour les options du calque' : 'Toucher pour choisir ce calque'}">${esc(l.name)}${l.blend && l.blend !== 'normal' ? ` <small class="lblend">${(BLEND_MODES.find(m => m[0] === l.blend) || ['', ''])[1]}</small>` : ''}</button>
       ${l.reference ? `<span class="tag ref" title="Calque de référence">${icon('target')} réf.</span>` : ''}${l.alphaLock ? `<span class="tag alpha" title="Alpha verrouillé">α</span>` : ''}${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
@@ -1411,6 +1418,7 @@ async function onDock(e) {
   const a = act.dataset.act;
   if (a === 'vis') toggleLayer(lay.dataset.layer, 'visible');
   else if (a === 'select-layer') {
+    if (miniDragged) return;
     const id = lay.dataset.layer;
     if (id === panel().active && !e.target.closest('.dock-mini')) { layerOpts = layerOpts === id ? null : id; renderDock(); }
     else { layerOpts = null; selectLayer(id); }

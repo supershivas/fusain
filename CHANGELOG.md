@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.47.1 — 2026-11-22
+- Volet réduit : on réordonne les calques en tirant leur vignette, avec la même animation que dans le volet complet
+- Volet complet : chaque calque a une vignette d'aperçu de son contenu
+
 ## 1.47.0 — 2026-11-22
 - Bulles : la taille s'ajuste toujours au texte ; tirer le coin ne change que la forme (la largeur des lignes), la hauteur suit — plus de case « Taille auto » ni d'alignement vertical
 - Marge intérieure en tête de l'onglet Forme, à côté de la marge au bord pour les narrations ; « Appliquer ces marges à toutes les narrations » applique les deux

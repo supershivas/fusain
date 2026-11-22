@@ -552,3 +552,12 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .lopt-tog { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--card-bg); font-size: .78rem; color: var(--text-secondary); }
 .lopt-tog.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .lblend { font: 500 .66rem var(--font-mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.mini-thumb { touch-action: none; }
+.mini-layer.reordering { position: relative; z-index: 5; }
+.mini-layer.reordering .mini-thumb { box-shadow: 0 8px 20px rgba(0,0,0,.25); border-color: var(--accent); }
+.mini-layer.shifting { transition: transform .16s ease; }
+@media (prefers-reduced-motion: reduce) { .mini-layer.shifting { transition: none; } }
+.lthumb { flex: none; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #fff; cursor: pointer; }
+.lthumb canvas { width: 100%; height: 100%; display: block; }
+.lthumb.off canvas { opacity: .35; }
+.layer.on .lthumb { border-color: var(--accent); }
