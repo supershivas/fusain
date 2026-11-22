@@ -42,6 +42,7 @@ const SHAPES = [{ id: 'line', icon: 'slash', label: 'Ligne' }, { id: 'rect', ico
 const TABS = [{ id: 'layers', icon: 'stack-2', label: 'Calques' }, { id: 'page', icon: 'files', label: 'Page' }];
 
 let fsListener = null;
+let popBack = null;   // fenêtre à rouvrir après un choix dans la bibliothèque ouverte depuis elle
 let root, dockTab = 'layers', popId = null, dockOpen = true, unsub = null, keyHandler = null;
 
 const prefsKey = 'fusain:prefs';
@@ -391,7 +392,7 @@ export function renderOptbar() {
   o.hidden = !html; o.innerHTML = html;
   paintSwatches(o);
   paintSlots(o);
-  $$('canvas[data-bprev]', o).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
+  paintBprev(o);
   renderQuick();
 }
 
@@ -509,7 +510,7 @@ function quickKey(e) {
 }
 // Après un réglage de pinceau : l'emplacement actif le garde, les aperçus suivent.
 function afterBrushChange() {
-  storeSlot(); savePrefs();
+  storeSlot(); savePrefs(); paintBprev($('#pop', root));
   paintSlots($('#optbar', root));
   const pe = $('#pop', root);
   if (pe && popId === 'brush') {
@@ -926,7 +927,7 @@ function renderPop() {
   el.innerHTML = html;
   $('.pop-body', el).scrollTop = keep;
   paintSwatches(el); paintLibrary(el); paintPicker(el);
-  $$('canvas[data-bprev]', el).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
+  paintBprev(el);
 }
 function paintLibrary(scope) {
   paintBrushPreviews(scope);
@@ -1025,25 +1026,47 @@ function brushesParts() {
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
   const addBtn = `<div class="row tight" style="margin-bottom:6px"><button class="btn small primary" data-act="brush-save">${icon('plus')} Enregistrer ${ed.tool === 'eraser' ? 'cette gomme' : 'ce pinceau'}…</button></div>`;
-  return { pop: buttons + settings, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » servent à tous tes projets, sur tous tes appareils connectés ; la palette, elle, suit le projet. Appui long sur un de tes pinceaux, ou sur un pinceau de la palette, pour le retirer.</small>' };
+  void settings;
+  return { pop: buttons, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » servent à tous tes projets, sur tous tes appareils connectés ; la palette, elle, suit le projet. Appui long sur un de tes pinceaux, ou sur un pinceau de la palette, pour le retirer.</small>' };
 }
-let brushPopTab = 'brush';
+// Réglages du pinceau : une seule fenêtre, en groupes (aperçu, trait, trame, forme et texture, dynamique, ce pinceau).
+function paintBprev(scope) {
+  const t = ed.tool === 'pencil' ? tramaById(ed.project, ed.tramaId) : null;
+  $$('canvas[data-bprev]', scope).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, c.width > 100 ? 14 : 8), ed.alpha, t && !t.solid ? t : null, ed.tramaScale));
+}
 function brushPop() {
-  const sl = activeSlot(), list = brushSlots(), i = sl ? list.indexOf(sl) : -1;
-  const tabs = ed.tool === 'pencil' ? `<span class="seg pop-tabs" role="tablist" aria-label="Réglages">
-      <button role="tab" data-act="pop-tab" data-ptab="brush" class="${brushPopTab === 'brush' ? 'on' : ''}" aria-selected="${brushPopTab === 'brush'}">${icon('brush')} Pinceau</button>
-      <button role="tab" data-act="pop-tab" data-ptab="trama" class="${brushPopTab === 'trama' ? 'on' : ''}" aria-selected="${brushPopTab === 'trama'}">${icon('texture')} Trame</button></span>` : '';
-  if (ed.tool === 'pencil' && brushPopTab === 'trama') return tabs + tramaPop();
-  const slotRow = sl ? `<div class="row tight" style="margin:2px 0 8px">
+  const sl = activeSlot(), list = brushSlots(), i = sl ? list.indexOf(sl) : -1, cur = ed.brushParams, parts = brushesParts();
+  const g = (title, body) => `<div class="pgroup"><div class="clabel">${title}</div>${body}</div>`;
+  const sl1 = ([k, label, min, max, step, fmt]) => `<label class="field inline"><span>${label} : ${fmt(cur[k])}</span><input type="range" id="p-${k}" min="${min}" max="${max}" step="${step}" value="${cur[k]}"></label>`;
+  const preview = `<canvas class="bp-preview" width="300" height="60" data-bprev="1" aria-label="Aperçu du pinceau"></canvas>`;
+  const stroke = `<label class="field inline"><span>Taille</span><span class="row tight nowrap"><input type="number" id="o-mm" class="num" min="0.05" max="${maxSizeMm()}" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span></label>
+    <label class="field inline"><span>Opacité : ${Math.round(ed.alpha * 100)} %</span><input type="range" id="o-alpha" min="5" max="100" step="1" value="${Math.round(ed.alpha * 100)}"></label>
+    <label class="check compact"><input type="checkbox" id="o-pressure" ${ed.pressure ? 'checked' : ''}> Pression du stylet (tous les pinceaux)</label>`;
+  let trame = '';
+  if (ed.tool === 'pencil') {
+    const t = tramaById(ed.project, ed.tramaId);
+    trame = `<div class="row tight" style="align-items:center;margin-bottom:6px">
+        <button class="swatch-btn" data-pop="lib-trama" title="Changer de trame" aria-label="Changer de trame, actuelle : ${esc(t.solid ? 'aucune' : t.name)}">${t.solid ? '<span class="ink-dot"></span>' : `<canvas width="30" height="30" data-swatch="${t.id}"></canvas>`}</button>
+        <span>${t.solid ? 'Aucune : encre pleine' : esc(t.name)}</span></div>
+      ${t.solid ? '' : `<label class="field inline"><span>Échelle : ×${ed.tramaScale}</span><input type="range" id="d-scale" min="1" max="8" value="${ed.tramaScale}"></label>
+      <label class="check compact"><input type="checkbox" id="d-opaque" ${ed.tramaOpaque ? 'checked' : ''}> Fond blanc sous la trame</label>`}`;
+  }
+  const shape = `<label class="field inline"><span>Forme</span><select id="p-shape">${[['round', 'Rond'], ['square', 'Carré'], ['nib', 'Plume (ellipse)'], ['rect', 'Plat (rectangle)']].map(([v, n]) => `<option value="${v}" ${cur.shape === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    ${cur.shape === 'nib' || cur.shape === 'rect' ? `<label class="field inline"><span>Finesse : ${pct(cur.ratio)}</span><input type="range" id="p-ratio" min="0.05" max="1" step="0.05" value="${cur.ratio}"></label>
+      <label class="check compact"><input type="checkbox" id="p-follow" ${cur.follow ? 'checked' : ''}> Perpendiculaire au geste</label>
+      ${cur.follow ? '' : `<label class="field inline"><span>Angle : ${cur.angle}°</span><input type="range" id="p-angle" min="0" max="175" step="5" value="${cur.angle}"></label>`}` : ''}
+    <label class="field inline"><span>Grain</span><select id="p-grainType">${GRAIN_TYPES.map(([v, n]) => `<option value="${v}" ${cur.grainType === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    ${cur.grainType !== 'none' ? `<label class="field inline"><span>Couverture : ${pct(cur.grain)}</span><input type="range" id="p-grain" min="0.1" max="1" step="0.05" value="${cur.grain}"></label>
+      ${cur.grainType !== 'spray' ? `<label class="field inline"><span>Grain : ${cur.grainScale} px</span><input type="range" id="p-grainScale" min="1" max="6" step="0.5" value="${cur.grainScale}"></label>` : ''}` : ''}
+    ${BPARAMS.filter(r => r[0] === 'scatter' || r[0] === 'spacing').map(sl1).join('')}`;
+  const dyn = BPARAMS.filter(r => r[0] !== 'scatter' && r[0] !== 'spacing').map(sl1).join('');
+  const own = `${sl ? `<div class="row tight" style="margin-bottom:6px">
       <button class="btn small" data-act="slot-rename">${icon('pencil')} Renommer</button>
       <button class="icon-btn icon-only" data-act="slot-left" aria-label="Déplacer à gauche dans la palette" ${i <= 0 ? 'disabled' : ''}>${icon('arrow-left')}</button>
       <button class="icon-btn icon-only" data-act="slot-right" aria-label="Déplacer à droite dans la palette" ${i >= list.length - 1 ? 'disabled' : ''}>${icon('arrow-right')}</button>
-      <button class="icon-btn icon-only danger" data-act="slot-remove" aria-label="Retirer de la palette" ${list.length <= 1 ? 'disabled' : ''}>${icon('trash')}</button></div>` : '';
-  const quick = `<label class="field inline"><span>Taille exacte</span><span class="row tight nowrap"><input type="number" id="o-mm" class="num" min="0.05" max="${maxSizeMm()}" step="0.05" value="${+ed.sizeMm.toFixed(2)}" aria-label="Taille en millimètres"><span class="unit">mm</span></span></label>
-    <label class="field inline"><span>Opacité : ${Math.round(ed.alpha * 100)} %</span><input type="range" id="o-alpha" min="5" max="100" step="1" value="${Math.round(ed.alpha * 100)}"></label>
-    <label class="check compact"><input type="checkbox" id="o-pressure" ${ed.pressure ? 'checked' : ''}> Pression du stylet (tous les pinceaux)</label>
-    <small class="note" style="display:block;margin:2px 0 8px">Une opacité sous 100 % trace un gris tramé (grille de Bayer), comme l'opacité d'un calque à l'export.</small>`;
-  return tabs + slotRow + quick + brushesParts().pop;
+      <button class="icon-btn icon-only danger" data-act="slot-remove" aria-label="Retirer de la palette" ${list.length <= 1 ? 'disabled' : ''}>${icon('trash')}</button></div>` : ''}${parts.pop}`;
+  return preview + g('Trait', stroke) + (trame ? g('Trame', trame) : '') + g('Forme et texture', shape) + g('Dynamique', dyn) + g('Ce pinceau', own)
+    + `<small class="note">Une opacité sous 100 % trace un gris tramé en noir et blanc, une vraie transparence en couleur.</small>`;
 }
 
 
@@ -1181,6 +1204,8 @@ async function onDock(e) {
   const tab = e.target.closest('[data-tab]');
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   if (e.target.closest('[data-z="focus"]')) { setFocus(true); return; }
+  const dp = e.target.closest('#pop [data-pop]');
+  if (dp) { popBack = popId; popId = dp.dataset.pop; renderOptbar(); renderPop(); return; }
   const br = e.target.closest('[data-brush]');
   if (br) {
     if (!['pencil', 'eraser'].includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent un pinceau
@@ -1197,7 +1222,7 @@ async function onDock(e) {
   const tr = e.target.closest('[data-trama]');
   if (tr) {
     if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent une trame
-    ed.tramaId = tr.dataset.trama; if (ed.tool === 'pencil') storeSlot(); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); renderPop(); return;
+    ed.tramaId = tr.dataset.trama; if (ed.tool === 'pencil') storeSlot(); savePrefs(); if (/^lib-/.test(popId)) { popId = popBack; popBack = null; } renderDock(); renderOptbar(); renderPop(); return;
   }
   const pgb = e.target.closest('[data-page]');
   if (pgb) { goToPage(+pgb.dataset.page); return; }
@@ -1292,7 +1317,6 @@ async function onDock(e) {
     if (gone) { renderPop(); toast(`Palette « ${pal.name} » supprimée.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restorePalette(gone); renderPop(); } }); }
   }
   else if (a === 'pick-color') { ed.picking = true; popId = null; renderPop(); updateColorWidget(); toast('Touche le dessin pour y prendre une couleur.', { duration: 2200 }); }
-  else if (a === 'pop-tab') { brushPopTab = e.target.closest("[data-ptab]").dataset.ptab; renderPop(); }
   else if (a === 'slot-rename') {
     const sl = activeSlot(); if (!sl) return;
     const name = await promptModal({ title: 'Renommer le pinceau', label: 'Nom', value: sl.name });
@@ -1466,15 +1490,15 @@ function onDockInput0(e) {
       const lab = e.target.previousElementSibling, row = BPARAMS.find(r => r[0] === key);
       if (lab) lab.textContent = lab.textContent.replace(/ : .*$/, ' : ' + (row ? row[5](+e.target.value) : key === 'angle' ? e.target.value + '°' : key === 'grainScale' ? e.target.value + ' px' : pct(+e.target.value)));
     }
-    afterBrushChange(); $$('canvas[data-bprev]', root).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
+    afterBrushChange(); paintBprev(root);
     return;
   }
   if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); updateQuick('size'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); } return; }
   if (id === 'o-alpha') { setAlpha(+e.target.value / 100); e.target.previousElementSibling.textContent = `Opacité : ${Math.round(ed.alpha * 100)} %`; updateQuick('alpha'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); return; }
   if (id === 'o-pressure') { ed.pressure = e.target.checked; savePrefs(); return; }
   if (id === 'c-hex') { const v = e.target.value.trim(); const h = v[0] === '#' ? v : '#' + v; if (/^#[0-9a-f]{6}$/i.test(h)) { setColor(h, false); updateColorWidget(); const pe = $('#pop', root); paintPicker(pe); const now = $('.cpk-now', pe); if (now) now.style.background = ed.color; } return; }
-  if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'pencil') storeSlot(); return; }
-  if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'pencil') storeSlot(); return; }
+  if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'pencil') storeSlot(); paintBprev(root); return; }
+  if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'pencil') storeSlot(); paintBprev(root); return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }

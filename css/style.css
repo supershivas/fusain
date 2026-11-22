@@ -501,3 +501,6 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .cpal.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .cpal.add { padding: 0 10px; color: var(--text-secondary); border-style: dashed; }
 .cpal-acts { margin-bottom: 6px; }
+.bp-preview { width: 100%; height: auto; aspect-ratio: 5 / 1; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; image-rendering: pixelated; display: block; margin-bottom: 4px; }
+.pgroup { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 8px; }
+.pgroup .clabel { margin-top: 4px; }

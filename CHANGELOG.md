@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.38.1 — 2026-11-22
+- Réglages du pinceau en une seule fenêtre, sans onglets : aperçu du trait en direct, puis Trait, Trame, Forme et texture, Dynamique et Ce pinceau
+- Changer de trame depuis les réglages ouvre la bibliothèque puis y revient
+
 ## 1.38.0 — 2026-11-22
 - Deux niveaux : sur la planche, on gère les cases et les pages (taille des cases, onglet Page) sans rien dessiner ; dans une case ouverte, on dessine (outils de dessin, onglet Calques)
 - Ouvrir une case : double toucher (doigt, stylet ou souris), bouton crayon de la barre d'outils ou « Dessiner dans la case » ; revenir : « Page », Échap, Entrée ; choisir un outil de dessin ouvre la case active
