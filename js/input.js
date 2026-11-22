@@ -7,7 +7,7 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;   // lastPen part de -Infinity : au chargement, aucun doigt n'est pris pour une paume
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null, longPress = null;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null, longPress = null, tapStart = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
@@ -58,6 +58,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     el.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType, palm });
     if (palm) return;
+    tapStart = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, pan: false } : null;
 
     if (e.pointerType === 'touch') {
       const n = touchCount();
@@ -85,7 +86,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     }
     const fingerPans = e.pointerType === 'touch' && ((penSeen && !ed.fingerDraws) || ed.tool === 'pan');
     const mousePan = e.pointerType !== 'touch' && (e.button === 1 || spaceHeld || ed.tool === 'pan');
-    if (fingerPans || mousePan) { startPan(e); return; }
+    if (fingerPans || mousePan) { if (tapStart) tapStart.pan = true; startPan(e); return; }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // au doigt, on attend un instant : un second doigt (zoom, annuler) ne doit pas laisser de point
     if (e.pointerType === 'touch') {
@@ -121,8 +122,18 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     } else if (pending && pending.e.pointerId === e.pointerId) pending.e = e;
   });
 
+  // Deux touchers rapprochés au même endroit : sur la planche, ouvrent la case (doigt, stylet ou souris) ;
+  // dans la case, reviennent à la planche (au doigt qui déplace la vue, ou à l'outil main).
+  const tapped = (e, el2, viaPan) => {
+    if (!onDoubleTap || (ed.focus && !viaPan)) return;
+    const now = e.timeStamp, dbl = lastTap && now - lastTap.t < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40;
+    if (dbl) { lastTap = null; const c = panelUnder(e, el2); onDoubleTap(c ? c.id : null); }
+    else lastTap = { t: now, x: e.clientX, y: e.clientY };
+  };
   const end = e => {
     if (longPress && longPress.id === e.pointerId) { clearTimeout(longPress.timer); longPress = null; }
+    const st = tapStart; tapStart = null;
+    if (st && st.id === e.pointerId && e.type === 'pointerup' && !ed.focus && !st.pan && e.timeStamp - st.t < 350 && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 10) tapped(e, el, false);
     if (e.pointerType === 'pen') { penDown = false; lastPen = performance.now(); }
     const rec = pointers.get(e.pointerId);
     if (!rec) return;
@@ -135,14 +146,8 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     }
     if (panning && panning.id === e.pointerId) {
       // un simple toucher en mode déplacement (main, ou doigt avec le stylet) change de case sans rien dessiner
-      // deux touchers rapprochés au même endroit : ouvrir la case (mode case) ou revenir à la page
-      if (!panning.moved && e.type === 'pointerup') {
-        const q = toPage(e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
-        const c = page().panels.find(p => q.x >= p.x && q.y >= p.y && q.x < p.x + p.w && q.y < p.y + p.h);
-        const now = e.timeStamp, dbl = lastTap && now - lastTap.t < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40;
-        if (dbl) { lastTap = null; if (onDoubleTap) onDoubleTap(c ? c.id : null); }
-        else { lastTap = { t: now, x: e.clientX, y: e.clientY }; if (c && (!ed.focus || c.id === ed.panelId)) selectPanel(c.id); }
-      }
+      // un toucher sans glisser change de case (sur la planche) ; deux touchers rapprochés : voir tapped()
+      if (!panning.moved && e.type === 'pointerup') { const c = panelUnder(e, el); if (c && !ed.focus) selectPanel(c.id); tapped(e, el, true); }
       stopPan();
     }
     if (gesture && rec.type === 'touch' && touchCount() === 0) {
@@ -170,6 +175,11 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
   window.addEventListener('blur', () => { pointers.clear(); gesture = null; panning = null; penDown = false; spaceHeld = false; });
   // Safari : pas de zoom de la page au pincement ; la vue gère son propre zoom
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(n => el.addEventListener(n, e => e.preventDefault()));
+}
+
+function panelUnder(e, el) {
+  const r = el.getBoundingClientRect(), q = toPage(e.clientX - r.left, e.clientY - r.top);
+  return page().panels.find(p => q.x >= p.x && q.y >= p.y && q.x < p.x + p.w && q.y < p.y + p.h) || null;
 }
 
 export const typing = e => /^(INPUT|TEXTAREA|SELECT)$/.test((e.target || {}).tagName) || (e.target && e.target.isContentEditable);

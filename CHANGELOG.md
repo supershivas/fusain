@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.38.0 — 2026-11-22
+- Deux niveaux : sur la planche, on gère les cases et les pages (taille des cases, onglet Page) sans rien dessiner ; dans une case ouverte, on dessine (outils de dessin, onglet Calques)
+- Ouvrir une case : double toucher (doigt, stylet ou souris), bouton crayon de la barre d'outils ou « Dessiner dans la case » ; revenir : « Page », Échap, Entrée ; choisir un outil de dessin ouvre la case active
+- Masque et image tramée passent dans l'onglet Calques de la case
+
 ## 1.37.0 — 2026-11-22
 - Pipette directe : un appui long d'un doigt sur le dessin prend sa couleur (pinceau, remplissage, formes), sans laisser de point
 - Plusieurs palettes nommées par projet (peaux, décors, nuit…) : onglets dans la fenêtre des couleurs, + pour en créer, renommer, supprimer avec Annuler
