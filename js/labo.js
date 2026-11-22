@@ -1,7 +1,7 @@
 // Labo : on compare des variantes avant d'en adopter une. Données d'exemple en dur : rien n'est lu ni écrit
 // dans Supabase, IndexedDB ou localStorage. Ajouter un sujet ou une variante = ajouter une entrée à GROUPS.
 import { BUILTIN_TRAMAS, drawTramaSwatch } from './tramas.js';
-import { drawBubble, lineWidth } from './bubbles.js';
+import { drawBubble, lineWidth, autoSize } from './bubbles.js';
 import { previewBrush, brushSpec } from './raster.js';
 import './ui-core.js';   // dessin commun des curseurs
 
@@ -364,6 +364,127 @@ function levelsDemo(el, mode) {
   }
 }
 
+// ───────────────────────── Calques, bulles et curseurs : nouveautés de la v1.41 à la v1.47 ─────────────────────────
+
+const LAYERS_DEMO = [['Calque 2', 'paint', ''], ['Dessin', 'pen', 'réf.'], ['Brouillon', 'draft', '']];
+function layerRow(name, i, on, tag, extra = '') {
+  return `<div class="lab-layer ${on ? 'on' : ''}" data-i="${i}"><span class="lab-grip"><i class="ti ti-grip-vertical"></i></span><i class="ti ti-eye"></i><span class="lab-lthumb"></span><b>${name}</b>${tag ? `<span class="lab-tag">${tag}</span>` : ''}${extra}</div>`;
+}
+// Organisation des calques : A = tous pareils ; B = calques spécialisés (ancienne)
+function layersKindDemo(el, mode) {
+  const box = h('div', 'lab-layers');
+  if (mode === 'A') {
+    box.innerHTML = LAYERS_DEMO.map(([n, , t], i) => layerRow(n, i, i === 0, t)).join('') + '<div class="lab-row-btns"><span>+ Calque</span><span>+ Brouillon</span></div>';
+    el.append(box, h('p', 'lab-cap', 'On dessine toujours dans le calque actif. Seuls le brouillon (jamais imprimé) et les options référence / alpha distinguent un calque.'));
+  } else {
+    box.innerHTML = [['Encrage', 'encre'], ['Trames', 'trame'], ['Couleur', 'couleur'], ['Brouillon', '']].map(([n, t], i) => layerRow(n, i, i === 0, t)).join('') + '<div class="lab-row-btns"><span>+ Encre</span><span>+ Trame</span><span>+ Brouillon</span><span>+ Couleur</span></div>';
+    el.append(box, h('p', 'lab-cap', 'Chaque outil choisissait son calque (« Dessiné dans Trames ») : le calque actif ne recevait pas toujours le trait.'));
+  }
+}
+// Options d'un calque : A = toucher le calque actif ; B = cases sous la liste (ancienne)
+function layerOptsDemo(el, mode) {
+  const box = h('div', 'lab-layers');
+  const opts = `<div class="lab-lopts"><div class="lab-acts"><span>Renommer</span><span>Dupliquer</span><span>Fusionner</span><span>Vider</span><span>Supprimer</span></div>
+    <div class="lab-line">Opacité <input type="range" value="100"></div><div class="lab-line">Mode de fusion <select><option>Normal</option><option>Produit</option></select></div>
+    <div class="lab-togs"><span class="on">Référence</span><span>Alpha verrouillé</span><span>Brouillon</span><span>Verrouillé</span><span>Afficher seul</span></div></div>`;
+  if (mode === 'A') {
+    let open = true;
+    const draw = () => { box.innerHTML = layerRow('Calque 2', 0, true, '') + (open ? opts : '') + layerRow('Dessin', 1, false, 'réf.') + layerRow('Brouillon', 2, false, ''); box.querySelector('.lab-layer.on').onclick = () => { open = !open; draw(); }; };
+    draw();
+    el.append(box, h('p', 'lab-cap', 'Touche le calque actif pour replier ou déplier ses options. Dans le volet réduit, elles s\'ouvrent à côté de la vignette.'));
+  } else {
+    box.innerHTML = LAYERS_DEMO.map(([n, , t], i) => layerRow(n, i, i === 0, t)).join('') + `<div class="lab-old-props"><b>Calque « Calque 2 »</b><label><input type="checkbox"> Encre / Trame / Brouillon</label><label><input type="checkbox"> Verrouillé</label><label><input type="checkbox"> Afficher seul</label><label><input type="checkbox" checked> Référence</label><label><input type="checkbox"> Verrouiller l'alpha</label></div>`;
+    el.append(box, h('p', 'lab-cap', 'Les réglages du calque actif étaient sous la liste, en cases à cocher, loin du calque concerné.'));
+  }
+}
+// Modes de fusion : un aplat jaune au-dessus d'un trait noir et d'un dégradé, sur le papier
+const BLENDS = [['source-over', 'Normal'], ['multiply', 'Produit'], ['screen', 'Écran'], ['overlay', 'Incrustation'], ['darken', 'Obscurcir'], ['lighten', 'Éclaircir'], ['difference', 'Différence']];
+function blendDemo(el) {
+  const grid = h('div', 'lab-blends');
+  for (const [op, name] of BLENDS) {
+    const c = document.createElement('canvas'); c.width = 180; c.height = 120;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, 180, 120);
+    const g = x.createLinearGradient(0, 0, 180, 0); g.addColorStop(0, '#1F3A93'); g.addColorStop(1, '#E84393');
+    x.fillStyle = g; x.fillRect(0, 70, 180, 50);
+    x.strokeStyle = '#000'; x.lineWidth = 12; x.beginPath(); x.moveTo(10, 20); x.lineTo(170, 100); x.stroke();
+    x.globalCompositeOperation = op; x.fillStyle = '#F4D03F'; x.beginPath(); x.arc(90, 60, 42, 0, Math.PI * 2); x.fill();
+    const f = h('figure'); f.append(c, h('figcaption', '', name)); grid.append(f);
+  }
+  el.append(grid, h('p', 'lab-cap', 'Un disque jaune posé en mode de fusion sur un trait noir et un dégradé. Dans l\'app, le fond est fait des calques du dessous sur le papier blanc, et l\'export suit le mode.'));
+}
+// Volet de droite : complet, réduit, masqué
+function dockDemo(el, mode) {
+  const w = h('div', 'lab-dockdemo ' + mode);
+  const canvas = h('div', 'lab-dd-canvas', '<div class="lab-dd-page"></div>');
+  const dock = h('div', 'lab-dd-dock');
+  if (mode === 'full') dock.innerHTML = LAYERS_DEMO.map(([n, , t], i) => layerRow(n, i, i === 0, t)).join('');
+  else if (mode === 'mini') dock.innerHTML = '<span class="lab-dd-add">+</span>' + LAYERS_DEMO.map((_, i) => `<span class="lab-dd-thumb ${i === 0 ? 'on' : ''}"></span>`).join('');
+  else canvas.append(h('span', 'lab-dd-reopen', '<i class="ti ti-layout-sidebar-right-expand"></i>'));
+  w.append(canvas, dock);
+  el.append(w, h('p', 'lab-cap', { full: 'Le volet complet : calques avec aperçu, options au toucher.', mini: 'Réduit : une colonne de vignettes. Toucher = options à côté, tirer = réordonner, œil = masquer.', hidden: 'Masqué : le dessin prend toute la largeur ; un bouton au coin rouvre le volet.' }[mode]));
+}
+// Réordonner : A = en direct (les cartes s'écartent) ; B = ligne d'insertion (ancienne)
+function reorderDemo(el, mode) {
+  const names = ['Calque 4', 'Calque 3', 'Calque 2', 'Dessin', 'Brouillon'];
+  const box = h('div', 'lab-layers lab-reorder');
+  const draw = () => { box.innerHTML = names.map((n, i) => layerRow(n, i, false, '')).join(''); bind(); };
+  const bind = () => box.querySelectorAll('.lab-grip').forEach(g => g.onpointerdown = e => {
+    const rows = [...box.querySelectorAll('.lab-layer')], row = g.closest('.lab-layer'), i0 = rows.indexOf(row), rects = rows.map(r => r.getBoundingClientRect()), step = rects[1].top - rects[0].top, y0 = e.clientY;
+    let to = i0; g.setPointerCapture(e.pointerId); row.classList.add('drag');
+    if (mode === 'A') rows.forEach(r => { if (r !== row) r.classList.add('shift'); });
+    g.onpointermove = ev => {
+      const dy = Math.max(rects[0].top - rects[i0].top, Math.min(rects[rects.length - 1].top - rects[i0].top, ev.clientY - y0));
+      row.style.transform = `translateY(${dy}px)`;
+      const c = rects[i0].top + rects[i0].height / 2 + dy; to = rects.filter((r, k) => k !== i0 && r.top + r.height / 2 < c).length;
+      rows.forEach((r, k) => {
+        r.classList.remove('line-above', 'line-below');
+        if (k === i0) return;
+        if (mode === 'A') r.style.transform = k > i0 && k <= to ? `translateY(${-step}px)` : k < i0 && k >= to ? `translateY(${step}px)` : '';
+      });
+      if (mode === 'B') { const others = rows.filter(r => r !== row); if (to < others.length) others[to].classList.add('line-above'); else others[others.length - 1].classList.add('line-below'); }
+    };
+    g.onpointerup = () => { g.onpointermove = g.onpointerup = null; const [n] = names.splice(i0, 1); names.splice(to, 0, n); draw(); };
+  });
+  draw();
+  el.append(box, h('p', 'lab-cap', mode === 'A' ? 'Tire un calque par sa poignée : les autres glissent vers la place qu\'ils auront au lâcher.' : 'Une simple ligne rouge montrait où le calque tomberait ; les autres ne bougeaient qu\'au lâcher.'));
+}
+// Taille des bulles : A = toujours automatique, le coin règle la forme ; B = taille fixe (ancienne)
+function bubbleSizeDemo(el, mode) {
+  const c = document.createElement('canvas'), dpi = 300; c.width = 1500; c.height = 620; c.style.cssText = 'width:100%;height:auto';
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  const text = 'Je ne savais pas encore que cette nuit allait tout changer.';
+  if (mode === 'A') {
+    const a = { id: 'la', kind: 'parole', x: 40, y: 60, w: 400, h: 300, text, pt: 10, caps: false, auto: true, wrap: 360, tail: { x: 160, y: 560 } };
+    const b = { id: 'lb', kind: 'parole', x: 700, y: 120, w: 400, h: 300, text, pt: 10, caps: false, auto: true, wrap: 700, tail: { x: 840, y: 560 } };
+    for (const bb of [a, b]) { autoSize(x, bb, dpi); drawBubble(x, bb, dpi, lineWidth(dpi)); }
+    el.append(c, h('p', 'lab-cap', 'Le même texte, deux formes : on tire le coin pour choisir la largeur des lignes, la hauteur suit toujours le texte. La marge intérieure règle l\'air autour.'));
+  } else {
+    const a = { id: 'lc', kind: 'parole', x: 40, y: 60, w: 520, h: 420, text, pt: 10, caps: false, auto: false, tail: { x: 200, y: 590 } };
+    const b = { id: 'ld', kind: 'parole', x: 700, y: 140, w: 700, h: 150, text, pt: 10, caps: false, auto: false, tail: { x: 860, y: 560 } };
+    for (const bb of [a, b]) drawBubble(x, bb, dpi, lineWidth(dpi));
+    el.append(c, h('p', 'lab-cap', 'Taille fixe : la bulle pouvait rester trop grande, ou trop petite pour son texte, qui débordait.'));
+  }
+}
+// Narration : marge au bord de la case
+function narrationEdgeDemo(el, mm) {
+  const c = document.createElement('canvas'), dpi = 300; c.width = 1400; c.height = 640; c.style.cssText = 'width:100%;height:auto';
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  const P = { x: 40, y: 40, w: 1320, h: 560 }, m = mm / 25.4 * dpi;
+  x.strokeStyle = '#000'; x.lineWidth = 5; x.strokeRect(P.x, P.y, P.w, P.h);
+  const b = { id: 'ln' + mm, kind: 'narration', x: P.x + m, y: P.y + m, w: 600, h: 200, text: 'Cette nuit-là, la mer était calme.', pt: 9, caps: true, auto: true };
+  autoSize(x, b, dpi); b.x = P.x + m; b.y = P.y + m; drawBubble(x, b, dpi, lineWidth(dpi));
+  const b2 = { id: 'lm' + mm, kind: 'narration', x: 0, y: 0, w: 600, h: 200, text: 'Plus tard…', pt: 9, caps: true, auto: true };
+  autoSize(x, b2, dpi); b2.x = P.x + P.w - m - b2.w; b2.y = P.y + P.h - m - b2.h; drawBubble(x, b2, dpi, lineWidth(dpi));
+  el.append(c, h('p', 'lab-cap', `Marge au bord de la case : ${String(mm).replace('.', ',')} mm. Près d'un bord, la narration s'y cale ; « Appliquer à toutes les narrations » la donne à tout le projet.`));
+}
+// Curseurs : A = bouton aux extrémités ; B = curseur natif de Safari (ancienne)
+function slidersDemo(el, mode) {
+  const box = h('div', 'lab-sliders' + (mode === 'B' ? ' native' : ''));
+  for (const v of [0, 35, 100]) box.append(h('div', 'lab-line', `<span>${v} %</span><input type="range" min="0" max="100" value="${v}">`));
+  el.append(box, h('p', 'lab-cap', mode === 'A' ? 'Le bouton touche les deux bouts à 0 et 100 %, et le remplissage s\'arrête à son centre : la position dit la valeur.' : 'Le curseur du navigateur : sur iPad, le bouton n\'allait pas aux bouts et le remplissage dépassait à 100 %.'));
+}
+
 export const GROUPS = [
   { id: 'dessin', label: 'Dessin', icon: 'brush', subjects: [
     { id: 'palette', label: 'Palette de pinceaux', icon: 'brush', variants: [
@@ -379,9 +500,35 @@ export const GROUPS = [
       { title: 'Noir et blanc : gris tramé', actuelle: true, say: 'En noir ou blanc, l\'opacité est un gris tramé (grille de Bayer accrochée à la page), comme à l\'impression 1 bit.', render: el => opacityDemo(el, '#000000') },
       { title: 'Couleur : vraie transparence', actuelle: true, say: 'Avec une couleur, le calque passe en couleur et l\'opacité est une vraie transparence ; un trait ne fonce pas là où il repasse.', render: el => opacityDemo(el, '#2E86DE') },
     ] },
+    { id: 'curseurs', label: 'Curseurs', icon: 'adjustments-alt', variants: [
+      { title: 'Bouton aux extrémités', actuelle: true, retenue: true, say: 'Un dessin commun à toute l\'app : à 0 et 100 %, le bouton touche les bouts de la piste.', render: el => slidersDemo(el, 'A') },
+      { title: 'Curseur du navigateur', ancienne: true, say: 'Le curseur natif, décalé sur iPad.', render: el => slidersDemo(el, 'B') },
+    ] },
     { id: 'reglages', label: 'Réglages du pinceau', icon: 'adjustments-horizontal', variants: [
       { title: 'Une fenêtre en groupes', actuelle: true, retenue: true, say: 'Aperçu en direct puis Trait, Trame, Forme et texture, Dynamique, Ce pinceau, sans onglets.', render: el => settingsDemo(el, 'A') },
       { title: 'Onglets Pinceau / Trame', ancienne: true, say: 'Deux onglets, et deux icônes « Réglages » identiques dans la barre pour le pinceau trame.', render: el => settingsDemo(el, 'B') },
+    ] },
+  ] },
+  { id: 'calques', label: 'Calques', icon: 'stack-2', subjects: [
+    { id: 'organisation', label: 'Calques tous pareils', icon: 'stack-2', variants: [
+      { title: 'Calques tous pareils', actuelle: true, retenue: true, say: 'On dessine dans le calque actif ; une case commence avec « Dessin » (référence) et « Brouillon ».', render: el => layersKindDemo(el, 'A') },
+      { title: 'Calques spécialisés', ancienne: true, say: 'Encre, trame, couleur, brouillon : chaque outil choisissait son calque.', render: el => layersKindDemo(el, 'B') },
+    ] },
+    { id: 'options', label: 'Options du calque', icon: 'adjustments', variants: [
+      { title: 'Au toucher du calque', actuelle: true, retenue: true, say: 'Actions, opacité, mode de fusion et bascules s\'ouvrent sous le calque actif (ou à côté dans le volet réduit).', render: el => layerOptsDemo(el, 'A') },
+      { title: 'Cases sous la liste', ancienne: true, say: 'Les propriétés du calque actif étaient sous la liste, en cases à cocher.', render: el => layerOptsDemo(el, 'B') },
+    ] },
+    { id: 'fusion', label: 'Modes de fusion', icon: 'blend-mode', variants: [
+      { title: 'Sept modes', actuelle: true, say: 'Normal, Produit, Écran, Incrustation, Obscurcir, Éclaircir, Différence.', render: el => blendDemo(el) },
+    ] },
+    { id: 'volet', label: 'Volet de droite', icon: 'layout-sidebar-right', variants: [
+      { title: 'Complet', actuelle: true, say: 'Toutes les options, avec un aperçu de chaque calque.', render: el => dockDemo(el, 'full') },
+      { title: 'Réduit', actuelle: true, say: 'Une colonne de vignettes ; toucher ouvre les options à côté, tirer réordonne.', render: el => dockDemo(el, 'mini') },
+      { title: 'Masqué', actuelle: true, say: 'Le dessin prend toute la largeur.', render: el => dockDemo(el, 'hidden') },
+    ] },
+    { id: 'ordre', label: 'Réordonner', icon: 'arrows-sort', variants: [
+      { title: 'En direct', actuelle: true, retenue: true, say: 'Les cartes s\'écartent pendant le geste. Essaie avec les poignées.', render: el => reorderDemo(el, 'A') },
+      { title: 'Ligne d\'insertion', ancienne: true, say: 'Une ligne montrait la place, les cartes ne bougeaient qu\'au lâcher.', render: el => reorderDemo(el, 'B') },
     ] },
   ] },
   { id: 'couleur', label: 'Couleur', icon: 'palette', subjects: [
@@ -422,6 +569,15 @@ export const GROUPS = [
       { title: 'Queue tirée du bord', say: 'Plus de réglage pour la queue : on la sort du bord de la bulle en tirant, on la retire en ramenant sa pointe dedans. Double toucher pour écrire.', render: el => bubbleLab(el, 'C') },
       { title: 'Panneau à vignettes', say: 'Un seul panneau : on choisit forme et queue sur des vignettes plutôt que dans des listes ; les curseurs sont repliés.', render: el => bubbleLab(el, 'D') },
       { title: 'Tracer pour créer', say: 'On trace dans la case la taille de la bulle : elle est créée du type choisi, avec une queue, et la saisie du texte s\'ouvre aussitôt.', render: el => bubbleLab(el, 'E') },
+    ] },
+    { id: 'taille', label: 'Taille des bulles', icon: 'arrows-diagonal', variants: [
+      { title: 'Toujours automatique', actuelle: true, retenue: true, say: 'La bulle s\'ajuste à son texte ; le coin ne règle que la forme (largeur des lignes).', render: el => bubbleSizeDemo(el, 'A') },
+      { title: 'Taille fixe', ancienne: true, say: 'Une case « Taille auto » à décocher pour une taille à la main.', render: el => bubbleSizeDemo(el, 'B') },
+    ] },
+    { id: 'narration', label: 'Narration au bord', icon: 'box-margin', variants: [
+      { title: 'Marge 2 mm', actuelle: true, say: 'La marge par défaut.', render: el => narrationEdgeDemo(el, 2) },
+      { title: 'Marge 5 mm', say: 'Plus d\'air entre la narration et le cadre.', render: el => narrationEdgeDemo(el, 5) },
+      { title: 'Sans marge', say: 'Collée au cadre, à la manière des cartouches classiques.', render: el => narrationEdgeDemo(el, 0) },
     ] },
     { id: 'polices', label: 'Polices', icon: 'typography', variants: [
       { title: 'Comic Neue', actuelle: true, say: 'La police par défaut : lisible, proche du lettrage de BD, avec des capitales rondes.', render: el => bubbleDemo(el, { lw: 1, pt: 9, tail: true, extra: { font: 'comicneue' } }) },

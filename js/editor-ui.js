@@ -168,6 +168,7 @@ export function mountEditor(el) {
   window.addEventListener('keydown', keyHandler);
   window.addEventListener('fusain:library', onLibrary);
   document.addEventListener('pointerdown', closeColorOutside, true);
+  document.addEventListener('pointerdown', closeMiniOpts, true);
   fsListener = () => { renderToolbar(); renderDock(); setTimeout(resize, 100); };
   onFullscreenChange(fsListener);
   setTimeout(resize, 0);
@@ -185,6 +186,7 @@ function onLibrary() { if (!ed.project) return; const pe = $('#pop', root); if (
 export function unmountEditor() {
   window.removeEventListener('fusain:library', onLibrary);
   document.removeEventListener('pointerdown', closeColorOutside, true);
+  document.removeEventListener('pointerdown', closeMiniOpts, true);
   if (unsub) unsub(); unsub = null;
   if (keyHandler) window.removeEventListener('keydown', keyHandler); keyHandler = null;
 }
@@ -845,6 +847,7 @@ export function renderDock() {
     : `<div class="dock-mini" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Pages'}">${dockTab === 'layers' ? miniLayers() : miniPages()}</div>${foot}`;
   if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
   if (dockMini || (dockOpen && ed.focus)) paintMiniThumbs(d);
+  if (dockMini) placeMiniOpts(d);
   renderPop();
 }
 
@@ -857,6 +860,24 @@ function miniLayers() {
         <span class="mini-badges">${l.reference ? `<i class="ti ti-target" title="Référence"></i>` : ''}${l.alphaLock ? '<b title="Alpha verrouillé">α</b>' : ''}${l.locked ? `<i class="ti ti-lock" title="Verrouillé"></i>` : ''}${l.kind === 'draft' ? `<i class="mini-draft" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon"></i>` : ''}</span></button>
       <button class="mini-eye" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button></div>`).join('');
 }
+// Options du calque à côté du volet réduit, à la hauteur de sa vignette (mêmes réglages que dans le volet complet).
+function placeMiniOpts(d) {
+  const p = panel(), l = layerOpts && dockTab === 'layers' && p.layers.find(x => x.id === layerOpts && x.id === p.active);
+  if (!l) { if (layerOpts && dockTab === 'layers') layerOpts = null; return; }
+  const box = document.createElement('div');
+  box.className = 'mini-opts';
+  box.innerHTML = `<div class="mini-opts-head"><b>${esc(l.name)}</b><button class="icon-btn icon-only" data-act="mini-opts-close" aria-label="Fermer les options">${icon('x')}</button></div>${layerOptions(l)}`;
+  d.append(box);
+  const th = d.querySelector(`.mini-layer[data-layer="${l.id}"]`), dr = d.getBoundingClientRect();
+  const top = th ? th.getBoundingClientRect().top - dr.top : 8;
+  box.style.top = Math.max(8, Math.min(dr.height - box.offsetHeight - 8, top)) + 'px';
+}
+// Un toucher en dehors referme les options du volet réduit.
+function closeMiniOpts(e) {
+  if (!dockMini || !layerOpts || modalOpen() || e.target.closest('.mini-opts, .dock-mini .mini-layer, .toast, [aria-modal="true"]')) return;
+  layerOpts = null; renderDock();
+}
+
 function miniPages() {
   return ed.project.pages.map((pg, i) => `<button class="mini-page ${i === ed.pageIdx ? 'on' : ''}" data-mpage="${i}" aria-label="Page ${i + 1}" aria-pressed="${i === ed.pageIdx}">${i + 1}</button>`).join('');
 }
@@ -1420,9 +1441,11 @@ async function onDock(e) {
   else if (a === 'select-layer') {
     if (miniDragged) return;
     const id = lay.dataset.layer;
-    if (id === panel().active && !e.target.closest('.dock-mini')) { layerOpts = layerOpts === id ? null : id; renderDock(); }
+    if (e.target.closest('.dock-mini')) { const was = layerOpts === id; if (id !== panel().active) selectLayer(id); layerOpts = was ? null : id; renderDock(); }
+    else if (id === panel().active) { layerOpts = layerOpts === id ? null : id; renderDock(); }
     else { layerOpts = null; selectLayer(id); }
   }
+  else if (a === 'mini-opts-close') { layerOpts = null; renderDock(); }
   else if (a === 'ltoggle') {
     const l = activeLayer(), prop = act.dataset.prop;
     if (prop === 'solo') { setSolo(l.id); toast(ed.solo ? `Seul « ${l.name} » est affiché.` : 'Tous les calques sont affichés.', { duration: 1600 }); }

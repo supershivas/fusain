@@ -575,3 +575,9 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .pop .btn, .bfdrop .btn, .dock-body .btn, .modal-body .btn { white-space: normal; max-width: 100%; height: auto; min-height: var(--tap); padding-top: 6px; padding-bottom: 6px; text-align: center; line-height: 1.25; }
 /* un curseur dans un champ (.field) garde son dessin : pas de cadre ni de fond de champ de saisie */
 .field input[type=range] { border: 0; padding: 0; background: transparent; box-shadow: none; min-height: 32px; height: 32px; }
+
+/* Options d'un calque ouvertes depuis le volet réduit : une fenêtre à gauche de la colonne */
+.dock.mini { position: relative; overflow: visible; }
+.mini-opts { position: absolute; right: calc(100% + 8px); width: 300px; max-height: calc(100% - 16px); overflow-y: auto; z-index: 20; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 12px 36px rgba(0,0,0,.28); padding: 8px; font-size: .86rem; }
+.mini-opts .lopts { border: none; margin: 0; padding: 0; }
+.mini-opts-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 4px 4px; }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.48.0 — 2026-11-22
+- Volet réduit : toucher une vignette ouvre les options du calque à côté (actions, opacité, mode de fusion, référence, alpha, brouillon, verrou) ; un second toucher ou un toucher ailleurs les referme
+- Labo : nouveau groupe Calques (calques tous pareils, options au toucher, modes de fusion, volet de droite, réordonner en direct à essayer) et nouveaux sujets Curseurs, Taille des bulles et Narration au bord
+
 ## 1.47.2 — 2026-11-22
 - Curseurs revus dans toute l'app : à 0 et à 100 %, le bouton touche les deux bouts de la piste, et le remplissage s'arrête juste à lui (Safari décalait le bouton et dépassait le remplissage)
 - Les boutons au texte long restent dans leur fenêtre (« Appliquer à toutes les narrations »)
