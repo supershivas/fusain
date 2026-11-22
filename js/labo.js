@@ -3,6 +3,7 @@
 import { BUILTIN_TRAMAS, drawTramaSwatch } from './tramas.js';
 import { drawBubble, lineWidth } from './bubbles.js';
 import { previewBrush, brushSpec } from './raster.js';
+import './ui-core.js';   // dessin commun des curseurs
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 

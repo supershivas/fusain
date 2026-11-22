@@ -83,3 +83,20 @@ export function promptModal({ title, label, value = '', confirm = 'Enregistrer' 
 }
 
 export const formatDate = ms => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+// ── Curseurs (input range) : un seul dessin pour toute l'app, quel que soit le navigateur ──
+// Le bouton touche les deux bouts de la piste à 0 et à 100 %, et le remplissage s'arrête à son centre (variable --p, 0 à 1).
+// --p suit chaque changement : saisie, curseur ajouté à la page, ou valeur posée par le code.
+export function syncRange(el) {
+  const min = el.min === '' ? 0 : +el.min, max = el.max === '' ? 100 : +el.max, v = +el.value;
+  el.style.setProperty('--p', max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : 0);
+}
+if (typeof window !== 'undefined' && !window.__fusainRanges) {
+  window.__fusainRanges = true;
+  document.addEventListener('input', e => { if (e.target && e.target.type === 'range') syncRange(e.target); }, true);
+  const scan = n => { if (n.nodeType !== 1) return; if (n.matches('input[type=range]')) syncRange(n); n.querySelectorAll('input[type=range]').forEach(syncRange); };
+  new MutationObserver(ms => { for (const m of ms) m.addedNodes.forEach(scan); }).observe(document.documentElement, { childList: true, subtree: true });
+  const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  Object.defineProperty(HTMLInputElement.prototype, 'value', { ...d, set(v) { d.set.call(this, v); if (this.type === 'range') syncRange(this); } });
+  scan(document.documentElement);
+}

@@ -53,6 +53,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - `js/view.js` (rendu et zoom), `input.js` (Pointer Events, rejet de la paume, pincer), `tools.js` (outils au pointeur), `editor.js` (état et actions annulables).
 - `js/shell.js` — plein écran (Safari iPad seulement, pas iPhone), détection iOS / installé, garde-fous contre la sélection, le menu de pression longue, le zoom de page et le double toucher (avec le CSS de `style.css`). Les champs de saisie gardent `user-select: text`, sinon Safari ne les laisse plus taper.
 - `js/store.js` (IndexedDB, PNG 2 bits via `png.js`), `sync.js` (Supabase par `fetch`), `portable.js` (export/import JSON, découpage).
+- Curseurs (`input[type=range]`) : un seul dessin pour toute l'app et le labo (`style.css`) : bouton aux deux bouts à 0 et 100 %, remplissage jusqu'à son centre via la variable `--p`, tenue à jour par `syncRange` (`ui-core.js` : saisie, curseurs ajoutés à la page, et valeur posée par le code grâce au setter de `value`). Dans les fenêtres et le volet, un bouton à texte long passe à la ligne.
 - `js/home.js`, `editor-ui.js`, `menus.js`, `settings.js`, `ui-core.js`, `toast.js`, `main.js` (routage `#/p/<id>`), `app-update.js` (copié du design system).
 
 ## Exceptions aux conventions

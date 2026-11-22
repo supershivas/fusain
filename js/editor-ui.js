@@ -1330,7 +1330,7 @@ function bubbleShape(b) {
   const p = props(b);
   return `${slider('b-pad', p, 0, 10, 0.5)}
       ${b.kind === 'narration' ? `${slider('b-edge', p, 0, 10, 0.5)}<small class="note" style="display:block">Près d'un bord de sa case, la narration s'y cale à cette distance${b.rot ? ' (pas quand elle est tournée)' : ''}.</small>
-      <button class="btn small" data-act="edge-all" style="margin:2px 0 8px">Appliquer ces marges à toutes les narrations</button>` : ''}
+      <button class="btn small" data-act="edge-all" style="margin:2px 0 8px">Appliquer à toutes les narrations</button>` : ''}
       <label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
       <label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}

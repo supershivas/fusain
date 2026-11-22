@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.47.2 — 2026-11-22
+- Curseurs revus dans toute l'app : à 0 et à 100 %, le bouton touche les deux bouts de la piste, et le remplissage s'arrête juste à lui (Safari décalait le bouton et dépassait le remplissage)
+- Les boutons au texte long restent dans leur fenêtre (« Appliquer à toutes les narrations »)
+
 ## 1.47.1 — 2026-11-22
 - Volet réduit : on réordonne les calques en tirant leur vignette, avec la même animation que dans le volet complet
 - Volet complet : chaque calque a une vignette d'aperçu de son contenu
