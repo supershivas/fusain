@@ -1,7 +1,7 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, toRGBA, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
+  ed, page, activeLayer, toRGBA, fillLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
@@ -28,7 +28,7 @@ function maskFor(p) {
 
 function makeCtx(p, layer, paint, useMask = true) {
   const clip = { x0: p.x - p.ex, y0: p.y - p.ey, x1: p.x - p.ex + p.w, y1: p.y - p.ey + p.h };
-  const ctx = { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null };
+  const ctx = { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null, alphaLock: !!(layer && layer.alphaLock) };
   if (layer && (layer.kind === 'color' || layer.rgba)) {   // calque RVBA : vraie opacité (chaque pixel mélangé une fois par trait)
     ctx.rgba = true;
     paint.rgb = ed.ink === 3 ? hexToRgb(ed.color) : [0, 0, 0];
@@ -86,7 +86,10 @@ function begin(p, pt) {
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
   else {
-    layer = role === 'any' ? activeLayer(p) : targetLayer(p, role);
+    // un calque actif à l'alpha verrouillé reçoit le trait (on colorie « dedans ») ; sinon chaque outil vise le calque de sa sorte
+    const act = activeLayer(p);
+    layer = role === 'any' || (role && act.alphaLock) ? act : targetLayer(p, role);
+    if (ed.tool === 'fill' && layer.reference) layer = fillLayer(p);   // la référence guide, elle ne reçoit pas l'aplat
     if (!layer.visible) { toast(`Le calque « ${layer.name} » est masqué : affiche-le pour dessiner.`); return; }
     if (layer.locked) { toast(`Le calque « ${layer.name} » est verrouillé.`); return; }
     if (layer !== activeLayer(p) && hinted !== layer.id) { hinted = layer.id; toast(`Dessiné dans « ${layer.name} »`, { duration: 1600 }); }
@@ -119,6 +122,25 @@ function begin(p, pt) {
     session = { kind: 'shape', p, layer, x0: pt.x, y0: pt.y };
     setOverlay({ shape: { kind: ed.shapeKind, x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y } });
   }
+}
+
+// Glisser-déposer de la couleur (ColorDrop) : la couleur principale lâchée sur le dessin remplit la zone
+// fermée sous le point, guidée par les calques de référence, dans un calque qui n'est pas une référence.
+export function colorDrop(pt) {
+  const p = panelAt(pt.x, pt.y);
+  if (!p) return false;
+  const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey);
+  const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
+  if (!region) return false;
+  selectPanel(p.id);
+  const layer = fillLayer(p);
+  if (ed.ink === 3) toRGBA(layer);
+  ed.undo.begin('Glisser la couleur');
+  applyRegion(makeCtx(p, layer, { v: inkV(), alpha: 1 }), region);
+  ed.undo.commit();
+  invalidate(p, { x: region.x0, y: region.y0, w: region.x1 - region.x0 + 1, h: region.y1 - region.y0 + 1 });
+  markChanged();
+  return layer;
 }
 
 // Trou toléré dans un contour : le curseur (0–100) va jusqu'à 2,5 mm.

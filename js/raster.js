@@ -143,6 +143,11 @@ const bayerKeep = (alpha, px, py) => alpha * 64 > BAYER8[py & 7][px & 7];
 function put(ctx, data, x, y) {
   if (!writable(ctx, x, y)) return;
   const a = ctx.paint.alpha;
+  if (ctx.alphaLock) {   // verrouillage alpha : seuls les pixels déjà peints changent, et la gomme ne fait rien
+    if (ctx.paint.v === 0) return;
+    const k = y * ctx.layer.w + x;
+    if (ctx.rgba ? !data[k * 4 + 3] : !data[k]) return;
+  }
   if (ctx.rgba) { putRGBA(ctx, data, x, y, a ?? 1); return; }
   if (a !== undefined && a < 1 && !bayerKeep(a, x + ctx.ox, y + ctx.oy)) return;
   const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
@@ -165,6 +170,10 @@ function putRGBA(ctx, data, x, y, a) {
     return;
   }
   const c = v === INK ? ctx.paint.rgb || [0, 0, 0] : [255, 255, 255];
+  if (ctx.alphaLock) {   // garde la transparence du pixel, ne change que sa couleur
+    for (let j = 0; j < 3; j++) data[i + j] = Math.round(c[j] * a + data[i + j] * (1 - a));
+    return;
+  }
   if (a >= 1 || da === 0) { data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = Math.max(Math.round(a * 255), a >= 1 ? 255 : 0); return; }
   const oa = a + da * (1 - a);
   data[i] = Math.round((c[0] * a + data[i] * da * (1 - a)) / oa);
@@ -510,8 +519,10 @@ const C_MASK = 0x802B39C0;
 // Hors du cadre visible, la valeur est 1 (encre) : un remplissage s'arrête au bord de la case.
 export function compositeValues(panel, includeDraft = false) {
   const out = new Uint8Array(panel.ew * panel.eh);
-  for (const l of panel.layers) {
-    if (!l.visible || !l.data || (l.draft && !includeDraft) || l.kind === 'color') continue;   // le calque « Couleur » ne fait pas barrière au remplissage
+  // calques « référence » visibles : eux seuls guident le remplissage (le dessin de l'auteur reste séparé des aplats)
+  const refs = panel.layers.filter(l => l.reference && l.visible && l.data);
+  for (const l of refs.length ? refs : panel.layers) {
+    if (!l.visible || !l.data || (!l.reference && ((l.draft && !includeDraft) || l.kind === 'color'))) continue;   // le calque « Couleur » ne fait pas barrière au remplissage
     const d = l.data;
     if (bppOf(l) === 4) {   // encre ou trame en couleur : pixel opaque = trait (blanc pur = blanc)
       for (let i = 0, j = 0; i < out.length; i++, j += 4) if (d[j + 3] >= 128) out[i] = d[j] > 240 && d[j + 1] > 240 && d[j + 2] > 240 ? PAPER : INK;

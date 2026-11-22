@@ -7,7 +7,8 @@ import {
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
-import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
+import { colorDrop } from './tools.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
@@ -122,6 +123,8 @@ export function mountEditor(el) {
   quick.addEventListener('pointercancel', quickUp);
   quick.addEventListener('keydown', quickKey);
   quick.addEventListener('click', onQuickClick);
+  quick.addEventListener('pointerdown', cdropDown); quick.addEventListener('pointermove', cdropMove);
+  quick.addEventListener('pointerup', cdropUp); quick.addEventListener('pointercancel', cdropUp);
   pop.addEventListener('pointerdown', pickerDown); pop.addEventListener('pointermove', pickerMove);
   pop.addEventListener('pointerup', pickerUp); pop.addEventListener('pointercancel', pickerUp);
   $('#dock', root).addEventListener('pointerdown', e => { if (!gripDown(e)) swipeDown(e); });
@@ -784,9 +787,7 @@ export function renderDock() {
     ${canFullscreen() ? `<button class="icon-btn icon-only" data-act="foot-fs" title="Plein écran : masque la barre du navigateur" aria-label="Plein écran" aria-pressed="${isFullscreen()}">${icon(isFullscreen() ? 'arrows-minimize' : 'arrows-maximize')}</button>` : ''}
     <button class="icon-btn icon-only" data-act="foot-dock" title="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-label="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-expanded="${dockOpen}">${icon(dockOpen ? 'layout-sidebar-right-collapse' : 'layout-sidebar-right-expand')}</button></div>`;
   dockTab = ed.focus ? 'layers' : 'page';
-  d.innerHTML = dockOpen ? `<div class="dock-tabs" role="tablist">${TABS.filter(t => t.id === dockTab).map(t =>
-    `<button role="tab" data-tab="${t.id}" class="${dockTab === t.id ? 'on' : ''}" aria-selected="${dockTab === t.id}" title="${t.label}">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}</div>
-    <div class="dock-body">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}` : foot;
+  d.innerHTML = dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}` : foot;
   if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
   renderPop();
 }
@@ -847,7 +848,38 @@ function updateColorWidget() {
   if (p) { p.style.background = ed.color; p.setAttribute('aria-label', `Couleur ${ed.color}, toucher pour la palette`); p.classList.toggle('open', popId === 'color'); p.setAttribute('aria-expanded', popId === 'color'); }
   if (s) s.style.background = ed.color2;
 }
+// ColorDrop : la couleur principale, tirée hors du widget et lâchée sur le dessin, remplit la zone sous le doigt.
+let cdrag = null, cdragSwallow = false;
+function cdropDown(e) {
+  const b = e.target.closest('[data-cw="open"]');
+  if (!b || !ed.focus) return;
+  cdrag = { id: e.pointerId, x: e.clientX, y: e.clientY, on: false, b };
+  try { b.setPointerCapture(e.pointerId); } catch { /* */ }
+}
+function cdropMove(e) {
+  const g = cdrag;
+  if (!g || e.pointerId !== g.id) return;
+  if (!g.on && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 12) {
+    g.on = true; g.ghost = document.createElement('div'); g.ghost.className = 'cdrop'; g.ghost.style.background = ed.color; document.body.append(g.ghost);
+  }
+  if (g.on) { g.ghost.style.left = e.clientX + 'px'; g.ghost.style.top = e.clientY + 'px'; }
+}
+function cdropUp(e) {
+  const g = cdrag;
+  if (!g || e.pointerId !== g.id) return;
+  cdrag = null;
+  if (!g.on) return;
+  g.ghost.remove(); cdragSwallow = true; setTimeout(() => { cdragSwallow = false; }, 400);
+  if (e.type !== 'pointerup') return;
+  const v = $('#view', root), r = v.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientY < r.top || e.clientX > r.right || e.clientY > r.bottom) return;
+  const q = toPage(e.clientX - r.left, e.clientY - r.top), layer = colorDrop({ x: q.x, y: q.y });
+  if (layer) toast(`Couleur posée dans « ${layer.name} ».`, { actionLabel: 'Annuler', duration: 4000, onAction: undo });
+  else toast('Lâche la couleur dans une zone fermée de la case.');
+}
+
 function onQuickClick(e) {
+  if (cdragSwallow) { cdragSwallow = false; return; }
   const b = e.target.closest('[data-cw]');
   if (!b) return;
   const a = b.dataset.cw;
@@ -996,11 +1028,11 @@ function layersTab() {
       <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
       <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
-  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
+  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''} ${l.alphaLock ? 'alpha-locked' : ''}" data-layer="${l.id}">
       <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
-      ${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
+      ${l.reference ? `<span class="tag ref" title="Calque de référence">${icon('target')} réf.</span>` : ''}${l.alphaLock ? `<span class="tag alpha" title="Alpha verrouillé">α</span>` : ''}${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
     `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`)).join('');
   const acts = `<div class="tools-row">
@@ -1020,9 +1052,14 @@ function layersTab() {
       <label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label>
       ${oneBit && cur.kind !== 'color' ? `<label class="check compact"><input type="checkbox" id="l-draft" ${cur.kind === 'draft' ? 'checked' : ''}> Brouillon</label>` : ''}</div>
+    <div class="row" style="gap:4px 14px">
+      <label class="check compact" title="Le remplissage et la couleur glissée suivent les traits de ce calque, et se posent dans un autre calque"><input type="checkbox" id="l-ref" ${cur.reference ? 'checked' : ''}> Référence</label>
+      <label class="check compact" title="On ne peint que sur les pixels déjà présents, sans en déborder"><input type="checkbox" id="l-alpha" ${cur.alphaLock ? 'checked' : ''}> Verrouiller l'alpha</label></div>
     ${cur.kind === 'draft' ? `<div class="row tight" style="margin:6px 0">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
     ${tinted ? `<div class="row tight" style="margin:6px 0;align-items:center"><i class="ldot" style="background:${cur.color}"></i><small class="note" style="margin:0">Teinte d'un ancien réglage</small><button class="btn small" data-act="tint-reset">Retirer</button></div>` : ''}
+    ${cur.reference ? '<small class="note" style="display:block">Référence : le remplissage et la couleur glissée depuis les deux couleurs suivent ses traits et se posent dans un autre calque.</small>' : ''}
+    ${cur.alphaLock ? '<small class="note" style="display:block">Alpha verrouillé : on ne peint que sur ce qui est déjà dessiné ; la gomme n\'agit pas.</small>' : ''}
     <small class="note">${about}${oneBit && cur.kind !== 'draft' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
@@ -1537,6 +1574,8 @@ function onDockInput0(e) {
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
+  if (id === 'l-ref') { setLayerProp(activeLayer().id, 'reference', e.target.checked); return; }
+  if (id === 'l-alpha') { setLayerProp(activeLayer().id, 'alphaLock', e.target.checked); return; }
   if (id === 'l-draft') {   // brouillon ↔ son ancien type (encre par défaut)
     const l = activeLayer();
     if (e.target.checked) { l.prevKind = l.kind; setLayerProp(l.id, 'kind', 'draft'); } else setLayerProp(l.id, 'kind', l.prevKind || 'ink');

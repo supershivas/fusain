@@ -772,6 +772,22 @@ export function targetLayer(p, role) {
   return l;
 }
 
+// Calque qui reçoit un remplissage : l'actif, sauf s'il est une référence (ou verrouillé, masqué, brouillon) ;
+// sinon le plus haut calque possible ; à défaut, un calque « Aplats » est créé sous la référence (annulable).
+export function fillLayer(p) {
+  const ok = l => !l.reference && !l.locked && l.visible && l.kind !== 'draft';
+  const act = activeLayer(p);
+  if (ok(act)) return act;
+  const cand = [...p.layers].reverse().find(ok);
+  if (cand) return cand;
+  const l = newLayer('Aplats', p.ew, p.eh, { kind: 'ink' });
+  const refAt = p.layers.findIndex(x => x.reference), at = refAt >= 0 ? refAt : p.layers.length, prev = p.active;
+  const apply = () => { p.layers.splice(at, 0, l); invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
+  return l;
+}
+
 export function duplicateLayer() {
   const p = panel(), src = activeLayer(p);
   const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color });

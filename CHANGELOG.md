@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.41.0 — 2026-11-22
+- Calque de référence : le remplissage suit ses traits et pose l'aplat dans un autre calque, le dessin reste séparé ; ColorDrop : tire la couleur principale (à gauche) et lâche-la dans une zone fermée pour la remplir
+- Verrouiller l'alpha : on ne peint que sur ce qui est déjà dessiné dans le calque, sans déborder ; la gomme n'y agit pas
+- Étiquettes « réf. » et « α » dans la liste des calques ; plus de titre « Calques » / « Page » en haut du volet
+
 ## 1.40.0 — 2026-11-22
 - Labo : trois nouveaux groupes avec les nouveautés face aux anciennes versions : Dessin (palette de pinceaux, curseur de taille à comparer, opacité, réglages du pinceau), Couleur (deux couleurs, palette de couleurs interactive) et Planche (planche et case)
 
