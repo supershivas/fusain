@@ -442,7 +442,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 /* Réglages rapides : curseurs verticaux au bord gauche du canevas */
 .quick { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); z-index: 3; display: flex; flex-direction: column; gap: 24px; }
 .qs { width: 44px; display: flex; flex-direction: column; align-items: center; gap: 4px; touch-action: none; -webkit-user-select: none; user-select: none; cursor: ns-resize; }
-.qs-track { position: relative; width: 14px; height: clamp(90px, 18vh, 170px); border-radius: 999px; background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow); }
+.qs-track { position: relative; width: 14px; height: clamp(110px, 24vh, 220px); border-radius: 999px; background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow); }
 .qs-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 999px; background: var(--accent-soft); }
 .qs-thumb { position: absolute; left: 50%; width: 26px; height: 26px; margin: 0 0 -13px -13px; border-radius: 50%; background: var(--card-bg); border: 2px solid var(--accent); box-shadow: var(--card-shadow); }
 .qs-val { font: 500 .68rem var(--font-mono); color: var(--text-secondary); background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1px 4px; white-space: nowrap; opacity: .9; }
@@ -461,7 +461,9 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .cpick { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: .85rem; cursor: pointer; }
 .cpick input[type=color] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); }
 .tag.ctag { color: var(--accent); border-color: var(--accent); }
-.qs-tick { position: absolute; left: -5px; right: -5px; height: 2px; margin-bottom: -1px; background: var(--text-secondary); border-radius: 1px; pointer-events: none; }
+.qs-tick { position: absolute; left: -7px; right: -7px; height: 3px; margin-bottom: -1.5px; background: var(--text-secondary); border-radius: 2px; pointer-events: none; }
+.qs-tick.hit { background: var(--accent); left: -10px; right: -10px; }
+.qs.snap .qs-thumb { transform: scale(1.1); box-shadow: 0 0 0 4px var(--accent-soft), var(--card-shadow); }
 .qs.snap .qs-thumb { background: var(--accent); }
 .slot.holding, .brush-row.holding { transform: scale(.94); transition: transform .5s; border-color: var(--accent); }
 .slot, .brush-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

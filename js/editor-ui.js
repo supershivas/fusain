@@ -396,16 +396,25 @@ const QUICK = {
   alpha: { label: 'Opacité', get: () => (ed.alpha - 0.05) / 0.95, set: v => setAlpha(0.05 + 0.95 * v), fmt: () => Math.round(ed.alpha * 100) + ' %',
     val: () => ed.alpha, toV: a => (a - 0.05) / 0.95, setVal: a => setAlpha(a), say: a => Math.round(a * 100) + ' %' },
 };
-const TICK_SNAP = 0.035, LONG_MS = 500;   // aimant : 3,5 % de la course ; appui long : une demi-seconde
-const tickHtml = k => ticksOf()[k].map(t => `<i class="qs-tick" style="bottom:${Math.max(0, Math.min(1, QUICK[k].toV(t))) * 100}%"></i>`).join('');
-const nearTick = (k, v) => {
-  let best = null, bd = TICK_SNAP;
-  for (const t of ticksOf()[k]) { const d = Math.abs(QUICK[k].toV(t) - v); if (d <= bd) { bd = d; best = t; } }
+// Aimant des repères, en pixels d'écran (pas en part de la course : un doigt est large quelle que soit la taille du curseur).
+// On s'accroche à SNAP_IN du repère, on n'en décroche qu'à une fois et demie cette distance : le curseur colle, sans trembler à la limite.
+const SNAP_IN = { touch: 16, pen: 10, mouse: 8 }, SNAP_OUT = 1.5, LONG_MS = 500;
+const clamp01 = v => Math.max(0, Math.min(1, v));
+const tickHtml = k => ticksOf()[k].map(t => `<i class="qs-tick" data-tick="${t}" style="bottom:${clamp01(QUICK[k].toV(t)) * 100}%"></i>`).join('');
+const trackH = k => { const tr = $(`[data-quick="${k}"] .qs-track`, root); return (tr && tr.getBoundingClientRect().height) || 150; };
+// Repère le plus proche de la position v (0–1) dans un rayon de `px` pixels ; celui déjà accroché a un rayon élargi.
+function nearTick(k, v, px, held = null) {
+  const h = trackH(k);
+  let best = null, bd = Infinity;
+  for (const t of ticksOf()[k]) {
+    const d = Math.abs(clamp01(QUICK[k].toV(t)) - v) * h, rad = t === held ? px * SNAP_OUT : px;
+    if (d <= rad && d < bd) { bd = d; best = t; }
+  }
   return best;
-};
+}
 // Appui long sur un curseur : pose un repère à la valeur touchée, ou retire celui qui s'y trouve.
 function toggleTick(k) {
-  const list = ticksOf()[k], v = QUICK[k].get(), t = nearTick(k, v);
+  const list = ticksOf()[k], v = QUICK[k].get(), t = nearTick(k, v, SNAP_IN.touch);
   if (t !== null) { list.splice(list.indexOf(t), 1); toast(`Repère ${QUICK[k].say(t)} retiré.`, { duration: 1400 }); }
   else { const val = +QUICK[k].val().toFixed(3); list.push(val); list.sort((a, b) => a - b); toast(`Repère posé à ${QUICK[k].say(val)} : le curseur s'y aimante.`, { duration: 1800 }); }
   const tr = $(`[data-quick="${k}"] .qs-track`, root);
@@ -438,7 +447,7 @@ function quickDown(e) {
   if (!el) return;
   e.preventDefault(); e.stopPropagation();
   try { el.setPointerCapture(e.pointerId); } catch { /* */ }
-  const g = quickDrag = { el, k: el.dataset.quick, id: e.pointerId, x0: e.clientX, y0: e.clientY };
+  const g = quickDrag = { el, k: el.dataset.quick, id: e.pointerId, x0: e.clientX, y0: e.clientY, type: e.pointerType, held: null };
   g.timer = setTimeout(() => { if (quickDrag === g) { g.long = true; toggleTick(g.k); } }, LONG_MS);
   el.classList.add('active');
   quickMove(e);
@@ -447,10 +456,13 @@ function quickMove(e) {
   const g = quickDrag;
   if (!g || e.pointerId !== g.id) return;
   if (g.timer && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) > 8) { clearTimeout(g.timer); g.timer = null; }   // le doigt glisse : pas d'appui long
-  const r = g.el.querySelector('.qs-track').getBoundingClientRect(), v = Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height));
-  const t = nearTick(g.k, v);
-  if (t !== null && !g.long) QUICK[g.k].setVal(t); else QUICK[g.k].set(v);   // aimanté au repère proche
+  const r = g.el.querySelector('.qs-track').getBoundingClientRect(), v = clamp01((r.bottom - e.clientY) / r.height);
+  const t = g.long ? null : nearTick(g.k, v, SNAP_IN[g.type] || SNAP_IN.touch, g.held);
+  if (t !== null) QUICK[g.k].setVal(t); else QUICK[g.k].set(v);   // aimanté au repère proche : valeur exacte du repère
+  if (t !== null && t !== g.held && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* */ } }   // petit déclic (Android)
+  g.held = t;
   g.el.classList.toggle('snap', t !== null);
+  $$('.qs-tick', g.el).forEach(x => x.classList.toggle('hit', t !== null && +x.dataset.tick === t));
   updateQuick(g.k);
   paintSlots($('#optbar', root));
 }
@@ -459,6 +471,7 @@ function quickUp(e) {
   if (!g || e.pointerId !== g.id) return;
   clearTimeout(g.timer);
   quickDrag = null; g.el.classList.remove('active', 'snap');
+  $$('.qs-tick.hit', g.el).forEach(x => x.classList.remove('hit'));
   afterBrushChange();
 }
 function quickKey(e) {

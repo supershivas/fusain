@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.35.1 — 2026-11-22
+- Aimantation des curseurs de taille et d'opacité revue : le curseur s'accroche au repère à portée de doigt (16 px, 8 px à la souris) et y reste tant qu'on ne s'en éloigne pas franchement
+- Le repère accroché s'allume, et les curseurs sont plus longs pour un réglage plus fin
+
 ## 1.35.0 — 2026-11-22
 - Pinceau et pinceau trame ne font plus qu'un : la trame est un réglage du pinceau (« Plein » pour l'encre), et la palette réunit pinceaux et pinceaux tramés ; touche T pour choisir la trame
 - La palette de couleurs reste ouverte quand on choisit une nuance ; elle se ferme en touchant en dehors (sans dessiner) ou sur sa pastille
