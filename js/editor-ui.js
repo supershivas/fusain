@@ -9,7 +9,7 @@ import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -982,8 +982,11 @@ function pageTab() { return pagesTab() + caseTab(); }
 function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
-  const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : l.kind === 'color' ? `<span class="tag ctag" title="Calque de couleur">couleur</span>` : '';
-  const dotc = l => (l.rgba ? `<span class="tag ctag" title="Calque ${l.kind === 'tram' ? 'de trame ' : ''}en couleur (RVBA)">${l.kind === 'tram' ? 'trame' : 'couleur'}</span>` : dot(l));
+  // étiquette : brouillon = pastille de sa couleur ; trame = « trame » ; un calque passé en couleur a l'étiquette en accent
+  const dotc = l => l.kind === 'draft'
+    ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>`
+    : l.kind === 'tram' ? `<span class="tag ${l.rgba ? 'ctag' : ''}" title="Calque de trame${l.rgba ? ' en couleur' : ''}">trame</span>`
+    : l.rgba || l.kind === 'color' ? `<span class="tag ctag" title="Calque en couleur">couleur</span>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   linkBubbles(pg);
@@ -1003,27 +1006,24 @@ function layersTab() {
   const acts = `<div class="tools-row">
       <button class="btn small" data-act="add-layer">${icon('plus')} Encre</button>
       <button class="btn small" data-act="add-tram">${icon('plus')} Trame</button>
-      <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button>
-      <button class="btn small" data-act="add-color">${icon('plus')} Couleur</button>
-      <button class="icon-btn icon-only" data-act="dup-layer" title="Dupliquer le calque" aria-label="Dupliquer le calque">${icon('copy')}</button>
-      <button class="icon-btn icon-only" data-act="up" title="Monter" aria-label="Monter le calque">${icon('arrow-up')}</button>
-      <button class="icon-btn icon-only" data-act="down" title="Descendre" aria-label="Descendre le calque">${icon('arrow-down')}</button>
+      <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button></div>
+    <div class="tools-row">
       <button class="icon-btn icon-only" data-act="rename" title="Renommer" aria-label="Renommer le calque">${icon('pencil')}</button>
+      <button class="icon-btn icon-only" data-act="dup-layer" title="Dupliquer le calque" aria-label="Dupliquer le calque">${icon('copy')}</button>
       <button class="icon-btn icon-only" data-act="merge" title="Fusionner vers le bas" aria-label="Fusionner vers le bas">${icon('stack-pop')}</button>
       <button class="icon-btn icon-only" data-act="clear" title="Vider le calque" aria-label="Vider le calque">${icon('eraser')}</button>
       <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button></div>`;
-  const kinds = [['ink', 'Encre'], ['tram', 'Trame'], ['draft', 'Brouillon']];
-  const props = (cur.kind === 'color' ? `<p class="note" style="margin:0 0 8px">Calque de couleur (RVBA) : reçoit la couleur du crayon, du pinceau trame, du remplissage et des formes.</p>`
-    : `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>`) + `
-    ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
+  const oneBit = bppOf(cur) === 1, tinted = oneBit && cur.kind !== 'draft' && /^#[0-9a-f]{6}$/i.test(cur.color || '');
+  const about = cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Reçoit les traits tramés.' : cur.kind === 'color' ? 'Reçoit la couleur sans faire barrière au remplissage.' : 'Reçoit l\'encre.';
+  const props = `<label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
+    <div class="row" style="gap:4px 14px">
+      <label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
+      <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label>
+      ${oneBit && cur.kind !== 'color' ? `<label class="check compact"><input type="checkbox" id="l-draft" ${cur.kind === 'draft' ? 'checked' : ''}> Brouillon</label>` : ''}</div>
+    ${cur.kind === 'draft' ? `<div class="row tight" style="margin:6px 0">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
-    ${cur.kind !== 'draft' && cur.kind !== 'color' && !cur.rgba ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
-      <input type="color" id="l-tint" value="${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? cur.color : '#000000'}" aria-label="Couleur du calque" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg)">
-      <button class="btn small" data-act="tint-reset" ${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? '' : 'disabled'}>Noir</button></div>` : ''}
-    <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
-    <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
-      <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
-    <small class="note">${cur.kind === 'color' ? (cur.opacity < 100 ? 'Imprimé avec cette opacité.' : '') : cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.rgba ? ' En couleur depuis un trait de couleur.' : ''}${cur.kind !== 'draft' && cur.kind !== 'color' && !cur.rgba && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
+    ${tinted ? `<div class="row tight" style="margin:6px 0;align-items:center"><i class="ldot" style="background:${cur.color}"></i><small class="note" style="margin:0">Teinte d'un ancien réglage</small><button class="btn small" data-act="tint-reset">Retirer</button></div>` : ''}
+    <small class="note">${about}${oneBit && cur.kind !== 'draft' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
     + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
@@ -1537,6 +1537,11 @@ function onDockInput0(e) {
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
+  if (id === 'l-draft') {   // brouillon ↔ son ancien type (encre par défaut)
+    const l = activeLayer();
+    if (e.target.checked) { l.prevKind = l.kind; setLayerProp(l.id, 'kind', 'draft'); } else setLayerProp(l.id, 'kind', l.prevKind || 'ink');
+    return;
+  }
   if (id === 'l-solo') { setSolo(activeLayer().id); return; }
   if (id === 'n-stroke') { setPanelStroke(+e.target.value); e.target.previousElementSibling.textContent = `Trait du cadre : ${fmtMm(+e.target.value)} mm`; return; }
   if (id === 'n-show') { ed.showNotes = e.target.checked; savePrefs(); requestRender(); return; }

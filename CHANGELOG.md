@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.39.2 — 2026-11-22
+- Volet Calques simplifié : trois ajouts (Encre, Trame, Brouillon) puis renommer, dupliquer, fusionner, vider, supprimer ; l'ordre se change en glissant la poignée
+- Propriétés du calque réduites à l'opacité, au verrou, à « Afficher seul » et à une case « Brouillon » ; plus de type ni de teinte à part, la couleur se choisit à gauche pour tous les calques
+
 ## 1.39.1 — 2026-11-22
 - Curseur de taille mieux réparti : les petites tailles prennent moins de place et les grandes se règlent finement (0,05–1 mm sur le premier cinquième, 5–20 mm et 20–50 mm chacun sur près d'un tiers)
 - Le curseur n'est plus limité à 100 positions : chaque pixel compte
