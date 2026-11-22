@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.48.1 — 2026-11-22
+- Bulles au doigt, même en dessinant au stylet : toucher une bulle la choisit, on la déplace, on tire son coin, sa queue ou sa poignée de rotation ; ailleurs, le doigt déplace toujours la vue
+
 ## 1.48.0 — 2026-11-22
 - Volet réduit : toucher une vignette ouvre les options du calque à côté (actions, opacité, mode de fusion, référence, alpha, brouillon, verrou) ; un second toucher ou un toucher ailleurs les referme
 - Labo : nouveau groupe Calques (calques tous pareils, options au toucher, modes de fusion, volet de droite, réordonner en direct à essayer) et nouveaux sujets Curseurs, Taille des bulles et Narration au bord

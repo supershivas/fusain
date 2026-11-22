@@ -369,6 +369,20 @@ function bubbleDown(pt) {
   selectBubble(null);
 }
 
+// Un toucher à cet endroit agirait-il sur une bulle (bulle de la case, ou poignée de la bulle choisie) ? Sert au doigt :
+// quand le stylet dessine, le doigt déplace la vue, sauf sur une bulle avec l'outil Bulle.
+export function bubbleTouchable(pt) {
+  if (ed.tool !== 'bubble' || ed.bubbleDraw) return false;
+  const pg = page(), sel = pg.bubbles.find(b => b.id === ed.bubbleId), at = toScreen(pt.x, pt.y), R = 26;
+  if (sel && !sel.hidden) {
+    const hs = [bubbleCross(sel), bubbleRotHandle(sel), bubbleCorner(sel)];
+    if (sel.tail) hs.push(toScreen(sel.tail.x, sel.tail.y));
+    const o = tailOrigin(sel); if (o) hs.push(toScreen(o.x, o.y));
+    if (hs.some(h => near(at, h, R))) return true;
+  }
+  return !pg.bubblesHidden && pg.bubbles.some(bb => !bb.hidden && (!ed.focus || bb.panel === ed.panelId) && hitBubble(bb, pt.x, pt.y));
+}
+
 function start(b, mode, pt) {
   session = { kind: 'bubble', b, mode, before: snapshotBubble(b), x0: pt.x, y0: pt.y, orig: snapshotBubble(b) };
 }
