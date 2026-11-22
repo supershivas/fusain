@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.45.1 — 2026-11-22
+- Réordonner les calques se fait en direct : pendant qu'on tire un calque par sa poignée, les autres s'écartent en glissant vers la place qu'ils auront au lâcher
+
 ## 1.45.0 — 2026-11-22
 - Calques : toucher le calque actif déplie ses options juste dessous (renommer, dupliquer, fusionner, vider, supprimer, opacité, mode de fusion, référence, alpha verrouillé, brouillon, verrou, afficher seul) ; plus de cases à cocher sous la liste
 - Modes de fusion des calques : Normal, Produit, Écran, Incrustation, Obscurcir, Éclaircir, Différence (aussi à l'export) ; chaque action de calque est confirmée par un message, avec Annuler

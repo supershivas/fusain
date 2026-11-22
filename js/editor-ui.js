@@ -733,36 +733,55 @@ const sec = (id, title, body, def = true, extra = '') =>
 // Glisser-déposer des calques : la poignée à gauche de la ligne ; la ligne suit le doigt, un trait rouge montre où elle ira.
 let gripGest = null;
 function gripRows() { return $$('.swipe', root).filter(w => w.querySelector('[data-layer]')); }
+// Glisser une ligne par sa poignée : les autres lignes s'écartent en direct pour montrer où elle tombera.
+// Les positions sont mesurées au départ (une seule fois) : le décalage des cartes ne fausse pas le calcul.
 function gripDown(e) {
   const g = e.target.closest && e.target.closest('[data-grip]');
   if (!g) return false;
-  const wrap = g.closest('.swipe'), rows = gripRows();
+  const wrap = g.closest('.swipe');
   e.preventDefault(); g.setPointerCapture(e.pointerId);
-  gripGest = { id: e.pointerId, wrap, layer: g.dataset.grip, y0: e.clientY, rows, on: false, drop: null };
+  gripGest = { id: e.pointerId, wrap, layer: g.dataset.grip, y0: e.clientY, on: false, drop: null };
   return true;
+}
+function gripStart(s) {
+  const opts = $('.lopts', root);
+  if (opts) { opts.style.display = 'none'; s.opts = opts; }   // options repliées le temps du geste
+  s.rows = gripRows();
+  s.i0 = s.rows.indexOf(s.wrap);
+  s.rects = s.rows.map(w => w.getBoundingClientRect());
+  const r = s.rects[s.i0], next = s.rects[s.i0 + 1], prev = s.rects[s.i0 - 1];
+  s.step = next ? next.top - r.top : prev ? r.top - prev.top : r.height + 4;   // hauteur d'une ligne, marge comprise
+  s.rows.forEach(w => { if (w !== s.wrap) w.classList.add('shifting'); });
+  s.wrap.classList.add('reordering');
 }
 function gripMove(e) {
   const s = gripGest;
   if (!s || e.pointerId !== s.id) return;
   const dy = e.clientY - s.y0;
-  if (!s.on) { if (Math.abs(dy) < 6) return; s.on = true; s.wrap.classList.add('reordering'); }
-  s.wrap.style.transform = `translateY(${dy}px)`;
-  const others = s.rows.filter(w => w !== s.wrap);
-  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
-  const mid = r => r.top + r.height / 2, y = e.clientY;
-  const d = others.filter(w => mid(w.getBoundingClientRect()) < y).length;   // position d dans la liste (0 = en haut = au-dessus de la pile)
-  s.drop = d;
-  if (d < others.length) others[d].classList.add('drop-above'); else others[others.length - 1].classList.add('drop-below');
+  if (!s.on) { if (Math.abs(dy) < 6) return; s.on = true; gripStart(s); }
+  const r0 = s.rects[s.i0], first = s.rects[0], last = s.rects[s.rects.length - 1];
+  const ddy = Math.max(first.top - r0.top, Math.min(last.top - r0.top, dy));   // la carte reste dans la liste
+  s.wrap.style.transform = `translateY(${ddy}px)`;
+  // nouvelle place : le centre de la carte tirée, comparé aux centres d'origine des autres
+  const c = r0.top + r0.height / 2 + ddy;
+  let to = 0;
+  s.rects.forEach((r, k) => { if (k !== s.i0 && r.top + r.height / 2 < c) to++; });
+  s.drop = to;
+  s.rows.forEach((w, k) => {
+    if (k === s.i0) return;
+    const shift = k > s.i0 && k <= to ? -s.step : k < s.i0 && k >= to ? s.step : 0;
+    w.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
 }
 function gripUp(e, cancel) {
   const s = gripGest;
   if (!s || e.pointerId !== s.id) return;
   gripGest = null;
-  s.rows.forEach(w => w.classList.remove('drop-above', 'drop-below'));
-  s.wrap.classList.remove('reordering'); s.wrap.style.transform = '';
   if (!s.on) return;
+  s.rows.forEach(w => { w.classList.remove('shifting', 'reordering'); w.style.transform = ''; });
+  if (s.opts) s.opts.style.display = '';
   swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);
-  if (cancel) return;
+  if (cancel || s.drop === null || s.drop === s.i0) return;
   moveLayerTo(s.layer, panel().layers.length - 1 - s.drop);   // la liste est affichée à l'envers (le dernier calque est en haut)
 }
 

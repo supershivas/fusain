@@ -390,11 +390,10 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 
 /* Glisser-déposer des calques */
 .layer .grip { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 40px; color: var(--text-muted); cursor: grab; touch-action: none; font-size: 1.1rem; }
-.swipe.reordering { z-index: 5; outline: 2px solid var(--accent); opacity: .92; transition: none; }
+.swipe.reordering { z-index: 5; outline: 2px solid var(--accent); opacity: 1; background: var(--card-bg); transition: none; box-shadow: 0 8px 22px rgba(0,0,0,.22); }
+.swipe.shifting { transition: transform .16s ease; }
+@media (prefers-reduced-motion: reduce) { .swipe.shifting { transition: none; } }
 .swipe.reordering > .layer { transition: none; }
-.swipe.drop-above::before, .swipe.drop-below::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--accent); z-index: 4; }
-.swipe.drop-above::before { top: 0; }
-.swipe.drop-below::after { bottom: 0; }
 
 /* Barre flottante de la bulle et saisie du texte sur la bulle */
 .bfloat { position: absolute; z-index: 6; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
