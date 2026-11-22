@@ -1,7 +1,7 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, toRGBA, fillLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
+  ed, page, activeLayer, toRGBA, fillLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
@@ -13,7 +13,7 @@ import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 import { selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
-let session = null, hinted = null;   // hinted : dernier calque signalé par un toast de redirection
+let session = null, hinted = null;   // hinted : dernier calque d'aplat signalé (référence active)
 export const busy = () => !!session;
 
 // En mode case, seule la case ouverte reçoit les gestes.
@@ -81,18 +81,18 @@ export function down(pt) {
 
 function begin(p, pt) {
   selectPanel(p.id);
-  // Chaque outil vise le calque de sa sorte : encre → calque d'encre, trame → calque de trame (créé s'il manque).
-  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.ink === 3 && activeLayer(p).kind === 'color' ? 'color' : (trame0 ? 'tram' : 'ink');
+  // Calques tous pareils : chaque outil dessine dans le calque actif. Seul le remplissage évite un calque de référence
+  // (il pose l'aplat dans un autre calque, créé au besoin sous la référence).
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
   else {
-    // un calque actif à l'alpha verrouillé reçoit le trait (on colorie « dedans ») ; sinon chaque outil vise le calque de sa sorte
-    const act = activeLayer(p);
-    layer = role === 'any' || (role && act.alphaLock) ? act : targetLayer(p, role);
-    if (ed.tool === 'fill' && layer.reference) layer = fillLayer(p);   // la référence guide, elle ne reçoit pas l'aplat
+    layer = activeLayer(p);
+    if (ed.tool === 'fill' && layer.reference) {
+      layer = fillLayer(p);
+      if (hinted !== layer.id) { hinted = layer.id; toast(`Aplat posé dans « ${layer.name} » : « ${activeLayer(p).name} » est une référence.`, { duration: 2400 }); }
+    }
     if (!layer.visible) { toast(`Le calque « ${layer.name} » est masqué : affiche-le pour dessiner.`); return; }
     if (layer.locked) { toast(`Le calque « ${layer.name} » est verrouillé.`); return; }
-    if (layer !== activeLayer(p) && hinted !== layer.id) { hinted = layer.id; toast(`Dessiné dans « ${layer.name} »`, { duration: 1600 }); }
     if (ed.ink === 3 && ed.tool !== 'eraser' && !layer.draft) toRGBA(layer);   // la couleur s'applique au calque choisi
   }
   const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey), tool = ed.tool;

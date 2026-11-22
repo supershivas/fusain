@@ -102,16 +102,16 @@ export function ensureData(layer) {
 }
 
 export function newPanel(rect) {
+  // Calques tous pareils : on dessine dans le calque actif. Le dessin sert de référence au remplissage.
   const layers = [
     newLayer('Brouillon', rect.w, rect.h, { draft: true }),
-    newLayer('Trames', rect.w, rect.h, { kind: 'tram' }),
-    newLayer('Encrage', rect.w, rect.h),
+    Object.assign(newLayer('Dessin', rect.w, rect.h), { reference: true }),
   ];
   // La case montre le rectangle x,y,w,h ; les calques couvrent l'étendue ex,ey,ew,eh (au moins ce rectangle).
   // Réduire une case ne coupe donc jamais le dessin : il reste en réserve hors du cadre.
   return {
     id: uid(), x: rect.x, y: rect.y, w: rect.w, h: rect.h, ex: rect.x, ey: rect.y, ew: rect.w, eh: rect.h,
-    layers, active: layers[2].id, mask: null,
+    layers, active: layers[1].id, mask: null,
     note: { plan: '', description: '' },
   };
 }

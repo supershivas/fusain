@@ -741,35 +741,13 @@ function nextDraftColor(p) {
 export function addLayer(kind = 'ink') {
   if (kind === true) kind = 'draft';
   const p = panel(), color = kind === 'draft' ? nextDraftColor(p) : undefined;
-  const base = { draft: 'Brouillon', tram: 'Trames', ink: 'Encrage', color: 'Couleur' }[kind], n = p.layers.filter(x => x.kind === kind).length;
-  const l = newLayer(n ? `${base} ${n + 1}` : base, p.ew, p.eh, { kind, color });
+  if (kind !== 'draft') kind = 'ink';   // calques tous pareils : seul le brouillon est une option à part
+  const base = kind === 'draft' ? 'Brouillon' : 'Calque', n = p.layers.filter(x => (kind === 'draft') === (x.kind === 'draft')).length;
+  const l = newLayer(kind === 'draft' ? (n ? `${base} ${n + 1}` : base) : `${base} ${n + 1}`, p.ew, p.eh, { kind, color });
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
   apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
-}
-
-// ── Calque visé par un outil : l'encrage va dans un calque d'encre (ou de brouillon si c'est l'actif), les trames dans un calque de trame ──
-const roleKind = role => (role === 'tram' || role === 'color' ? role : 'ink');
-const roleOk = (l, role) => (role === 'tram' || role === 'color' ? l.kind === role : l.kind === 'ink' || l.kind === 'draft');
-export function peekTarget(p, role) {
-  const act = activeLayer(p);
-  if (roleOk(act, role)) return act;
-  const last = p.layers.find(l => l.id === p['_' + roleKind(role)] && roleOk(l, role));
-  if (last) return last;
-  return [...p.layers].reverse().find(l => l.kind === roleKind(role)) || null;
-}
-export function targetLayer(p, role) {
-  const found = peekTarget(p, role);
-  if (found) { if (found.kind !== 'draft') p['_' + roleKind(role)] = found.id; return found; }
-  // aucun calque de cette sorte dans la case : on en crée un (annulable) ; trames sous l'encrage, couleur sous les trames et l'encrage
-  const kind = roleKind(role), l = newLayer({ tram: 'Trames', color: 'Couleur', ink: 'Encrage' }[kind], p.ew, p.eh, { kind });
-  const inkAt = p.layers.findIndex(x => x.kind === 'ink'), lineAt = p.layers.findIndex(x => x.kind === 'ink' || x.kind === 'tram');
-  const at = kind === 'tram' && inkAt >= 0 ? inkAt : kind === 'color' && lineAt >= 0 ? lineAt : p.layers.length, prev = p.active;
-  const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
-  const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
-  apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
-  return l;
 }
 
 // Calque qui reçoit un remplissage : l'actif, sauf s'il est une référence (ou verrouillé, masqué, brouillon) ;
@@ -818,7 +796,7 @@ export function setSolo(id) { ed.solo = ed.solo === id ? null : id; invalidatePa
 
 // Nouveau calque déjà rempli (image tramée importée).
 export function addImageLayer(name, data) {
-  const p = panel(), l = newLayer(name, p.ew, p.eh, { kind: 'tram' });
+  const p = panel(), l = newLayer(name, p.ew, p.eh);
   l.data = placeVisible(data, p); l.dirty = true;   // `data` est de la taille du cadre visible
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };

@@ -3,7 +3,7 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -772,12 +772,6 @@ function onSecToggle(e) {
   try { localStorage.setItem(SEC_KEY, JSON.stringify(secState)); } catch { /* */ }
 }
 
-// Sorte de calque visée par l'outil actuel (pour repérer la cible dans la liste).
-function toolRole() {
-  const t = ed.tool;
-  if (t === 'pencil' || t === 'fill' || t === 'shape') return tramaById(ed.project, ed.tramaId).solid ? 'ink' : 'tram';
-  return null;
-}
 
 export function renderDock() {
   const d = $('#dock', root);
@@ -1012,13 +1006,11 @@ function popHtml() {
 function pageTab() { return pagesTab() + caseTab(); }
 
 function layersTab() {
-  const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
-  const target = role ? peekTarget(p, role) : null;
+  const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page();
   // étiquette : brouillon = pastille de sa couleur ; trame = « trame » ; un calque passé en couleur a l'étiquette en accent
+  // seul le brouillon se signale (pastille de sa couleur) : les autres calques sont tous pareils
   const dotc = l => l.kind === 'draft'
-    ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>`
-    : l.kind === 'tram' ? `<span class="tag ${l.rgba ? 'ctag' : ''}" title="Calque de trame${l.rgba ? ' en couleur' : ''}">trame</span>`
-    : l.rgba || l.kind === 'color' ? `<span class="tag ctag" title="Calque en couleur">couleur</span>` : '';
+    ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   linkBubbles(pg);
@@ -1028,7 +1020,7 @@ function layersTab() {
       <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
       <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
-  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''} ${l.alphaLock ? 'alpha-locked' : ''}" data-layer="${l.id}">
+  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${l.alphaLock ? 'alpha-locked' : ''}" data-layer="${l.id}">
       <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
@@ -1036,8 +1028,7 @@ function layersTab() {
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
     `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`)).join('');
   const acts = `<div class="tools-row">
-      <button class="btn small" data-act="add-layer">${icon('plus')} Encre</button>
-      <button class="btn small" data-act="add-tram">${icon('plus')} Trame</button>
+      <button class="btn small" data-act="add-layer">${icon('plus')} Calque</button>
       <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button></div>
     <div class="tools-row">
       <button class="icon-btn icon-only" data-act="rename" title="Renommer" aria-label="Renommer le calque">${icon('pencil')}</button>
@@ -1046,7 +1037,7 @@ function layersTab() {
       <button class="icon-btn icon-only" data-act="clear" title="Vider le calque" aria-label="Vider le calque">${icon('eraser')}</button>
       <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button></div>`;
   const oneBit = bppOf(cur) === 1, tinted = oneBit && cur.kind !== 'draft' && /^#[0-9a-f]{6}$/i.test(cur.color || '');
-  const about = cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Reçoit les traits tramés.' : cur.kind === 'color' ? 'Reçoit la couleur sans faire barrière au remplissage.' : 'Reçoit l\'encre.';
+  const about = cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : '';
   const props = `<label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
     <div class="row" style="gap:4px 14px">
       <label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
@@ -1311,7 +1302,6 @@ async function onDock(e) {
   else if (a === 'select-layer') selectLayer(lay.dataset.layer);
   else if (a === 'add-layer') addLayer('ink');
   else if (a === 'add-color') addLayer('color');
-  else if (a === 'add-tram') addLayer('tram');
   else if (a === 'bub-vis') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'hidden', !bb.hidden); }
   else if (a === 'bub-lock') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'locked', !bb.locked); }
   else if (a === 'bub-del') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); deleteBubble(bb); }
@@ -1927,7 +1917,7 @@ const COMMANDS = {
   relayout: async () => { const id = await pickLayout('Disposition des cases'); if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); } },
   frame: () => { secState.cf = true; setFocus(false); showDock('page'); },
   dither: ditherModal,
-  'add-color': () => addLayer('color'), 'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
+  'add-color': () => addLayer('color'), 'add-ink': () => addLayer('ink'), 'add-draft': () => addLayer('draft'),
   'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
   'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { { const r = mergeDown(); if (!r) toast('Pas de calque en dessous.'); else if (r === 'kind') toast('Un calque de couleur ne se fusionne qu\'avec un calque de couleur.'); } }, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
@@ -1943,7 +1933,7 @@ const COMMANDS = {
   'hide-bubbles': () => togglePageBubbles(),
 };
 Object.assign(COMMANDS, { 'lib-brushes': () => libraryModal('brushes'), 'lib-tramas': () => libraryModal('tramas'), 'lib-bubbles': () => libraryModal('bubbles') });
-const CASE_COMMANDS = ['add-color', 'add-ink', 'add-tram', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
+const CASE_COMMANDS = ['add-color', 'add-ink', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
   'sel-all', 'sel-none', 'move-case', 'dither', 'dup-bubble', 'del-bubble', 'lib-brushes', 'lib-tramas', 'lib-bubbles'];
 export function runCommand(id) {
   if (id.startsWith('tool:')) { if (ed.project) setTool(id.slice(5)); return; }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.42.0 — 2026-11-22
+- Calques tous pareils : chaque outil dessine dans le calque actif (fini l'aiguillage vers « Encrage » ou « Trames ») ; on ajoute un « Calque » ou un « Brouillon »
+- Une nouvelle case commence avec « Dessin » (référence) et « Brouillon » ; remplir sur la référence pose l'aplat dans un calque « Aplats » créé dessous
+- Les projets existants gardent leurs calques et leur contenu
+
 ## 1.41.0 — 2026-11-22
 - Calque de référence : le remplissage suit ses traits et pose l'aplat dans un autre calque, le dessin reste séparé ; ColorDrop : tire la couleur principale (à gauche) et lâche-la dans une zone fermée pour la remplir
 - Verrouiller l'alpha : on ne peint que sur ce qui est déjà dessiné dans le calque, sans déborder ; la gomme n'y agit pas
