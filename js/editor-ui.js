@@ -19,6 +19,8 @@ import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
 import { buildPDF, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
+import { stampLibrary } from './library.js';
+import { syncSoon } from './sync.js';
 import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection } from './selection.js';
 
 export const TOOLS = [
@@ -64,6 +66,7 @@ export function loadPrefs() {
 // Préférences de l'appareil : réglages de chaque outil, dernier style de chaque type de bulle, options d'image tramée.
 export function savePrefs() {
   storeToolSettings();
+  if (stampLibrary(ed)) syncSoon();   // pinceaux, réglages de trame ou modèles de bulles changés : on les partage
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
@@ -135,12 +138,17 @@ export function mountEditor(el) {
   });
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
+  window.addEventListener('fusain:library', onLibrary);
   fsListener = () => { renderToolbar(); renderDock(); setTimeout(resize, 100); };
   onFullscreenChange(fsListener);
   setTimeout(resize, 0);
 }
 
+// La bibliothèque est arrivée d'un autre appareil : listes et barre à jour.
+function onLibrary() { if (!ed.project) return; const pe = $('#pop', root); if (pe) pe._html = ''; renderOptbar(); renderDock(); renderPop(); }
+
 export function unmountEditor() {
+  window.removeEventListener('fusain:library', onLibrary);
   if (unsub) unsub(); unsub = null;
   if (keyHandler) window.removeEventListener('keydown', keyHandler); keyHandler = null;
 }
@@ -777,7 +785,7 @@ function brushesParts() {
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
   const addBtn = `<div class="row tight" style="margin-bottom:6px"><button class="btn small primary" data-act="brush-save">${icon('plus')} Enregistrer ${ed.tool === 'eraser' ? 'cette gomme' : 'ce pinceau'}…</button></div>`;
-  return { pop: buttons + settings, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » restent sur cet appareil ; la palette, elle, suit le projet.</small>' };
+  return { pop: buttons + settings, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » servent à tous tes projets, sur tous tes appareils connectés ; la palette, elle, suit le projet.</small>' };
 }
 let brushPopTab = 'brush';
 function brushPop() {

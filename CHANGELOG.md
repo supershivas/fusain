@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.32.0 — 2026-11-22
+- Bibliothèque partagée : « Mes pinceaux », « Mes gommes », réglages de trame et modèles de bulles suivent ton compte sur tous tes projets et appareils
+- Une suppression sur un appareil n'est pas annulée par un autre qui avait encore l'élément
+- À faire une fois dans Supabase : exécuter le bloc fusain_library de supabase/fusain.sql (les Réglages le signalent tant qu'il manque)
+
 ## 1.31.0 — 2026-11-22
 - Couleur : pastille de couleur à côté du noir et du blanc (crayon, pinceau trame, remplissage, formes) ; touchée une seconde fois, elle ouvre la palette du projet, les couleurs récentes et un sélecteur
 - La couleur se pose dans un calque « Couleur » de la case, créé au besoin sous les trames et l'encrage : le remplissage s'arrête aux traits, l'opacité est réelle, le PDF sort en couleur

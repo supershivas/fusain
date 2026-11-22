@@ -24,6 +24,29 @@ create policy "fusain_projects : mise à jour par le propriétaire" on public.fu
 create policy "fusain_projects : suppression par le propriétaire" on public.fusain_projects
   for delete to authenticated using (owner = auth.uid());
 
+-- Bibliothèque personnelle partagée entre projets et appareils (pinceaux, gommes, réglages de trame, modèles de bulles).
+-- Une ligne par utilisateur ; `data` porte un schemaVersion. Ajoutée en v1.32.0 : ce bloc peut être exécuté seul, et ré-exécuté sans erreur.
+create table if not exists public.fusain_library (
+  owner      uuid primary key default auth.uid() references auth.users (id) on delete cascade,
+  data       jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.fusain_library enable row level security;
+
+drop policy if exists "fusain_library : lecture par le propriétaire" on public.fusain_library;
+create policy "fusain_library : lecture par le propriétaire" on public.fusain_library
+  for select to authenticated using (owner = auth.uid());
+drop policy if exists "fusain_library : ajout par le propriétaire" on public.fusain_library;
+create policy "fusain_library : ajout par le propriétaire" on public.fusain_library
+  for insert to authenticated with check (owner = auth.uid());
+drop policy if exists "fusain_library : mise à jour par le propriétaire" on public.fusain_library;
+create policy "fusain_library : mise à jour par le propriétaire" on public.fusain_library
+  for update to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+drop policy if exists "fusain_library : suppression par le propriétaire" on public.fusain_library;
+create policy "fusain_library : suppression par le propriétaire" on public.fusain_library
+  for delete to authenticated using (owner = auth.uid());
+
 -- Les calques sont des images PNG dans le bucket privé « fusain » : <uid>/<projet>/<calque>.png
 insert into storage.buckets (id, name, public) values ('fusain', 'fusain', false)
   on conflict (id) do nothing;
