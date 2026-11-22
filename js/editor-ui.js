@@ -333,11 +333,15 @@ function onDoubleTap(panelId) {
 const ptToV = pt => Math.round(100 * Math.log(pt / 5) / Math.log(40) * 2) / 2;
 const vToPt = v => { const pt = 5 * Math.pow(40, v / 100); return pt < 24 ? Math.round(pt * 2) / 2 : pt < 60 ? Math.round(pt) : Math.round(pt / 2) * 2; };
 const fmtMm = v => String(+v.toFixed(2)).replace('.', ',');
-const sizeSpan = () => maxSizeMm() / 0.05;
-const sizeToV = mm => Math.round(100 * Math.log(mm / 0.05) / Math.log(sizeSpan()));
+// Course du curseur de taille (0–100) : courbe en puissance (exposant SIZE_CURVE) plutôt que logarithmique.
+// En logarithmique, 0,05–0,5 mm prenait un tiers de la course et les grandes tailles sautaient de 2 mm par pixel ;
+// ici (50 mm au maximum) : 0,05–1 mm ≈ 21 %, 1–5 mm ≈ 19 %, 5–20 mm ≈ 29 %, 20–50 mm ≈ 31 %. Pas d'arrondi de la position.
+const SIZE_MIN = 0.05, SIZE_CURVE = 2.5;
+const sizeToV = mm => 100 * Math.pow(Math.max(0, Math.min(1, (mm - SIZE_MIN) / (maxSizeMm() - SIZE_MIN))), 1 / SIZE_CURVE);
 const vToSize = v => {
-  const mm = 0.05 * Math.pow(sizeSpan(), v / 100);
-  return +(mm < 1 ? Math.round(mm / 0.05) * 0.05 : mm < 5 ? Math.round(mm / 0.1) * 0.1 : Math.round(mm / 0.5) * 0.5).toFixed(2);
+  const mm = SIZE_MIN + (maxSizeMm() - SIZE_MIN) * Math.pow(Math.max(0, Math.min(1, v / 100)), SIZE_CURVE);
+  const step = mm < 1 ? 0.05 : mm < 5 ? 0.1 : mm < 20 ? 0.5 : 1;   // pas lisibles : 0,05 mm, 0,1 mm, 0,5 mm, 1 mm
+  return +Math.max(SIZE_MIN, Math.round(mm / step) * step).toFixed(2);
 };
 // Remplissage : tolérance aux contours ouverts (0 = fermés seulement).
 const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" min="0" max="100" value="${ed.fillGap}" aria-label="Tolérance aux trous du contour"><span class="unit" id="o-gap-v">${ed.fillGap} %</span></span>`;

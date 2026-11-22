@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.39.1 — 2026-11-22
+- Curseur de taille mieux réparti : les petites tailles prennent moins de place et les grandes se règlent finement (0,05–1 mm sur le premier cinquième, 5–20 mm et 20–50 mm chacun sur près d'un tiers)
+- Le curseur n'est plus limité à 100 positions : chaque pixel compte
+
 ## 1.39.0 — 2026-11-22
 - Régler la taille ou l'opacité avec les curseurs de gauche ouvre un aperçu du trait à côté, à sa vraie taille à l'écran, qui suit le curseur en temps réel (avec la trame, l'opacité et la couleur du pinceau)
 
