@@ -319,7 +319,8 @@ const inkControl = () => `<span class="row tight nowrap" role="group" aria-label
 // La trame se montre sans texte : un toucher ouvre la bibliothèque en liste déroulante.
 function tramaControl() {
   const t = tramaById(ed.project, ed.tramaId);
-  return `<button class="swatch-btn ${popId === 'lib-trama' ? 'on' : ''}" data-pop="lib-trama" aria-expanded="${popId === 'lib-trama'}" title="Trame : ${esc(t.name)}" aria-label="Choisir la trame, actuelle : ${esc(t.name)}"><canvas width="30" height="30" data-swatch="${t.id}"></canvas></button>`;
+  const name = t.solid ? 'aucune (encre pleine)' : t.name;
+  return `<button class="swatch-btn ${popId === 'lib-trama' ? 'on' : ''}" data-pop="lib-trama" aria-expanded="${popId === 'lib-trama'}" title="Trame : ${esc(name)}" aria-label="Choisir la trame, actuelle : ${esc(name)}">${t.solid ? '<span class="ink-dot"></span>' : `<canvas width="30" height="30" data-swatch="${t.id}"></canvas>`}</button>`;
 }
 
 export function renderOptbar() {
@@ -906,11 +907,15 @@ function tramasTab() {
       <button class="btn small" data-act="tpreset-save" title="Enregistrer la trame, l'échelle et le fond actuels">${icon('plus')} Enregistrer le réglage…</button>
       ${cur.builtin === false ? `<button class="btn small" data-act="edit-trame" aria-label="Modifier la trame">${icon('pencil')}</button><button class="btn small danger" data-act="del-trame" aria-label="Supprimer la trame">${icon('trash')}</button>` : ''}</div>`;
   const presets = ed.tramaPresets.map(t => `<div class="row tight" style="margin-bottom:4px"><button class="btn small" data-tpreset="${t.id}" style="flex:1;justify-content:flex-start">${esc(t.name)}</button><button class="icon-btn icon-only" data-tpdel="${t.id}" aria-label="Supprimer le réglage ${esc(t.name)}">${icon('trash')}</button></div>`).join('');
-  const open = g => g === 'Plein' || g === 'Gris' || g === 'Ma bibliothèque' || g === cur.group;
+  const open = g => g === 'Gris' || g === 'Ma bibliothèque' || g === cur.group;
+  const solid = list.find(t => t.solid);
+  const inkCell = solid ? `<button class="tcell ink ${solid.id === ed.tramaId ? 'on' : ''}" data-trama="${solid.id}" aria-label="Encre pleine, sans trame" title="Encre pleine, sans trame"><span class="ink-dot"></span></button>` : '';
+  const tgroups = groups.filter(g => list.some(t => t.group === g && !t.solid));
   return settings
     + (presets ? sec('trpre', 'Mes réglages', presets, true) : '')
-    + groups.map(g => sec('tg-' + g, esc(g), `<div class="tgrid">${list.filter(t => t.group === g).map(t =>
-      `<button class="tcell ${t.id === ed.tramaId ? 'on' : ''}" data-trama="${t.id}" aria-label="${esc(t.name)}" title="${esc(t.name)}">${t.solid ? '<span class="solid">Plein</span>' : `<canvas width="36" height="36" data-tcell="${t.id}"></canvas>`}</button>`).join('')}</div>`, open(g))).join('')
+    + `<div class="tgrid" style="margin-bottom:8px">${inkCell}</div>`
+    + tgroups.map(g => sec('tg-' + g, esc(g), `<div class="tgrid">${list.filter(t => t.group === g && !t.solid).map(t =>
+      `<button class="tcell ${t.id === ed.tramaId ? 'on' : ''}" data-trama="${t.id}" aria-label="${esc(t.name)}" title="${esc(t.name)}"><canvas width="36" height="36" data-tcell="${t.id}"></canvas></button>`).join('')}</div>`, open(g))).join('')
     + '<small class="note">La trame est accrochée à la page : deux cases voisines se raccordent sans rupture.</small>';
 }
 

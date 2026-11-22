@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.35.2 — 2026-11-22
+- Trames : plus de trame « Plein » ; l'encre pleine est un cercle noir en tête de la bibliothèque, suivi des trames (et dans la barre quand aucune trame n'est choisie)
+
 ## 1.35.1 — 2026-11-22
 - Aimantation des curseurs de taille et d'opacité revue : le curseur s'accroche au repère à portée de doigt (16 px, 8 px à la souris) et y reste tant qu'on ne s'en éloigne pas franchement
 - Le repère accroché s'allume, et les curseurs sont plus longs pour un réglage plus fin
