@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.44.0 — 2026-11-22
+- Volet de droite à trois états : complet, réduit (une colonne de vignettes des calques : toucher pour choisir, œil pour masquer, + pour ajouter ; numéros des pages sur la planche) ou masqué (un bouton au coin du dessin le rouvre)
+- L'état choisi est gardé sur l'appareil ; menu Affichage → Panneau de droite pour passer de l'un à l'autre
+
 ## 1.43.2 — 2026-11-22
 - Pression du stylet par défaut : la pression agit à 100 % sur la taille, et la taille à pression nulle est de 10 %, pour tous les pinceaux livrés (sauf le stylo technique et le pointillé, d'épaisseur constante)
 - Les pinceaux de palette restés tels quels prennent ces réglages ; ceux que tu as retouchés gardent les tiens

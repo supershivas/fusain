@@ -45,6 +45,10 @@ const TABS = [{ id: 'layers', icon: 'stack-2', label: 'Calques' }, { id: 'page',
 let fsListener = null;
 let popBack = null;   // fenêtre à rouvrir après un choix dans la bibliothèque ouverte depuis elle
 let root, dockTab = 'layers', popId = null, dockOpen = true, unsub = null, keyHandler = null;
+// Volet de droite : complet (dockOpen), réduit à une colonne de vignettes (dockMini), ou masqué (ni l'un ni l'autre).
+let dockMini = false;
+const narrow = () => window.matchMedia('(max-width: 768px)').matches;
+const DOCK_KEY = 'fusain:dock';
 
 const prefsKey = 'fusain:prefs';
 export function loadPrefs() {
@@ -86,7 +90,9 @@ export function savePrefs() {
 
 export function mountEditor(el) {
   root = el;
-  dockOpen = window.matchMedia('(min-width: 769px)').matches;
+  let saved = null; try { saved = localStorage.getItem(DOCK_KEY); } catch { /* */ }
+  dockOpen = !narrow() && saved !== 'mini' && saved !== 'hidden';
+  dockMini = !narrow() && saved === 'mini';
   root.innerHTML = `<div class="ed">
     <nav class="toolbar" id="toolbar" aria-label="Outils"></nav>
     <section class="stage" id="stage">
@@ -97,10 +103,11 @@ export function mountEditor(el) {
         <div class="zoombar" id="zoombar"></div>
         <div class="quick" id="quick" hidden></div>
         <div class="qprev" id="qprev" hidden aria-hidden="true"><canvas></canvas><span></span></div>
+        <button class="icon-btn icon-only dock-reopen" id="dockreopen" hidden title="Afficher le panneau" aria-label="Afficher le panneau de droite">${icon('layout-sidebar-right-expand')}</button>
       </div>
       <div class="optwrap"><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div><div class="optbar" id="optbar"></div></div>
     </section>
-    <aside class="dock ${dockOpen ? '' : 'closed'}" id="dock"></aside>
+    <aside class="dock ${dockOpen ? '' : dockMini ? 'closed mini' : 'closed gone'}" id="dock"></aside>
   </div>`;
   enterPageLevel();
   attach($('#view', root));
@@ -110,6 +117,8 @@ export function mountEditor(el) {
   fit();
   renderAll();
 
+  $('#dockreopen', root).hidden = dockOpen || dockMini || narrow();
+  $('#dockreopen', root).onclick = () => setDock('full');
   $('#toolbar', root).onclick = e => { if (e.target.closest('[data-z="focus"]')) { setFocus(true); return; } onToolbar(e); };
   $('#zoombar', root).onclick = onZoombar;
   $('#optbar', root).addEventListener('click', onOptbar);
@@ -141,6 +150,7 @@ export function mountEditor(el) {
 
   unsub = subscribe(what => {
     if (what === 'panels' || what === 'page' || what === 'project') { polyCancel(); clearSelection(false); }
+    if (what === 'dirty' || what === 'undo') refreshMiniSoon();
     if (what === 'undo') { updateUndo(); if (ed.tool === 'layout') renderOptbar(); }
     else if (what === 'sel') renderOptbar();
     else if (what === 'panels') renderAll();
@@ -252,15 +262,27 @@ function onToolbar(e) {
   else if (b.dataset.act === 'dock') toggleDock();
 }
 
-// Panneau de droite : ouvert, ou replié en un rail étroit qui garde ses deux boutons du bas (plein écran, panneau).
-function toggleDock(open = !dockOpen) {
-  dockOpen = open; $('#dock', root).classList.toggle('closed', !dockOpen);
+// Panneau de droite : complet, réduit (une colonne de vignettes de calques, ou de pages sur la planche) ou masqué.
+// Sur téléphone, il n'y a que complet (en tiroir) et masqué.
+function setDock(mode) {
+  if (narrow() && mode === 'mini') mode = 'hidden';
+  dockOpen = mode === 'full'; dockMini = mode === 'mini';
+  const d = $('#dock', root);
+  d.classList.toggle('closed', !dockOpen); d.classList.toggle('mini', dockMini); d.classList.toggle('gone', !dockOpen && !dockMini);
+  $('#dockreopen', root).hidden = dockOpen || dockMini || narrow();
+  try { localStorage.setItem(DOCK_KEY, mode); } catch { /* */ }
   renderToolbar(); renderDock(); setTimeout(resize, 0);
 }
+const dockMode = () => (dockOpen ? 'full' : dockMini ? 'mini' : 'hidden');
+function toggleDock(open = !dockOpen) { setDock(open ? 'full' : narrow() ? 'hidden' : 'mini'); }
 function onDockFoot(e) {
   const b = e.target.closest('.dock-foot [data-act]');
   if (!b) return;
-  if (b.dataset.act === 'foot-fs') toggleFullscreen(); else if (b.dataset.act === 'foot-dock') toggleDock();
+  if (b.dataset.act === 'foot-fs') toggleFullscreen();
+  else if (b.dataset.act === 'foot-dock') toggleDock();
+  else if (b.dataset.act === 'dock-full') setDock('full');
+  else if (b.dataset.act === 'dock-mini') setDock('mini');
+  else if (b.dataset.act === 'dock-hide') setDock('hidden');
 }
 
 // ───────────────────────── Zoom et pages ─────────────────────────
@@ -779,12 +801,65 @@ export function renderDock() {
   const prevScroll = $('.dock-body', d) ? $('.dock-body', d).scrollTop : 0;
   const foot = `<div class="dock-foot">
     ${canFullscreen() ? `<button class="icon-btn icon-only" data-act="foot-fs" title="Plein écran : masque la barre du navigateur" aria-label="Plein écran" aria-pressed="${isFullscreen()}">${icon(isFullscreen() ? 'arrows-minimize' : 'arrows-maximize')}</button>` : ''}
-    <button class="icon-btn icon-only" data-act="foot-dock" title="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-label="${dockOpen ? 'Masquer le panneau' : 'Afficher le panneau'}" aria-expanded="${dockOpen}">${icon(dockOpen ? 'layout-sidebar-right-collapse' : 'layout-sidebar-right-expand')}</button></div>`;
+    ${narrow() ? `<button class="icon-btn icon-only" data-act="foot-dock" title="Masquer le panneau" aria-label="Masquer le panneau">${icon('layout-sidebar-right-collapse')}</button>`
+      : dockOpen ? `<button class="icon-btn icon-only" data-act="dock-mini" title="Réduire aux vignettes des calques" aria-label="Réduire le panneau">${icon('layout-sidebar-right-collapse')}</button>`
+      : `<button class="icon-btn icon-only" data-act="dock-full" title="Agrandir le panneau" aria-label="Agrandir le panneau">${icon('layout-sidebar-right-expand')}</button>`}
+    ${narrow() ? '' : `<button class="icon-btn icon-only" data-act="dock-hide" title="Masquer le panneau" aria-label="Masquer le panneau">${icon('x')}</button>`}</div>`;
   dockTab = ed.focus ? 'layers' : 'page';
-  d.innerHTML = dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}` : foot;
+  if (!dockOpen && !dockMini) { d.innerHTML = ''; return; }
+  d.innerHTML = dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}`
+    : `<div class="dock-mini" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Pages'}">${dockTab === 'layers' ? miniLayers() : miniPages()}</div>${foot}`;
   if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
+  if (dockMini) paintMiniThumbs(d);
   renderPop();
 }
+
+// ── Volet réduit : une vignette par calque (le plus haut en premier) ; toucher = calque actif, œil = afficher / masquer ──
+function miniLayers() {
+  const p = panel();
+  return `<button class="mini-add" data-act="add-layer" title="Nouveau calque" aria-label="Nouveau calque">${icon('plus')}</button>`
+    + [...p.layers].reverse().map(l => `<div class="mini-layer ${l.id === p.active ? 'on' : ''} ${l.visible ? '' : 'off'}" data-layer="${l.id}">
+      <button class="mini-thumb" data-act="select-layer" title="${esc(l.name)}" aria-label="Calque ${esc(l.name)}${l.id === p.active ? ' (actif)' : ''}" aria-pressed="${l.id === p.active}"><canvas width="104" height="104" data-mthumb="${l.id}"></canvas>
+        <span class="mini-badges">${l.reference ? `<i class="ti ti-target" title="Référence"></i>` : ''}${l.alphaLock ? '<b title="Alpha verrouillé">α</b>' : ''}${l.locked ? `<i class="ti ti-lock" title="Verrouillé"></i>` : ''}${l.kind === 'draft' ? `<i class="mini-draft" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon"></i>` : ''}</span></button>
+      <button class="mini-eye" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button></div>`).join('');
+}
+function miniPages() {
+  return ed.project.pages.map((pg, i) => `<button class="mini-page ${i === ed.pageIdx ? 'on' : ''}" data-mpage="${i}" aria-label="Page ${i + 1}" aria-pressed="${i === ed.pageIdx}">${i + 1}</button>`).join('');
+}
+// Vignette d'un calque : la partie visible de la case, réduite en gardant les traits fins (un pixel de vignette = le plus encré de son bloc).
+function paintMiniThumbs(scope) {
+  const p = panel();
+  $$('canvas[data-mthumb]', scope).forEach(c => {
+    const l = p.layers.find(x => x.id === c.dataset.mthumb);
+    const cx = c.getContext('2d'), W = c.width, H = c.height, img = cx.createImageData(W, H), out = new Uint32Array(img.data.buffer);
+    out.fill(0xFFFFFFFF);
+    if (l && l.data) {
+      const ox = p.x - p.ex, oy = p.y - p.ey, k = Math.max(p.w / W, p.h / H), b = bppOf(l), dx = (W - p.w / k) / 2, dy = (H - p.h / k) / 2;
+      const ink = l.kind === 'draft' ? (DRAFT_COLORS[l.color || 'blue'].rgb) : [26, 23, 20], step = Math.max(1, Math.floor(k / 4));
+      for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
+        const sx0 = Math.floor((tx - dx) * k), sy0 = Math.floor((ty - dy) * k);
+        if (sx0 < 0 || sy0 < 0 || sx0 >= p.w || sy0 >= p.h) { out[ty * W + tx] = 0xFFEEEEEE; continue; }
+        let hit = null;
+        for (let yy = sy0; yy < Math.min(p.h, sy0 + k) && !hit; yy += step) for (let xx = sx0; xx < Math.min(p.w, sx0 + k); xx += step) {
+          const i = (oy + yy) * l.w + ox + xx;
+          if (b === 4) { if (l.data[i * 4 + 3] > 40) { hit = [l.data[i * 4], l.data[i * 4 + 1], l.data[i * 4 + 2]]; break; } }
+          else if (l.data[i] === 1) { hit = ink; break; }
+        }
+        if (hit) out[ty * W + tx] = (0xFF000000 | (hit[2] << 16) | (hit[1] << 8) | hit[0]) >>> 0;
+      }
+      // un trait fin réduit tient sur un pixel : on l'épaissit d'un pixel pour qu'il se voie dans la vignette
+      const src = out.slice();
+      for (let ty = 0; ty < H - 1; ty++) for (let tx = 0; tx < W - 1; tx++) {
+        const v = src[ty * W + tx];
+        if (v === 0xFFFFFFFF || v === 0xFFEEEEEE) continue;
+        for (const j of [ty * W + tx + 1, (ty + 1) * W + tx, (ty + 1) * W + tx + 1]) if (src[j] === 0xFFFFFFFF) out[j] = v;
+      }
+    }
+    cx.putImageData(img, 0, 0);
+  });
+}
+let miniTimer = null;
+function refreshMiniSoon() { if (!dockMini) return; clearTimeout(miniTimer); miniTimer = setTimeout(() => { const d = $('#dock', root); if (d && dockMini) paintMiniThumbs(d); }, 350); }
 
 // Liste déroulante de l'outil Bulle : modèles du programme puis « Mes modèles » ; un toucher sur la page y pose une bulle de ce modèle.
 function bubbleTplList() {
@@ -1265,6 +1340,8 @@ async function onDock(e) {
   const tab = e.target.closest('[data-tab]');
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   if (e.target.closest('[data-z="focus"]')) { setFocus(true); return; }
+  const mp = e.target.closest('[data-mpage]');
+  if (mp) { goToPage(+mp.dataset.mpage); return; }
   const dp = e.target.closest('#pop [data-pop]');
   if (dp) { popBack = popId; popId = dp.dataset.pop; renderOptbar(); renderPop(); return; }
   const br = e.target.closest('[data-brush]');
@@ -1928,7 +2005,7 @@ const COMMANDS = {
   'page-left': () => movePage(-1), 'page-right': () => movePage(1),
   'page-prev': () => goToPage(ed.pageIdx - 1), 'page-next': () => goToPage(ed.pageIdx + 1),
   fullscreen: () => toggleFullscreen(),
-  dock: () => toggleDock(),
+  dock: () => setDock(narrow() ? (dockOpen ? 'hidden' : 'full') : { full: 'mini', mini: 'hidden', hidden: 'full' }[dockMode()]),
   notes: () => { ed.showNotes = !ed.showNotes; savePrefs(); requestRender(); },
   'hide-bubbles': () => togglePageBubbles(),
 };

@@ -521,3 +521,22 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .layer.alpha-locked .name { background-image: linear-gradient(45deg, rgba(0,0,0,.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.06) 75%), linear-gradient(45deg, rgba(0,0,0,.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.06) 75%); background-size: 10px 10px; background-position: 0 0, 5px 5px; border-radius: var(--radius-md); }
 /* Couleur glissée vers le dessin */
 .cdrop { position: fixed; z-index: 50; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; }
+
+/* Volet de droite réduit (vignettes des calques) ou masqué */
+.dock.mini { width: 84px; border-left: 1px solid var(--border); background: var(--card-bg); justify-content: flex-start; }
+.dock.gone { display: none; }
+.dock-mini { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; }
+.mini-add { width: 64px; min-height: 36px; border: 1px dashed var(--border); border-radius: var(--radius-md); background: none; color: var(--text-secondary); }
+.mini-layer { display: flex; flex-direction: column; align-items: center; gap: 0; }
+.mini-layer.off .mini-thumb canvas { opacity: .35; }
+.mini-thumb { position: relative; width: 60px; height: 60px; padding: 0; border: 2px solid var(--border); border-radius: var(--radius-md); background: #fff; overflow: hidden; }
+.mini-layer.on .mini-thumb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.mini-thumb canvas { width: 100%; height: 100%; display: block; image-rendering: auto; }
+.mini-badges { position: absolute; right: 2px; bottom: 2px; display: flex; gap: 2px; align-items: center; }
+.mini-badges i, .mini-badges b { font-size: 11px; line-height: 1; background: var(--card-bg); border-radius: 4px; padding: 1px 2px; color: var(--accent); font-style: normal; }
+.mini-badges .mini-draft { width: 9px; height: 9px; padding: 0; border-radius: 50%; }
+.mini-eye { width: 44px; height: 30px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--text-secondary); }
+.mini-page { width: 52px; height: 44px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-bg); font: 500 .9rem var(--font-mono); }
+.mini-page.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.dock.mini .dock-foot { flex-direction: column; align-items: center; border-top: 1px solid var(--border); }
+.dock-reopen { position: absolute; top: 8px; right: 8px; z-index: 3; background: var(--card-bg); border: 1px solid var(--border); box-shadow: var(--card-shadow); border-radius: var(--radius-md); }

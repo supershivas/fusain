@@ -34,7 +34,7 @@ const menus = () => {
       ['page-prev', 'Page précédente', 'chevron-left', '', ed.pageIdx === 0], ['page-next', 'Page suivante', 'chevron-right', '', ed.pageIdx >= ed.project.pages.length - 1]]],
     ['Affichage', [
       ...(canFullscreen() ? [['fullscreen', isFullscreen() ? 'Quitter le plein écran' : 'Plein écran', 'arrows-maximize']] : []),
-      ['dock', 'Panneau de droite', 'layout-sidebar-right'], ['notes', ed.showNotes ? 'Masquer les notes' : 'Afficher les notes', 'notes'],
+      ['dock', 'Panneau de droite : complet, réduit, masqué', 'layout-sidebar-right'], ['notes', ed.showNotes ? 'Masquer les notes' : 'Afficher les notes', 'notes'],
       ['hide-bubbles', pg.bubblesHidden ? 'Afficher les bulles' : 'Masquer les bulles', pg.bubblesHidden ? 'eye' : 'eye-off']]],
   ];
 };
