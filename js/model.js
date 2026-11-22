@@ -144,7 +144,7 @@ export function projectMeta(project) {
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
-    margin: project.margin, gutter: project.gutter, tramas: project.tramas,
+    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet,
     pages: project.pages.map(p => ({
       id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
       panels: p.panels.map(c => ({

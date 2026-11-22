@@ -137,8 +137,13 @@ function grow(ctx, x0, y0, x1, y1) {
   if (x1 > d.x1) d.x1 = x1; if (y1 > d.y1) d.y1 = y1;
 }
 
+// Opacité d'un trait (paint.alpha < 1) : seuil de Bayer 8 × 8 accroché à la page, donc un gris tramé régulier
+// qui ne fonce pas quand les tampons se recouvrent ; le même rendu que l'opacité d'un calque à l'export.
+const bayerKeep = (alpha, px, py) => alpha * 64 > BAYER8[py & 7][px & 7];
 function put(ctx, data, x, y) {
   if (!writable(ctx, x, y)) return;
+  const a = ctx.paint.alpha;
+  if (a !== undefined && a < 1 && !bayerKeep(a, x + ctx.ox, y + ctx.oy)) return;
   const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
   if (v < 0) return;
   data[y * ctx.layer.w + x] = v;
@@ -315,9 +320,9 @@ export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
 }
 
 // Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.
-export function previewBrush(canvas, spec, sizePx) {
+export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scale = 1) {
   const w = canvas.width, h = canvas.height, layer = { id: 'preview', w, h, data: new Uint8Array(w * h), dirty: false };
-  const ctx = { layer, undo: { touch() {} }, paint: { v: INK }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
+  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha, trame, scale }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
   let last = null;
   for (let i = 0; i <= 60; i++) {
     const t = i / 60, x = 10 + t * (w - 20), y = h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p = Math.pow(Math.sin(Math.PI * t), 0.6);

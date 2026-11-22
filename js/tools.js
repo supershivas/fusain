@@ -86,10 +86,11 @@ function begin(p, pt) {
   const trame = currentTrama();
 
   if (tool === 'pencil' || tool === 'texture' || tool === 'eraser' || tool === 'mask') {
-    const paint = tool === 'eraser' ? { v: 0 }
+    const alpha = tool === 'mask' ? 1 : ed.alpha;   // opacité tramée du pinceau
+    const paint = tool === 'eraser' ? { v: 0, alpha }
       : tool === 'mask' ? { v: ed.maskErase ? 0 : 1 }
-      : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque }
-      : { v: ed.ink };
+      : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha }
+      : { v: ed.ink, alpha };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
     const sp = tool === 'pencil' || tool === 'eraser' || tool === 'texture' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);

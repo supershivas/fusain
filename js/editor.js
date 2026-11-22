@@ -11,7 +11,7 @@ import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.j
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null,
-  tool: 'pencil', size: 6, sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
+  tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
@@ -27,9 +27,9 @@ export const notify = what => subs.forEach(fn => fn(what));
 
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
-  pencil: { sizeMm: 0.5, ink: 1, brushId: 'stylo', brushParams: null },
-  texture: { sizeMm: 3, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
-  eraser: { sizeMm: 3, brushId: 'stylo', brushParams: null },
+  pencil: { sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null },
+  texture: { sizeMm: 3, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  eraser: { sizeMm: 3, alpha: 1, slotId: null, brushId: 'stylo', brushParams: null },
   fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, maskErase: false },
@@ -43,6 +43,7 @@ export function applyToolSettings() {
   if (d) Object.assign(ed, d, ed.toolSettings[ed.tool]);
   ed.brushParams = { ...BRUSH_DEFAULTS, ...(ed.brushParams || brushSpec(ed.brushId, ed.customBrushes)) };
   syncSize();
+  syncSlot();
 }
 
 // ── Pinceaux : livrés ou enregistrés par l'utilisateur ──
@@ -70,6 +71,87 @@ export function deleteBrush(id) {
   ed.customBrushes = ed.customBrushes.filter(b => b.id !== id);
   if (ed.brushId === id) selectBrush('stylo');
 }
+// ── Palette du projet : 4 à 8 pinceaux par outil (crayon, pinceau trame, gomme), synchronisés avec le projet ──
+// Un emplacement garde le pinceau entier (réglages, taille, opacité, et la trame pour le pinceau trame).
+// Tant qu'un emplacement est actif, ce qu'on règle (taille, opacité, réglages) y est enregistré.
+export const BRUSH_TOOLS = ['pencil', 'texture', 'eraser'];
+export const SLOT_MAX = 8;
+const SLOT_DEFAULTS = {
+  pencil: [['stylo'], ['plumeg'], ['brushpen'], ['hb'], ['fusain']],
+  texture: [['stylo', { name: 'Trame 25 %', tramaId: 'g25' }], ['stylo', { name: 'Trame 50 %', tramaId: 'g50', sizeMm: 6 }], ['fusain', { name: 'Fusain tramé', tramaId: 'g25', sizeMm: 8 }], ['spray', { name: 'Aérographe', tramaId: 'plein', sizeMm: 10 }]],
+  eraser: [['stylo', { name: 'Gomme fine', sizeMm: 1 }], ['stylo', { name: 'Gomme ronde', sizeMm: 4 }], ['feutre', { name: 'Gomme carrée', sizeMm: 8 }], ['6b', { name: 'Gomme grain', sizeMm: 3 }]],
+};
+const slotId = () => 's' + Math.random().toString(36).slice(2, 8);
+function makeSlot(tool, base, spec, o = {}) {
+  const s = { id: slotId(), name: o.name || spec.name || 'Pinceau', base, spec: { ...spec }, sizeMm: o.sizeMm ?? spec.sizeMm, alpha: o.alpha ?? 1 };
+  if (tool === 'texture') Object.assign(s, { tramaId: o.tramaId || 'g25', tramaScale: o.tramaScale ?? 2, tramaOpaque: !!o.tramaOpaque });
+  if (tool === 'texture') s.sizeMm = Math.max(3, s.sizeMm);
+  for (const k of ['id', 'name', 'group', 'custom']) delete s.spec[k];
+  return s;
+}
+// Palette de l'outil, créée à la première ouverture (pinceaux livrés, plus ceux déjà enregistrés sur cet appareil).
+export function brushSlots(tool = ed.tool) {
+  if (!ed.project || !BRUSH_TOOLS.includes(tool)) return [];
+  const set = ed.project.brushSet || (ed.project.brushSet = {});
+  if (!Array.isArray(set[tool])) {
+    set[tool] = SLOT_DEFAULTS[tool].map(([id, o]) => makeSlot(tool, id, brushSpec(id), o));
+    const mine = ed.customBrushes.filter(b => (b.group === 'Mes gommes') === (tool === 'eraser') && tool !== 'texture');
+    for (const b of mine) if (set[tool].length < SLOT_MAX) set[tool].push(makeSlot(tool, b.id, brushSpec(b.id, ed.customBrushes)));
+  }
+  return set[tool];
+}
+export const activeSlot = () => brushSlots().find(s => s.id === ed.slotId) || null;
+export function applySlot(id) {
+  const s = brushSlots().find(x => x.id === id);
+  if (!s) return;
+  ed.slotId = s.id; ed.brushId = s.base; ed.brushParams = { ...BRUSH_DEFAULTS, ...s.spec };
+  ed.alpha = s.alpha ?? 1;
+  if (ed.tool === 'texture') Object.assign(ed, { tramaId: s.tramaId, tramaScale: s.tramaScale, tramaOpaque: s.tramaOpaque });
+  setSizeMm(s.sizeMm);
+}
+// Range l'état courant dans l'emplacement actif (appelé après chaque réglage).
+export function storeSlot() {
+  const s = activeSlot();
+  if (!s) return;
+  s.spec = { ...ed.brushParams }; for (const k of ['id', 'name', 'group', 'custom']) delete s.spec[k];
+  s.sizeMm = ed.sizeMm; s.alpha = ed.alpha;
+  if (ed.tool === 'texture') Object.assign(s, { tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque });
+  markChanged();
+}
+// Un pinceau pris dans la bibliothèque entre dans la palette (s'il n'y est pas) ; palette pleine : il remplace l'emplacement actif.
+export function brushToPalette(id) {
+  const list = brushSlots(), found = list.find(s => s.base === id && s.name === (allBrushes().find(b => b.id === id) || {}).name);
+  if (found) { applySlot(found.id); return 'found'; }
+  selectBrush(id);
+  const slot = makeSlot(ed.tool, id, ed.brushParams, { name: currentBrush().name, sizeMm: ed.sizeMm, alpha: 1, tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque });
+  let how = 'added';
+  if (list.length < SLOT_MAX) list.push(slot);
+  else { const i = Math.max(0, list.findIndex(s => s.id === ed.slotId)); list[i] = slot; how = 'replaced'; }
+  applySlot(slot.id); markChanged();
+  return how;
+}
+export function removeSlot(id) {
+  const list = brushSlots(), i = list.findIndex(s => s.id === id);
+  if (i < 0 || list.length <= 1) return false;
+  list.splice(i, 1);
+  if (ed.slotId === id) applySlot(list[Math.min(i, list.length - 1)].id);
+  markChanged();
+  return true;
+}
+export function renameSlot(id, name) { const s = brushSlots().find(x => x.id === id); if (s && name) { s.name = name; markChanged(); } }
+export function moveSlot(id, dir) {
+  const list = brushSlots(), i = list.findIndex(s => s.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]]; markChanged();
+}
+// Garde la palette et l'outil d'accord : à l'ouverture d'un projet ou d'un outil, l'emplacement actif est repris (ou le premier).
+export function syncSlot() {
+  if (!BRUSH_TOOLS.includes(ed.tool) || !ed.project) return;
+  const list = brushSlots();
+  if (list.some(s => s.id === ed.slotId)) applySlot(ed.slotId); else if (list[0]) applySlot(list[0].id);
+}
+export function setAlpha(a) { ed.alpha = Math.max(0.05, Math.min(1, a)); }
+
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
 export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
 // Plus grosse taille : 50 mm pour les trames (aplats), 30 mm pour le reste.

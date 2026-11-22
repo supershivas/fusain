@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.29.0 — 2026-11-22
+- Palette de pinceaux du projet dans la barre : un toucher pour changer de pinceau, toucher l'actif ouvre ses réglages, « + » en ajoute un ; elle suit le projet sur tous les appareils
+- Taille et opacité en curseurs verticaux au bord gauche du dessin ; une opacité sous 100 % trace un gris tramé
+- Un seul bouton Réglages (onglets Pinceau et Trame pour le pinceau trame)
+
 ## 1.28.0 — 2026-10-31
 - Bulles : on peut aligner le texte à gauche, au centre ou à droite, et en haut, au milieu ou en bas (onglet Texte)
 
