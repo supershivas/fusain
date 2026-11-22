@@ -7,7 +7,7 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;   // lastPen part de -Infinity : au chargement, aucun doigt n'est pris pour une paume
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null;
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null, longPress = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
@@ -25,7 +25,7 @@ function point(e, el) {
   return { x: p.x, y: p.y, sx, sy, pressure: e.pointerType === 'pen' ? Math.max(0.02, e.pressure) : 0.5, type: e.pointerType, shift: e.shiftKey };
 }
 
-export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser, onDoubleTap }) {
+export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser, onDoubleTap, onLongPress }) {
   el.style.touchAction = 'none';
   el.addEventListener('contextmenu', e => e.preventDefault());
   // WebKit (Safari, Firefox et Chrome sur iPad) lance toucher long et menu « Rechercher » sur touchstart, que pointerdown n'annule pas
@@ -61,6 +61,25 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
 
     if (e.pointerType === 'touch') {
       const n = touchCount();
+      clearTimeout(longPress && longPress.timer); longPress = null;
+      // un doigt seul, immobile une demi-seconde : pipette (le point qu'il aurait commencé à dessiner est annulé)
+      if (n === 1 && onLongPress) {
+        const lp = longPress = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        lp.timer = setTimeout(() => {
+          if (longPress !== lp || !pointers.has(lp.id)) return;
+          longPress = null;
+          const r = el.getBoundingClientRect();
+          // le point commencé par le doigt est annulé avant de lire la couleur (sinon la pipette le prendrait)
+          const undoDot = () => {
+            if (pending && pending.e.pointerId === lp.id) { clearTimeout(pending.timer); pending = null; }
+            if (drawingId === lp.id) { tools.cancel(); drawingId = null; }
+            if (panning && panning.id === lp.id) { panning.moved = true; stopPan(); }
+          };
+          if (!onLongPress(lp.x - r.left, lp.y - r.top, undoDot)) return;
+          lastTap = null;
+          pointers.get(lp.id).palm = true;   // le reste du toucher ne fait plus rien
+        }, 550);
+      }
       if (n === 2) { cancelDrawing(); stopPan(); startGesture(); return; }
       if (n > 2) { if (gesture) gesture.max = Math.max(gesture.max, n); return; }
     }
@@ -80,6 +99,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     const rec = pointers.get(e.pointerId);
     if (!rec) { hover(e, el); return; }
     rec.x = e.clientX; rec.y = e.clientY;
+    if (longPress && longPress.id === e.pointerId && Math.hypot(e.clientX - longPress.x, e.clientY - longPress.y) > 10) { clearTimeout(longPress.timer); longPress = null; }
     if (rec.palm) return;
     if (e.pointerType === 'pen' && penInfo && penInfo.t) penInfo.max = Math.max(penInfo.max, Math.hypot(e.clientX - penInfo.x, e.clientY - penInfo.y));
     if (gesture && rec.type === 'touch') {
@@ -102,6 +122,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
   });
 
   const end = e => {
+    if (longPress && longPress.id === e.pointerId) { clearTimeout(longPress.timer); longPress = null; }
     if (e.pointerType === 'pen') { penDown = false; lastPen = performance.now(); }
     const rec = pointers.get(e.pointerId);
     if (!rec) return;

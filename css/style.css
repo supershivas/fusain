@@ -494,3 +494,10 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .cswatch.add { display: flex; align-items: center; justify-content: center; border-style: dashed; background: var(--card-bg); color: var(--text-secondary); }
 /* la fenêtre des couleurs s'ouvre à droite de la colonne de gauche, pour laisser voir les deux couleurs */
 .pop[data-id="color"] { left: 68px; width: min(340px, calc(100% - 76px)); }
+.clabel-sub { text-transform: none; letter-spacing: 0; color: var(--text-muted); font-size: .72rem; margin-left: 4px; }
+.cpals { display: flex; gap: 4px; margin: 12px 0 6px; overflow-x: auto; scrollbar-width: none; }
+.cpals::-webkit-scrollbar { display: none; }
+.cpal { flex: none; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card-bg); font-size: .8rem; white-space: nowrap; }
+.cpal.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cpal.add { padding: 0 10px; color: var(--text-secondary); border-style: dashed; }
+.cpal-acts { margin-bottom: 6px; }

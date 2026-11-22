@@ -3,7 +3,7 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -98,7 +98,7 @@ export function mountEditor(el) {
   attach($('#view', root));
   hooks.afterRender = placeBubbleUI;
   initBubbleUI();
-  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser, onDoubleTap });
+  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser, onDoubleTap, onLongPress });
   fit();
   renderAll();
 
@@ -152,7 +152,7 @@ export function mountEditor(el) {
 
 function closeColorOutside(e) {
   if (pickFromCanvas(e)) return;
-  if (popId !== 'color' || e.target.closest('#pop, [data-cw="open"], .toast, dialog')) return;
+  if (popId !== 'color' || modalOpen() || e.target.closest('#pop, [data-cw="open"], .toast, dialog, [aria-modal="true"]')) return;
   popId = null; renderPop(); renderOptbar(); updateColorWidget();
   if (e.target.id === 'view') { e.stopPropagation(); e.preventDefault(); }   // ce toucher ferme la palette, il ne dessine pas
 }
@@ -770,6 +770,8 @@ const pickState = () => {
   if (!pick || rgb2hex(hsv2rgb(pick)) !== ed.color) pick = cur.s === 0 && pick ? { ...cur, h: pick.h } : cur;
   return pick;
 };
+// Harmonies : même saturation et luminosité, teintes voisines (±30°), triade (±120°), complémentaires (180°, 150°, 210°).
+const harmoniesOf = hex => { const c = rgb2hsv(hex2rgb(hex)); return [-30, 30, 120, 240, 150, 180, 210].map(d => rgb2hex(hsv2rgb({ ...c, h: (c.h + d + 360) % 360 }))); };
 // Nuances immédiates de la couleur : trois plus sombres, elle, trois plus claires.
 const shadesOf = hex => { const c = hex2rgb(hex); return [-0.6, -0.4, -0.2, 0, 0.25, 0.5, 0.75].map(t => rgb2hex(c.map(v => (t < 0 ? v * (1 + t) : v + (255 - v) * t)))); };
 
@@ -809,7 +811,9 @@ function colorPop() {
       <button class="icon-btn icon-only" data-act="pick-color" title="Pipette : prendre une couleur du dessin" aria-label="Pipette : prendre une couleur du dessin">${icon('color-picker')}</button>
       ${inPal ? '' : `<button class="btn small" data-act="color-add" title="Ajouter à la palette du projet">${icon('plus')} Palette</button>`}</div>
     <div class="clabel">Nuances</div><div class="cshades">${shadesOf(ed.color).map(c => `<button class="cswatch ${c === ed.color ? 'on' : ''}" data-pcolor="${c}" style="background:${c}" aria-label="Nuance ${c}" title="${c}"></button>`).join('')}</div>
-    <div class="clabel">Palette du projet</div><div class="cgrid" role="group" aria-label="Couleurs du projet">${list.map(c => sw(c, true)).join('')}<button class="cswatch add" data-act="color-add" aria-label="Ajouter la couleur actuelle à la palette" title="Ajouter la couleur actuelle">${icon('plus')}</button></div>
+    ${rgb2hsv(hex2rgb(ed.color)).s > 0.05 ? `<div class="clabel">Harmonies <span class="clabel-sub">voisines · triade · complémentaires</span></div><div class="cshades">${harmoniesOf(ed.color).map(c => `<button class="cswatch" data-pcolor="${c}" style="background:${c}" aria-label="Harmonie ${c}" title="${c}"></button>`).join('')}</div>` : ''}
+    <div class="cpals" role="tablist" aria-label="Palettes du projet">${projectPalettes().map(pl => `<button role="tab" class="cpal ${pl.id === currentPalette().id ? 'on' : ''}" data-palid="${pl.id}" aria-selected="${pl.id === currentPalette().id}">${esc(pl.name)}</button>`).join('')}<button class="cpal add" data-act="pal-new" aria-label="Nouvelle palette" title="Nouvelle palette">${icon('plus')}</button></div>
+    <div class="row tight cpal-acts"><button class="btn small" data-act="pal-rename">${icon('pencil')} Renommer</button>${projectPalettes().length > 1 ? `<button class="btn small" data-act="pal-del">${icon('trash')} Supprimer la palette</button>` : ''}</div><div class="cgrid" role="group" aria-label="Couleurs du projet">${list.map(c => sw(c, true)).join('')}<button class="cswatch add" data-act="color-add" aria-label="Ajouter la couleur actuelle à la palette" title="Ajouter la couleur actuelle">${icon('plus')}</button></div>
     ${ed.recentColors.length ? `<div class="clabel">Récentes</div><div class="cgrid">${ed.recentColors.map(c => sw(c, false)).join('')}</div>` : ''}
     <small class="note">Appui long sur une couleur de la palette pour la retirer. La couleur s'applique au pinceau, au remplissage et aux formes, dans leur calque.</small>`;
 }
@@ -860,6 +864,17 @@ function pickerUp(e) {
   setColor(ed.color); savePrefs();
   const pe = $('#pop', root); if (pe) pe._html = '';
   renderPop();
+}
+// Appui long d'un doigt sur le dessin (pinceau, remplissage, formes) : pipette directe.
+function onLongPress(sx, sy, undoDot) {
+  if (!TOOL_COLOR.includes(ed.tool)) return false;
+  undoDot();
+  const hex = colorAt(sx, sy);
+  if (!hex) return false;
+  setColor(hex); savePrefs(); updateColorWidget();
+  if (popId === 'color') { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); }
+  toast(`Couleur prise : ${hex}`, { duration: 1400 });
+  return true;
 }
 // Pipette : le prochain toucher sur le dessin prend sa couleur.
 function pickFromCanvas(e) {
@@ -1158,6 +1173,8 @@ async function onDock(e) {
   if (pgb) { goToPage(+pgb.dataset.page); return; }
   const pc = e.target.closest('[data-pcolor]');
   if (pc) { setColor(pc.dataset.pcolor); savePrefs(); updateColorWidget(); renderPop(); return; }
+  const pl = e.target.closest('[data-palid]');
+  if (pl) { selectPalette(pl.dataset.palid); renderPop(); return; }
   const lk = e.target.closest('[data-lkind]'), lc = e.target.closest('[data-lcolor]');
   if (lk) { setLayerProp(activeLayer().id, 'kind', lk.dataset.lkind); return; }
   if (lc) { setLayerProp(activeLayer().id, 'color', lc.dataset.lcolor); return; }
@@ -1232,6 +1249,18 @@ async function onDock(e) {
   }
   else if (a === 'brush-reset') { resetBrush(); storeSlot(); renderDock(); renderOptbar(); renderPop(); }
   else if (a === 'color-add') { if (addProjectColor(ed.color)) toast('Couleur ajoutée à la palette du projet.', { duration: 1600 }); renderPop(); }
+  else if (a === 'pal-new') {
+    const name = await promptModal({ title: 'Nouvelle palette', label: 'Nom', value: 'Palette ' + (projectPalettes().length + 1) });
+    if (name) { addPalette(name.trim() || 'Palette'); if (ed.color) addProjectColor(ed.color); renderPop(); }
+  }
+  else if (a === 'pal-rename') {
+    const pal = currentPalette(), name = await promptModal({ title: 'Renommer la palette', label: 'Nom', value: pal.name });
+    if (name) { renamePalette(pal.id, name.trim()); renderPop(); }
+  }
+  else if (a === 'pal-del') {
+    const pal = currentPalette(), gone = removePalette(pal.id);
+    if (gone) { renderPop(); toast(`Palette « ${pal.name} » supprimée.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restorePalette(gone); renderPop(); } }); }
+  }
   else if (a === 'pick-color') { ed.picking = true; popId = null; renderPop(); updateColorWidget(); toast('Touche le dessin pour y prendre une couleur.', { duration: 2200 }); }
   else if (a === 'pop-tab') { brushPopTab = e.target.closest("[data-ptab]").dataset.ptab; renderPop(); }
   else if (a === 'slot-rename') {

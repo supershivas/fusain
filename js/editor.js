@@ -168,24 +168,47 @@ export function syncSlot() {
 }
 // ── Couleurs du projet : une palette partagée par toutes ses pages (créée à la première ouverture) ──
 export const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#F2D3B3', '#D9A57A', '#8D5524', '#C0392B', '#E67E22', '#F4D03F', '#27AE60', '#1ABC9C', '#2E86DE', '#1F3A93', '#8E44AD', '#E84393', '#7F8C8D', '#2C3E50'];
-export function projectColors() {
-  if (!ed.project) return DEFAULT_COLORS;
-  return ed.project.colors || DEFAULT_COLORS;
+// Un projet a plusieurs palettes nommées (peaux, décors, nuit…) ; `paletteId` est celle qui est ouverte.
+// Ancien format : une seule liste `colors`, reprise comme première palette.
+export function projectPalettes() {
+  const pr = ed.project;
+  if (!pr) return [{ id: 'p0', name: 'Projet', colors: DEFAULT_COLORS.slice() }];
+  if (!Array.isArray(pr.palettes) || !pr.palettes.length) {
+    pr.palettes = [{ id: 'p' + Math.random().toString(36).slice(2, 8), name: 'Projet', colors: (pr.colors || DEFAULT_COLORS).slice() }];
+    delete pr.colors;
+  }
+  if (!pr.palettes.some(p => p.id === pr.paletteId)) pr.paletteId = pr.palettes[0].id;
+  return pr.palettes;
 }
+export const currentPalette = () => { const list = projectPalettes(); return list.find(p => p.id === (ed.project && ed.project.paletteId)) || list[0]; };
+export const projectColors = () => currentPalette().colors;
+export function selectPalette(id) { if (ed.project && projectPalettes().some(p => p.id === id)) { ed.project.paletteId = id; markChanged(); } }
+export function addPalette(name) {
+  const p = { id: 'p' + Math.random().toString(36).slice(2, 8), name, colors: [] };
+  projectPalettes().push(p); ed.project.paletteId = p.id; markChanged(); return p;
+}
+export function renamePalette(id, name) { const p = projectPalettes().find(x => x.id === id); if (p && name) { p.name = name; markChanged(); } }
+export function removePalette(id) {
+  const list = projectPalettes(), i = list.findIndex(p => p.id === id);
+  if (i < 0 || list.length < 2) return null;
+  const [p] = list.splice(i, 1); ed.project.paletteId = list[Math.max(0, i - 1)].id; markChanged();
+  return { p, i };
+}
+export function restorePalette({ p, i }) { const list = projectPalettes(); if (!list.some(x => x.id === p.id)) { list.splice(i, 0, p); ed.project.paletteId = p.id; markChanged(); } }
 export function addProjectColor(hex) {
-  const list = projectColors().slice();
-  if (list.includes(hex)) return false;
-  list.push(hex); ed.project.colors = list; markChanged(); return true;
+  const pal = currentPalette();
+  if (pal.colors.includes(hex)) return false;
+  pal.colors.push(hex); markChanged(); return true;
 }
 export function removeProjectColor(hex) {
-  const list = projectColors().filter(c => c !== hex);
-  if (list.length === projectColors().length) return false;
-  ed.project.colors = list; markChanged(); return true;
+  const pal = currentPalette(), i = pal.colors.indexOf(hex);
+  if (i < 0) return false;
+  pal.colors.splice(i, 1); markChanged(); return true;
 }
 export function restoreProjectColor(hex, index) {
-  const list = projectColors().slice();
+  const list = currentPalette().colors;
   if (list.includes(hex)) return;
-  list.splice(Math.min(index, list.length), 0, hex); ed.project.colors = list; markChanged();
+  list.splice(Math.min(index, list.length), 0, hex); markChanged();
 }
 // Noir pur et blanc pur restent dans les calques 1 bit (encre 1 et 2) ; toute autre couleur passe le calque en RVBA.
 export const inkOf = hex => (hex === '#000000' ? 1 : hex === '#FFFFFF' ? 2 : 3);
