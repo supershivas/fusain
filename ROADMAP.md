@@ -73,10 +73,6 @@ Dernière mise à jour : 2026-11-22 (v1.50.2).
 ### À faire par toi
 - [ ] Supabase : exécuter le bloc `fusain_library` de `supabase/fusain.sql` (bibliothèque partagée ; les Réglages le signalent tant qu'il manque)
 
-### Décisions en attente
-- [ ] Bascule plume ↔ gomme sans le double toucher du Pencil (non transmis aux pages web) : bouton flottant près des curseurs (conseillé), geste au doigt, ou double toucher de la pointe plus strict
-- [ ] App iPad native (Capacitor + petite extension Swift) pour recevoir le double toucher et la pression du Pencil Pro : nécessite un Mac avec Xcode, un compte Apple, et l'accord pour cette dépendance
-
 ### Améliorations possibles
 - [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet
 - [ ] Sélection : presse-papiers partagé entre onglets ou appareils (aujourd'hui interne à l'app) ; coller en rectangle plutôt qu'en forme du dessin
