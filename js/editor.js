@@ -79,6 +79,8 @@ export function deleteBrush(id) {
 // Un emplacement garde le pinceau entier (réglages, taille, opacité, et la trame pour le pinceau trame).
 // Tant qu'un emplacement est actif, ce qu'on règle (taille, opacité, réglages) y est enregistré.
 export const BRUSH_TOOLS = ['pencil', 'eraser'];
+// Pression des pinceaux livrés avant la v1.44 (press, pressMin), pour mettre à jour les palettes restées telles quelles.
+const PRESS_V1 = { stylo: [0.6, 0.3], technique: [0, 0.25], plume: [0.6, 0.35], plumeg: [0.9, 0.1], brushpen: [1, 0.08], hb: [0.4, 0.5], '6b': [0.5, 0.4], mine: [0, 0.25], rond: [1, 0.1], plat: [0, 0.25], sec: [0.5, 0.5], feutre: [0.3, 0.6], plate: [0.4, 0.5], plate2: [0, 0.25], fusain: [0.6, 0.4], craie: [0.5, 0.5], spray: [0.7, 0.3], point: [0, 0.25] };
 // Repères des curseurs latéraux (valeurs en mm et en opacité 0–1) : le curseur s'y aimante.
 export const copyTicks = t => ({ size: [...((t && t.size) || [])], alpha: [...((t && t.alpha) || [])] });
 export const ticksOf = () => (ed.ticks || (ed.ticks = copyTicks(null)));
@@ -102,6 +104,15 @@ export function brushSlots(tool = ed.tool) {
     set[tool] = SLOT_DEFAULTS[tool].map(([id, o]) => makeSlot(tool, id, brushSpec(id), o));
     const mine = ed.customBrushes.filter(b => (b.group === 'Mes gommes') === (tool === 'eraser'));
     for (const b of mine) if (set[tool].length < SLOT_MAX) set[tool].push(makeSlot(tool, b.id, brushSpec(b.id, ed.customBrushes)));
+  }
+  // v1.44 : pression par défaut à 100 % (pression nulle : 10 %). Un pinceau de palette resté aux anciennes valeurs livrées
+  // prend les nouvelles ; un pinceau réglé par l'auteur garde les siennes.
+  if ((set.pressV || 1) < 2) {
+    for (const list of [set.pencil, set.eraser, set.texture]) for (const sl of list || []) {
+      const old = PRESS_V1[sl.base], sp = sl.spec || {};
+      if (old && (sp.press ?? 0) === old[0] && (sp.pressMin ?? 0.25) === old[1]) { const nb = brushSpec(sl.base); sp.press = nb.press; sp.pressMin = nb.pressMin; sl.spec = sp; }
+    }
+    set.pressV = 2;
   }
   // anciens projets : la palette du « pinceau trame » rejoint celle du pinceau (ses pinceaux gardent leur trame)
   if (tool === 'pencil' && Array.isArray(set.texture)) {

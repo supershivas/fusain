@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.43.2 — 2026-11-22
+- Pression du stylet par défaut : la pression agit à 100 % sur la taille, et la taille à pression nulle est de 10 %, pour tous les pinceaux livrés (sauf le stylo technique et le pointillé, d'épaisseur constante)
+- Les pinceaux de palette restés tels quels prennent ces réglages ; ceux que tu as retouchés gardent les tiens
+
 ## 1.43.1 — 2026-11-22
 - Effacer un calque en frottant à trois doigts ne fait plus tourner ni zoomer la page : la vue ne bouge plus dès que trois doigts sont posés, même quand ils se lèvent un par un
 - Le frottement est plus facile : trois allers-retours suffisent

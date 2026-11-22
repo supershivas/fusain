@@ -228,8 +228,8 @@ export const BRUSH_DEFAULTS = {
   angle: 0,            // degrés
   follow: false,       // l'axe long reste perpendiculaire au geste
   sizeMm: 0.5,
-  press: 0,            // 0 à 1 : effet de la pression du stylet sur la taille
-  pressMin: 0.25,      // taille relative à pression nulle (quand press = 1)
+  press: 1,            // 0 à 1 : effet de la pression du stylet sur la taille (par défaut 100 %)
+  pressMin: 0.1,       // taille relative à pression nulle (par défaut 10 %)
   speed: 0,            // 0 à 1 : le trait s'affine quand le geste va vite
   start: 0,            // départ effilé, en diamètres
   grain: 1,            // couverture 0 à 1 (1 = plein)
@@ -243,24 +243,24 @@ export const BRUSH_DEFAULTS = {
 export const BRUSH_GROUPS = ['Encrage', 'Esquisse', 'Pinceaux', 'Calligraphie', 'Texture'];
 const B = (id, name, group, o) => ({ id, name, group, ...o });
 export const BUILTIN_BRUSHES = [
-  B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5, press: 0.6, pressMin: 0.3 }),
-  B('technique', 'Stylo technique', 'Encrage', { sizeMm: 0.3, smooth: 0.25 }),
-  B('plume', 'Plume d\'encrage', 'Encrage', { sizeMm: 0.5, press: 0.6, pressMin: 0.35, speed: 0.25, smooth: 0.15 }),
-  B('plumeg', 'Plume G (manga)', 'Encrage', { sizeMm: 0.8, press: 0.9, pressMin: 0.1, speed: 0.6, start: 3, smooth: 0.35 }),
-  B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, press: 1, pressMin: 0.08, speed: 0.8, start: 4, smooth: 0.4 }),
-  B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, press: 0.4, pressMin: 0.5, spacing: 0.18 }),
-  B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2, press: 0.5, pressMin: 0.4 }),
+  B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5 }),
+  B('technique', 'Stylo technique', 'Encrage', { sizeMm: 0.3, press: 0, smooth: 0.25 }),
+  B('plume', 'Plume d\'encrage', 'Encrage', { sizeMm: 0.5, speed: 0.25, smooth: 0.15 }),
+  B('plumeg', 'Plume G (manga)', 'Encrage', { sizeMm: 0.8, speed: 0.6, start: 3, smooth: 0.35 }),
+  B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, speed: 0.8, start: 4, smooth: 0.4 }),
+  B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, spacing: 0.18 }),
+  B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2 }),
   B('mine', 'Mine à plat', 'Esquisse', { sizeMm: 3.5, shape: 'rect', ratio: 0.25, angle: 20, grain: 0.55, grainType: 'paper' }),
-  B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, press: 1, pressMin: 0.1, speed: 0.5, start: 2.5, smooth: 0.3 }),
+  B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, speed: 0.5, start: 2.5, smooth: 0.3 }),
   B('plat', 'Pinceau plat', 'Pinceaux', { sizeMm: 4, shape: 'rect', ratio: 0.35, follow: true }),
-  B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, press: 0.5, pressMin: 0.5, smooth: 0.2 }),
-  B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square', press: 0.3, pressMin: 0.6 }),
-  B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40, press: 0.4, pressMin: 0.5 }),
+  B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, smooth: 0.2 }),
+  B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square' }),
+  B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40 }),
   B('plate2', 'Plume plate suivie', 'Calligraphie', { sizeMm: 2.5, shape: 'nib', ratio: 0.2, follow: true }),
-  B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15, press: 0.6, pressMin: 0.4 }),
-  B('craie', 'Craie', 'Texture', { sizeMm: 6, grainType: 'paper', grain: 0.5, grainScale: 2, scatter: 0.05, press: 0.5, pressMin: 0.5 }),
-  B('spray', 'Aérographe', 'Texture', { sizeMm: 8, grainType: 'spray', grain: 0.5, press: 0.7, pressMin: 0.3 }),
-  B('point', 'Pointillé', 'Texture', { sizeMm: 1.2, spacing: 2.4 }),
+  B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15 }),
+  B('craie', 'Craie', 'Texture', { sizeMm: 6, grainType: 'paper', grain: 0.5, grainScale: 2, scatter: 0.05 }),
+  B('spray', 'Aérographe', 'Texture', { sizeMm: 8, grainType: 'spray', grain: 0.5 }),
+  B('point', 'Pointillé', 'Texture', { sizeMm: 1.2, press: 0, spacing: 2.4 }),
 ];
 export const brushSpec = (id, custom = []) => ({ ...BRUSH_DEFAULTS, ...(BUILTIN_BRUSHES.concat(custom).find(b => b.id === id) || BUILTIN_BRUSHES[0]) });
 
