@@ -4,7 +4,7 @@ import {
   ed, page, activeLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, targetLayer, deleteBubble,
 } from './editor.js';
 import {
-  stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues,
+  stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
 } from './raster.js';
 import { tramaById } from './tramas.js';
 import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
@@ -28,8 +28,16 @@ function maskFor(p) {
 
 function makeCtx(p, layer, paint, useMask = true) {
   const clip = { x0: p.x - p.ex, y0: p.y - p.ey, x1: p.x - p.ex + p.w, y1: p.y - p.ey + p.h };
-  return { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null };
+  const ctx = { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null };
+  if (layer && layer.kind === 'color') {   // calque de couleur : RVBA, vraie opacité (chaque pixel mélangé une fois par trait)
+    ctx.rgba = true;
+    paint.rgb = ed.ink === 3 ? hexToRgb(ed.color) : [0, 0, 0];
+    if ((paint.alpha ?? 1) < 1) ctx.seen = new Uint8Array(layer.w * layer.h);
+  }
+  return ctx;
 }
+// Valeur peinte : noir (1), blanc (2) ; la couleur (ed.ink 3) peint « encre » dans un calque de couleur.
+const inkV = () => (ed.ink === 3 ? 1 : ed.ink);
 
 // Pression du stylet après la courbe réglée dans les Réglages (gamma < 1 : plus sensible au toucher léger).
 export const pressureOf = pt => Math.pow(Math.max(0.02, Math.min(1, pt.pressure)), ed.pressureGamma);
@@ -74,7 +82,7 @@ export function down(pt) {
 function begin(p, pt) {
   selectPanel(p.id);
   // Chaque outil vise le calque de sa sorte : encre → calque d'encre, trame → calque de trame (créé s'il manque).
-  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.tool === 'pencil' ? 'ink' : (trame0 ? 'tram' : 'ink');
+  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.ink === 3 ? 'color' : ed.tool === 'pencil' ? 'ink' : (trame0 ? 'tram' : 'ink');
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
   else {
@@ -90,8 +98,8 @@ function begin(p, pt) {
     const alpha = tool === 'mask' ? 1 : ed.alpha;   // opacité tramée du pinceau
     const paint = tool === 'eraser' ? { v: 0, alpha }
       : tool === 'mask' ? { v: ed.maskErase ? 0 : 1 }
-      : tool === 'texture' ? { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha }
-      : { v: ed.ink, alpha };
+      : tool === 'texture' ? { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha }
+      : { v: inkV(), alpha };
     ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
     const sp = tool === 'pencil' || tool === 'eraser' || tool === 'texture' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
@@ -102,7 +110,7 @@ function begin(p, pt) {
     const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
     if (!region) return;
     ed.undo.begin('Remplir');
-    const ctx = makeCtx(p, layer, { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
+    const ctx = makeCtx(p, layer, { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
     applyRegion(ctx, region);
     ed.undo.commit();
     invalidate(p, { x: region.x0, y: region.y0, w: region.x1 - region.x0 + 1, h: region.y1 - region.y0 + 1 });
@@ -174,7 +182,7 @@ export function up() {
     setOverlay({ shape: null });
     if (s.x1 === undefined) return;
     const trame = currentTrama(), p = s.p;
-    const paint = { v: ed.ink, trame, scale: ed.tramaScale, opaque: ed.tramaOpaque };
+    const paint = { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque };
     const ctx = makeCtx(p, s.layer, paint);
     const x0 = Math.floor(s.x0 - p.ex), y0 = Math.floor(s.y0 - p.ey), x1 = Math.floor(s.x1 - p.ex), y1 = Math.floor(s.y1 - p.ey);
     ed.undo.begin({ line: 'Ligne', rect: 'Rectangle', ellipse: 'Ellipse' }[ed.shapeKind]);

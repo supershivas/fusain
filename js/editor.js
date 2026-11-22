@@ -1,6 +1,6 @@
 // État de l'éditeur et actions sur le document (pages, cases, calques, bulles), toutes annulables.
 import {
-  newLayer, newPage, newBubble, pageLayers, ensureData, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel, DRAFT_COLORS,
+  newLayer, newPage, newBubble, pageLayers, ensureData, bppOf, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel, DRAFT_COLORS,
 } from './model.js';
 import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.js';
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
@@ -11,7 +11,7 @@ import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.j
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null, focus: false,
-  tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
+  tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, color: '#2E86DE', recentColors: [], brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
@@ -150,6 +150,28 @@ export function syncSlot() {
   const list = brushSlots();
   if (list.some(s => s.id === ed.slotId)) applySlot(ed.slotId); else if (list[0]) applySlot(list[0].id);
 }
+// ── Couleurs du projet : une palette partagée par toutes ses pages (créée à la première ouverture) ──
+export const DEFAULT_COLORS = ['#F2D3B3', '#D9A57A', '#8D5524', '#C0392B', '#E67E22', '#F4D03F', '#27AE60', '#1ABC9C', '#2E86DE', '#1F3A93', '#8E44AD', '#E84393', '#7F8C8D', '#2C3E50', '#FDFEFE'];
+export function projectColors() {
+  if (!ed.project) return DEFAULT_COLORS;
+  return ed.project.colors || DEFAULT_COLORS;
+}
+export function addProjectColor(hex) {
+  const list = projectColors().slice();
+  if (list.includes(hex)) return false;
+  list.push(hex); ed.project.colors = list; markChanged(); return true;
+}
+export function removeProjectColor(hex) {
+  const list = projectColors().filter(c => c !== hex);
+  if (list.length === projectColors().length) return false;
+  ed.project.colors = list; markChanged(); return true;
+}
+export function setColor(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
+  ed.color = hex.toUpperCase(); ed.ink = 3;
+  ed.recentColors = [ed.color, ...ed.recentColors.filter(c => c !== ed.color)].slice(0, 8);
+}
+
 export function setAlpha(a) { ed.alpha = Math.max(0.05, Math.min(1, a)); }
 
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
@@ -351,8 +373,9 @@ function reshape(old, r, extra = null) {
     if (!l) return l;
     const nl = { ...l, w: ext.w, h: ext.h, data: null, dirty: true, loaded: true };
     if (l.data) {
-      nl.data = new Uint8Array(ext.w * ext.h);
-      for (let j = 0; j < l.h; j++) nl.data.set(l.data.subarray(j * l.w, (j + 1) * l.w), (j + dy) * ext.w + dx);
+      const b = bppOf(l);
+      nl.data = new Uint8Array(ext.w * ext.h * b);
+      for (let j = 0; j < l.h; j++) nl.data.set(l.data.subarray(j * l.w * b, (j + 1) * l.w * b), ((j + dy) * ext.w + dx) * b);
     }
     return nl;
   };
@@ -422,32 +445,35 @@ export function resizeGutter(h, d) {
 
 // Partie visible d'un calque (w × h de la case), extraite de son étendue.
 function visibleData(layer, panel) {
-  const out = new Uint8Array(panel.w * panel.h);
+  const b = bppOf(layer), out = new Uint8Array(panel.w * panel.h * b);
   if (!layer.data) return out;
   const ox = panel.x - panel.ex, oy = panel.y - panel.ey;
-  for (let y = 0; y < panel.h; y++) out.set(layer.data.subarray((oy + y) * layer.w + ox, (oy + y) * layer.w + ox + panel.w), y * panel.w);
+  for (let y = 0; y < panel.h; y++) out.set(layer.data.subarray(((oy + y) * layer.w + ox) * b, ((oy + y) * layer.w + ox + panel.w) * b), y * panel.w * b);
   return out;
 }
 
 // Pose des pixels de la taille du cadre visible dans un tampon de l'étendue de la case.
-function placeVisible(vis, panel) {
-  const out = new Uint8Array(panel.ew * panel.eh), ox = panel.x - panel.ex, oy = panel.y - panel.ey;
-  for (let y = 0; y < panel.h; y++) out.set(vis.subarray(y * panel.w, (y + 1) * panel.w), (oy + y) * panel.ew + ox);
+function placeVisible(vis, panel, b = 1) {
+  const out = new Uint8Array(panel.ew * panel.eh * b), ox = panel.x - panel.ex, oy = panel.y - panel.ey;
+  for (let y = 0; y < panel.h; y++) out.set(vis.subarray(y * panel.w * b, (y + 1) * panel.w * b), ((oy + y) * panel.ew + ox) * b);
   return out;
 }
 
 // Reporte des pixels d'une case dans une autre de taille différente : 'same' garde l'échelle (coin haut gauche), 'fit' ajuste.
-function transferPixels(data, sw, sh, dw, dh, mode) {
-  const out = new Uint8Array(dw * dh);
+function transferPixels(data, sw, sh, dw, dh, mode, b = 1) {
+  const out = new Uint8Array(dw * dh * b);
   if (mode === 'fit') {
     const k = Math.min(dw / sw, dh / sh), ox = (dw - sw * k) / 2, oy = (dh - sh * k) / 2;
     for (let y = 0; y < dh; y++) {
       const sy = Math.floor((y - oy) / k); if (sy < 0 || sy >= sh) continue;
-      for (let x = 0; x < dw; x++) { const sx = Math.floor((x - ox) / k); if (sx >= 0 && sx < sw) out[y * dw + x] = data[sy * sw + sx]; }
+      for (let x = 0; x < dw; x++) {
+        const sx = Math.floor((x - ox) / k); if (sx < 0 || sx >= sw) continue;
+        for (let c = 0; c < b; c++) out[(y * dw + x) * b + c] = data[(sy * sw + sx) * b + c];
+      }
     }
   } else {
     const w = Math.min(sw, dw);
-    for (let y = 0; y < Math.min(sh, dh); y++) out.set(data.subarray(y * sw, y * sw + w), y * dw);
+    for (let y = 0; y < Math.min(sh, dh); y++) out.set(data.subarray(y * sw * b, (y * sw + w) * b), y * dw * b);
   }
   return out;
 }
@@ -461,7 +487,7 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   const clone = l => {
     const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color });
     Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked });
-    if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode), dst);
+    if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode, bppOf(l)), dst, bppOf(l));
     nl.dirty = true;
     return nl;
   };
@@ -525,11 +551,18 @@ export function mergePanels(aId, bId) {
   const paste = (from, to) => {
     if (!from.data) return;
     const dst = ensureData(to);
+    if (bppOf(from) === 4) {
+      for (let j = 0; j < from.h; j++) for (let i = 0; i < from.w; i++) {
+        const s = (j * from.w + i) * 4; if (!from.data[s + 3]) continue;
+        dst.set(from.data.subarray(s, s + 4), ((j + oy) * to.w + i + ox) * 4);
+      }
+      return;
+    }
     for (let j = 0; j < from.h; j++) for (let i = 0; i < from.w; i++) { const v = from.data[j * from.w + i]; if (v) dst[(j + oy) * to.w + i + ox] = v; }
   };
   for (const bl of b.layers) {
-    let target = na.layers.find(l => l.name === bl.name && l.draft === bl.draft);
-    if (!target) { target = newLayer(bl.name, na.ew, na.eh, { draft: bl.draft }); target.visible = bl.visible; na.layers.push(target); }
+    let target = na.layers.find(l => l.name === bl.name && l.draft === bl.draft && bppOf(l) === bppOf(bl));
+    if (!target) { target = newLayer(bl.name, na.ew, na.eh, { kind: bl.kind, color: bl.color }); target.visible = bl.visible; na.layers.push(target); }
     paste(bl, target);
   }
   if (b.mask && b.mask.data) { if (!na.mask) { na.mask = newLayer('Masque', na.ew, na.eh); } paste(b.mask, na.mask); na.mask.dirty = true; }
@@ -640,7 +673,7 @@ function nextDraftColor(p) {
 export function addLayer(kind = 'ink') {
   if (kind === true) kind = 'draft';
   const p = panel(), color = kind === 'draft' ? nextDraftColor(p) : undefined;
-  const base = { draft: 'Brouillon', tram: 'Trames', ink: 'Encrage' }[kind], n = p.layers.filter(x => x.kind === kind).length;
+  const base = { draft: 'Brouillon', tram: 'Trames', ink: 'Encrage', color: 'Couleur' }[kind], n = p.layers.filter(x => x.kind === kind).length;
   const l = newLayer(n ? `${base} ${n + 1}` : base, p.ew, p.eh, { kind, color });
   const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
@@ -649,20 +682,22 @@ export function addLayer(kind = 'ink') {
 }
 
 // ── Calque visé par un outil : l'encrage va dans un calque d'encre (ou de brouillon si c'est l'actif), les trames dans un calque de trame ──
-const roleOk = (l, role) => (role === 'tram' ? l.kind === 'tram' : l.kind === 'ink' || l.kind === 'draft');
+const roleKind = role => (role === 'tram' || role === 'color' ? role : 'ink');
+const roleOk = (l, role) => (role === 'tram' || role === 'color' ? l.kind === role : l.kind === 'ink' || l.kind === 'draft');
 export function peekTarget(p, role) {
   const act = activeLayer(p);
   if (roleOk(act, role)) return act;
-  const last = p.layers.find(l => l.id === (role === 'tram' ? p._tram : p._ink) && roleOk(l, role));
+  const last = p.layers.find(l => l.id === p['_' + roleKind(role)] && roleOk(l, role));
   if (last) return last;
-  return [...p.layers].reverse().find(l => l.kind === (role === 'tram' ? 'tram' : 'ink')) || null;
+  return [...p.layers].reverse().find(l => l.kind === roleKind(role)) || null;
 }
 export function targetLayer(p, role) {
   const found = peekTarget(p, role);
-  if (found) { if (found.kind !== 'draft') p[role === 'tram' ? '_tram' : '_ink'] = found.id; return found; }
-  // aucun calque de cette sorte dans la case : on en crée un (annulable), sous l'encrage pour les trames
-  const kind = role === 'tram' ? 'tram' : 'ink', l = newLayer(kind === 'tram' ? 'Trames' : 'Encrage', p.ew, p.eh, { kind });
-  const inkAt = p.layers.findIndex(x => x.kind === 'ink'), at = kind === 'tram' && inkAt >= 0 ? inkAt : p.layers.length, prev = p.active;
+  if (found) { if (found.kind !== 'draft') p['_' + roleKind(role)] = found.id; return found; }
+  // aucun calque de cette sorte dans la case : on en crée un (annulable) ; trames sous l'encrage, couleur sous les trames et l'encrage
+  const kind = roleKind(role), l = newLayer({ tram: 'Trames', color: 'Couleur', ink: 'Encrage' }[kind], p.ew, p.eh, { kind });
+  const inkAt = p.layers.findIndex(x => x.kind === 'ink'), lineAt = p.layers.findIndex(x => x.kind === 'ink' || x.kind === 'tram');
+  const at = kind === 'tram' && inkAt >= 0 ? inkAt : kind === 'color' && lineAt >= 0 ? lineAt : p.layers.length, prev = p.active;
   const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
   apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
@@ -685,6 +720,7 @@ export function duplicateLayer() {
 export function setLayerProp(id, key, value) {
   const p = panel(), l = p.layers.find(x => x.id === id);
   if (!l) return;
+  if (key === 'kind' && (value === 'color') !== (l.kind === 'color')) return;   // pixels de nature différente (RVBA / 1 octet)
   l[key] = value;
   if (key === 'kind') {
     l.draft = value === 'draft';
@@ -762,10 +798,19 @@ export function mergeDown() {
   const p = panel(), l = activeLayer(p), i = p.layers.indexOf(l);
   if (i < 1) return false;
   const below = p.layers[i - 1];
+  if (bppOf(l) !== bppOf(below)) return 'kind';   // la couleur ne se fusionne qu'avec la couleur
   ed.undo.begin('Fusionner vers le bas');
   ed.undo.touch(below, 0, 0, below.w, below.h);
   const src = l.data, dst = ensureData(below);
-  if (src) for (let k = 0; k < src.length; k++) if (src[k]) dst[k] = src[k];
+  if (src && bppOf(l) === 4) {   // couleur sur couleur : mélange « par-dessus » avec l'opacité du calque du haut
+    const op = (l.opacity ?? 100) / 100;
+    for (let k = 0; k < src.length; k += 4) {
+      const a = src[k + 3] / 255 * op; if (!a) continue;
+      const da = dst[k + 3] / 255, oa = a + da * (1 - a);
+      for (let c = 0; c < 3; c++) dst[k + c] = Math.round((src[k + c] * a + dst[k + c] * da * (1 - a)) / oa);
+      dst[k + 3] = Math.round(oa * 255);
+    }
+  } else if (src) for (let k = 0; k < src.length; k++) if (src[k]) dst[k] = src[k];
   ed.undo.commit();
   const apply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = below.id; invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(i, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };

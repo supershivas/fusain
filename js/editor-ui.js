@@ -3,7 +3,7 @@ import {
   ed, page, panel, selectPanel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -52,6 +52,8 @@ export function loadPrefs() {
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
     if (p.ditherOpts && typeof p.ditherOpts === 'object') ed.ditherOpts = p.ditherOpts;
     if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
+    if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) ed.color = p.color;
+    if (Array.isArray(p.recentColors)) ed.recentColors = p.recentColors.filter(c => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 8);
     if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
     if (Array.isArray(p.bubbleTemplates)) ed.bubbleTemplates = p.bubbleTemplates;
@@ -65,6 +67,7 @@ export function savePrefs() {
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
+      color: ed.color, recentColors: ed.recentColors,
       customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets, bubbleTemplates: ed.bubbleTemplates, bubbleTemplate: ed.bubbleTemplate }));
   } catch { /* */ }
 }
@@ -293,7 +296,8 @@ const vToSize = v => {
 const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" min="0" max="100" value="${ed.fillGap}" aria-label="Tolérance aux trous du contour"><span class="unit" id="o-gap-v">${ed.fillGap} %</span></span>`;
 const inkControl = () => `<span class="row tight nowrap" role="group" aria-label="Encre">
   <button class="ink-btn ${ed.ink === 1 ? 'on' : ''}" data-ink="1" style="background:#000" aria-label="Encre noire" aria-pressed="${ed.ink === 1}"></button>
-  <button class="ink-btn ${ed.ink === 2 ? 'on' : ''}" data-ink="2" style="background:#fff" aria-label="Encre blanche" aria-pressed="${ed.ink === 2}"></button></span>`;
+  <button class="ink-btn ${ed.ink === 2 ? 'on' : ''}" data-ink="2" style="background:#fff" aria-label="Encre blanche" aria-pressed="${ed.ink === 2}"></button>
+  <button class="ink-btn color ${ed.ink === 3 ? 'on' : ''} ${popId === 'color' ? 'open' : ''}" data-ink="3" style="background:${ed.color}" aria-label="Couleur ${ed.color}${ed.ink === 3 ? ' (toucher pour la palette)' : ''}" aria-pressed="${ed.ink === 3}" aria-expanded="${popId === 'color'}" title="Couleur : se pose dans le calque « Couleur » de la case"></button></span>`;
 // La trame se montre sans texte : un toucher ouvre la bibliothèque en liste déroulante.
 function tramaControl() {
   const t = tramaById(ed.project, ed.tramaId);
@@ -504,7 +508,12 @@ function onOptbar(e) {
     renderOptbar(); renderPop(); return;
   }
   if (b.dataset.selmode || b.dataset.selop || b.dataset.selact) onSelect(b);
-  else if (b.dataset.ink) { ed.ink = +b.dataset.ink; savePrefs(); renderOptbar(); }
+  else if (b.dataset.ink) {
+    const v = +b.dataset.ink;
+    if (v === 3 && (ed.ink === 3 || !ed.recentColors.length)) popId = popId === 'color' ? null : 'color';   // la couleur active : un toucher ouvre la palette
+    else if (popId === 'color') popId = null;
+    ed.ink = v; savePrefs(); renderOptbar(); renderPop();
+  }
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -645,10 +654,22 @@ function bubbleTplList() {
 
 // Réglages détaillés de l'outil : fenêtre flottante au-dessus de la barre du bas, jamais dans le volet.
 const TOOL_TRAMA = ['texture', 'fill', 'shape'];
+const TOOL_COLOR = ['pencil', 'texture', 'fill', 'shape'];
+function colorPop() {
+  const list = projectColors(), inPal = list.includes(ed.color);
+  const sw = (c, attr) => `<button class="cswatch ${c === ed.color && ed.ink === 3 ? 'on' : ''}" ${attr}="${c}" style="background:${c}" aria-label="Couleur ${c}" title="${c}"></button>`;
+  return `<div class="cgrid" role="group" aria-label="Couleurs du projet">${list.map(c => sw(c, 'data-pcolor')).join('')}</div>
+    ${ed.recentColors.length ? `<div class="clabel">Récentes</div><div class="cgrid">${ed.recentColors.map(c => sw(c, 'data-pcolor')).join('')}</div>` : ''}
+    <div class="row tight" style="margin:10px 0 4px;align-items:center">
+      <label class="cpick"><input type="color" id="c-pick" value="${ed.color.toLowerCase()}" aria-label="Choisir une autre couleur"><span>Autre couleur…</span></label>
+      ${inPal ? `<button class="btn small" data-act="color-del">${icon('trash')} Retirer de la palette</button>` : `<button class="btn small" data-act="color-add">${icon('plus')} Ajouter à la palette</button>`}</div>
+    <small class="note">La couleur se pose dans le calque « Couleur » de la case (créé au besoin, sous les trames et l'encrage) : le remplissage s'arrête aux traits d'encre. La palette suit le projet.</small>`;
+}
 function renderPop() {
   const el = $('#pop', root);
   if (!el || !ed.project) return;
   const bubbleOnly = /^b(text|shape|tail)$/.test(popId || '');
+  if (popId === 'color' && !TOOL_COLOR.includes(ed.tool)) popId = null;
   if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && !['pencil', 'eraser', 'texture'].includes(ed.tool)) || (popId === 'lib-bubble' && ed.tool !== 'bubble') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
   if (!popId) { el.hidden = true; el.innerHTML = ''; el.dataset.id = ''; el._html = ''; return; }
   const a = document.activeElement;
@@ -671,7 +692,7 @@ function syncPop() { const el = $('#pop', root); if (el && popId && el.dataset.i
 function popHtml() {
   const b = bubble();
   const [title, body] = {
-    brush: [esc((activeSlot() || currentBrush()).name), brushPop], 'lib-brush': ['Ajouter à la palette', () => brushesTab()], 'lib-bubble': ['Modèles de bulles', bubbleTplList], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
+    brush: [esc((activeSlot() || currentBrush()).name), brushPop], 'lib-brush': ['Ajouter à la palette', () => brushesTab()], color: ['Couleur', colorPop], 'lib-bubble': ['Modèles de bulles', bubbleTplList], 'lib-trama': ['Trames', () => tramasTab()], trama: [`Trame · ${esc(tramaById(ed.project, ed.tramaId).name)}`, tramaPop],
     btext: ['Texte de la bulle', () => bubbleText(b)], bshape: ['Forme de la bulle', () => bubbleShape(b)], btail: ['Queue de la bulle', () => bubbleTail(b)],
   }[popId];
   return `<div class="pop-head"><b>${title}</b><button class="icon-btn icon-only" data-act="pop-close" aria-label="Fermer">${icon('x')}</button></div><div class="pop-body">${body()}</div>`;
@@ -682,7 +703,7 @@ function pageTab() { return pagesTab() + caseTab(); }
 function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
-  const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : '';
+  const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : l.kind === 'color' ? `<span class="tag ctag" title="Calque de couleur">couleur</span>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
@@ -701,6 +722,7 @@ function layersTab() {
       <button class="btn small" data-act="add-layer">${icon('plus')} Encre</button>
       <button class="btn small" data-act="add-tram">${icon('plus')} Trame</button>
       <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button>
+      <button class="btn small" data-act="add-color">${icon('plus')} Couleur</button>
       <button class="icon-btn icon-only" data-act="dup-layer" title="Dupliquer le calque" aria-label="Dupliquer le calque">${icon('copy')}</button>
       <button class="icon-btn icon-only" data-act="up" title="Monter" aria-label="Monter le calque">${icon('arrow-up')}</button>
       <button class="icon-btn icon-only" data-act="down" title="Descendre" aria-label="Descendre le calque">${icon('arrow-down')}</button>
@@ -709,16 +731,17 @@ function layersTab() {
       <button class="icon-btn icon-only" data-act="clear" title="Vider le calque" aria-label="Vider le calque">${icon('eraser')}</button>
       <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button></div>`;
   const kinds = [['ink', 'Encre'], ['tram', 'Trame'], ['draft', 'Brouillon']];
-  const props = `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+  const props = (cur.kind === 'color' ? `<p class="note" style="margin:0 0 8px">Calque de couleur (RVBA) : reçoit la couleur du crayon, du pinceau trame, du remplissage et des formes.</p>`
+    : `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>`) + `
     ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
-    ${cur.kind !== 'draft' ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
+    ${cur.kind !== 'draft' && cur.kind !== 'color' ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
       <input type="color" id="l-tint" value="${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? cur.color : '#000000'}" aria-label="Couleur du calque" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg)">
       <button class="btn small" data-act="tint-reset" ${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? '' : 'disabled'}>Noir</button></div>` : ''}
     <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
     <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
-    <small class="note">${cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.kind !== 'draft' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
+    <small class="note">${cur.kind === 'color' ? (cur.opacity < 100 ? 'Imprimé avec cette opacité.' : '') : cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.kind !== 'draft' && cur.kind !== 'color' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Bulles et textes · ${pg.bubbles.length}`, bubRows || '<small class="note">Aucune bulle sur cette page.</small>', pg.bubbles.length > 0, eye)
     + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
@@ -920,6 +943,8 @@ async function onDock(e) {
   }
   const pgb = e.target.closest('[data-page]');
   if (pgb) { goToPage(+pgb.dataset.page); return; }
+  const pc = e.target.closest('[data-pcolor]');
+  if (pc) { setColor(pc.dataset.pcolor); savePrefs(); renderOptbar(); renderPop(); return; }
   const lk = e.target.closest('[data-lkind]'), lc = e.target.closest('[data-lcolor]');
   if (lk) { setLayerProp(activeLayer().id, 'kind', lk.dataset.lkind); return; }
   if (lc) { setLayerProp(activeLayer().id, 'color', lc.dataset.lcolor); return; }
@@ -930,6 +955,7 @@ async function onDock(e) {
   if (a === 'vis') toggleLayer(lay.dataset.layer, 'visible');
   else if (a === 'select-layer') selectLayer(lay.dataset.layer);
   else if (a === 'add-layer') addLayer('ink');
+  else if (a === 'add-color') addLayer('color');
   else if (a === 'add-tram') addLayer('tram');
   else if (a === 'bub-vis') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'hidden', !bb.hidden); }
   else if (a === 'bub-lock') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'locked', !bb.locked); }
@@ -951,7 +977,7 @@ async function onDock(e) {
   else if (a === 'lock') setLayerProp(lay.dataset.layer, 'locked', !panel().layers.find(l => l.id === lay.dataset.layer).locked);
   else if (a === 'add-draft') addLayer('draft');
   else if (a === 'dup-layer') duplicateLayer();
-  else if (a === 'merge') { if (!mergeDown()) toast('Pas de calque en dessous.'); }
+  else if (a === 'merge') { { const r = mergeDown(); if (!r) toast('Pas de calque en dessous.'); else if (r === 'kind') toast('Un calque de couleur ne se fusionne qu\'avec un calque de couleur.'); } }
   else if (a === 'clear') clearActiveLayer();
   else if (a === 'rename') {
     const l = activeLayer(), name = await promptModal({ title: 'Renommer le calque', label: 'Nom', value: l.name });
@@ -992,6 +1018,8 @@ async function onDock(e) {
     if (name) { saveBubbleTemplate(name, b); savePrefs(); renderOptbar(); renderPop(); toast('Modèle enregistré.'); }
   }
   else if (a === 'brush-reset') { resetBrush(); storeSlot(); renderDock(); renderOptbar(); renderPop(); }
+  else if (a === 'color-add') { addProjectColor(ed.color); renderPop(); toast('Couleur ajoutée à la palette du projet.', { duration: 1600 }); }
+  else if (a === 'color-del') { removeProjectColor(ed.color); renderPop(); }
   else if (a === 'pop-tab') { brushPopTab = e.target.closest("[data-ptab]").dataset.ptab; renderPop(); }
   else if (a === 'slot-rename') {
     const sl = activeSlot(); if (!sl) return;
@@ -1171,6 +1199,7 @@ function onDockInput0(e) {
   if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); updateQuick('size'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); } return; }
   if (id === 'o-alpha') { setAlpha(+e.target.value / 100); e.target.previousElementSibling.textContent = `Opacité : ${Math.round(ed.alpha * 100)} %`; updateQuick('alpha'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); return; }
   if (id === 'o-pressure') { ed.pressure = e.target.checked; savePrefs(); return; }
+  if (id === 'c-pick') { ed.color = e.target.value.toUpperCase(); ed.ink = 3; const b = $('#optbar [data-ink="3"]', root); if (b) b.style.background = ed.color; return; }
   if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'texture') storeSlot(); return; }
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'texture') storeSlot(); return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
@@ -1218,6 +1247,7 @@ function onDockInput0(e) {
 }
 
 function onDockChange(e) {
+  if (e.target.id === 'c-pick') { setColor(e.target.value); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderOptbar(); renderPop(); return; }
   if (/^p-(shape|grainType|follow)$/.test(e.target.id || '')) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); renderOptbar(); return; }
   if (/^p-/.test(e.target.id || '')) { paintBrushPreviews($('#pop', root)); return; }
   const b = bubble();
@@ -1520,9 +1550,9 @@ const COMMANDS = {
   relayout: async () => { const id = await pickLayout('Disposition des cases'); if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); } },
   frame: () => { secState.cf = true; showDock('page'); },
   dither: ditherModal,
-  'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
+  'add-color': () => addLayer('color'), 'add-ink': () => addLayer('ink'), 'add-tram': () => addLayer('tram'), 'add-draft': () => addLayer('draft'),
   'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
-  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { if (!mergeDown()) toast('Pas de calque en dessous.'); }, 'del-layer': needLayer,
+  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { { const r = mergeDown(); if (!r) toast('Pas de calque en dessous.'); else if (r === 'kind') toast('Un calque de couleur ne se fusionne qu\'avec un calque de couleur.'); } }, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
   'solo-layer': () => setSolo(activeLayer().id),
   'add-page': async () => { const id = await pickLayout('Nouvelle page'); if (id) await addPage(id); },
@@ -1557,7 +1587,8 @@ function onKey(e) {
   if (mod) return;
   const t = TOOLS.find(x => x.key === k);
   if (t) { setTool(t.id); return; }
-  if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; renderOptbar(); }
+  if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; savePrefs(); renderOptbar(); }
+  else if (k === 'c') { ed.ink = 3; savePrefs(); renderOptbar(); }
   else if (k === '[' || k === ']') { setSizeMm(k === '[' ? ed.sizeMm / 1.2 : ed.sizeMm * 1.2); updateQuick('size'); afterBrushChange(); }
   else if (k === '0') fit();
   else if (k === 'enter' && ed.tool === 'select' && polyCount()) polyFinish();

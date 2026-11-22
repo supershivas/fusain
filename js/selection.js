@@ -139,9 +139,12 @@ export function clearSelectionContent(p = panel()) {
   ed.undo.begin('Effacer la sélection');
   for (const l of ls) {
     ed.undo.touch(l, s.x0, s.y0, s.x1, s.y1);
+    const b = l.kind === 'color' ? 4 : 1;
     for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) {
       const i = y * W + x;
-      if (s.mask[i] && l.data[i]) { l.data[i] = 0; any = true; }
+      if (!s.mask[i]) continue;
+      if (b === 4) { if (l.data[i * 4 + 3]) { l.data.fill(0, i * 4, i * 4 + 4); any = true; } }
+      else if (l.data[i]) { l.data[i] = 0; any = true; }
     }
   }
   ed.undo.commit();
@@ -160,18 +163,20 @@ export function beginMove(p, pt) {
   const bw = s.x1 - s.x0, bh = s.y1 - s.y0, W = p.ew, floats = [];
   for (const l of ls) {
     if (!l.data) continue;
-    const buf = new Uint8Array(bw * bh);
+    const b = l.kind === 'color' ? 4 : 1, buf = new Uint8Array(bw * bh * b);
     let any = false;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = (s.y0 + y) * W + s.x0 + x;
-      if (s.mask[i] && l.data[i]) { buf[y * bw + x] = l.data[i]; any = true; }
+      if (!s.mask[i]) continue;
+      if (b === 4) { if (l.data[i * 4 + 3]) { buf.set(l.data.subarray(i * 4, i * 4 + 4), (y * bw + x) * 4); any = true; } }
+      else if (l.data[i]) { buf[y * bw + x] = l.data[i]; any = true; }
     }
-    if (any) floats.push({ layer: l, buf });
+    if (any) floats.push({ layer: l, buf, b });
   }
   // étendue réelle du contenu soulevé : le déplacement est borné pour qu'aucun pixel ne sorte de la case (rien ne se perd)
   let cx0 = bw, cy0 = bh, cx1 = 0, cy1 = 0;
   for (const f of floats) for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-    if (!f.buf[y * bw + x]) continue;
+    if (!f.buf[f.b === 4 ? (y * bw + x) * 4 + 3 : y * bw + x]) continue;
     if (x < cx0) cx0 = x; if (x >= cx1) cx1 = x + 1; if (y < cy0) cy0 = y; if (y >= cy1) cy1 = y + 1;
   }
   const limit = { x0: -(s.x0 + cx0), x1: p.ew - (s.x0 + cx1), y0: -(s.y0 + cy0), y1: p.eh - (s.y0 + cy1) };
@@ -180,11 +185,15 @@ export function beginMove(p, pt) {
   if (!ed.selCopy) {
     for (const f of floats) {
       ed.undo.touch(f.layer, s.x0, s.y0, s.x1, s.y1);
-      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (f.buf[y * bw + x]) f.layer.data[(s.y0 + y) * W + s.x0 + x] = 0;
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const i = (s.y0 + y) * W + s.x0 + x;
+        if (f.b === 4) { if (f.buf[(y * bw + x) * 4 + 3]) f.layer.data.fill(0, i * 4, i * 4 + 4); }
+        else if (f.buf[y * bw + x]) f.layer.data[i] = 0;
+      }
     }
   }
   // aperçu flottant : les tampons composés comme des calques d'une case de la taille de la sélection
-  const fake = { ew: bw, eh: bh, ex: 0, ey: 0, layers: floats.map(f => ({ data: f.buf, visible: true, opacity: f.layer.opacity, draft: f.layer.draft, color: f.layer.color })) };
+  const fake = { ew: bw, eh: bh, ex: 0, ey: 0, layers: floats.map(f => ({ data: f.buf, visible: true, kind: f.layer.kind, opacity: f.layer.opacity, draft: f.layer.draft, color: f.layer.color })) };
   const cv = document.createElement('canvas'); cv.width = bw; cv.height = bh;
   const cx = cv.getContext('2d'), img = cx.createImageData(bw, bh);
   compositeRect(fake, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: bw, h: bh }, true, {});
@@ -207,10 +216,11 @@ export function endMove(m) {
     const l = f.layer, data = ensureData(l);
     ed.undo.touch(l, s.x0 + dx, s.y0 + dy, s.x1 + dx, s.y1 + dy);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-      const v = f.buf[y * bw + x];
-      if (!v) continue;
       const tx = s.x0 + x + dx, ty = s.y0 + y + dy;
-      if (tx >= 0 && ty >= 0 && tx < l.w && ty < l.h) data[ty * l.w + tx] = v;
+      if (tx < 0 || ty < 0 || tx >= l.w || ty >= l.h) continue;
+      if (f.b === 4) { const k = (y * bw + x) * 4; if (f.buf[k + 3]) data.set(f.buf.subarray(k, k + 4), (ty * l.w + tx) * 4); continue; }
+      const v = f.buf[y * bw + x];
+      if (v) data[ty * l.w + tx] = v;
     }
   }
   // la sélection suit son contenu, dans la même entrée d'historique que les pixels

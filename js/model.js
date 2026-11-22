@@ -81,11 +81,13 @@ export const DRAFT_COLORS = {
 };
 
 // opacity : 0 à 100 ; locked : on ne peut plus y dessiner ; color : couleur d'un brouillon.
-// kind : 'ink' (encrage), 'tram' (trames) ou 'draft' (brouillon). Les outils ne dessinent que dans les calques de leur sorte.
+// kind : 'ink' (encrage), 'tram' (trames), 'draft' (brouillon) ou 'color' (couleur). Les outils ne dessinent que dans les calques de leur sorte.
+// Encre, trame et brouillon : un octet par pixel (0 transparent, 1 encre, 2 blanc). Couleur : RVBA, 4 octets par pixel,
+// non prémultiplié ; un calque de couleur couvre l'étendue de sa case, comme les autres.
 export function newLayer(name, w, h, opts = {}) {
   const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
   return {
-    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : opts.color,
+    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : kind === 'color' ? undefined : opts.color,
     w, h, data: null, loaded: true, dirty: false, rev: null,
   };
 }
@@ -93,8 +95,9 @@ export function newLayer(name, w, h, opts = {}) {
 // Anciens projets : le type se déduit du brouillon ou du nom du calque.
 const kindOf = l => l.kind ?? (l.draft ? 'draft' : /tram/i.test(l.name || '') ? 'tram' : 'ink');
 
+export const bppOf = l => (l && l.kind === 'color' ? 4 : 1);
 export function ensureData(layer) {
-  if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h);
+  if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h * bppOf(layer));
   return layer.data;
 }
 
@@ -144,7 +147,7 @@ export function projectMeta(project) {
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
-    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet,
+    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, colors: project.colors,
     pages: project.pages.map(p => ({
       id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
       panels: p.panels.map(c => ({

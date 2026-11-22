@@ -1,7 +1,7 @@
 // Cache local (IndexedDB) : un enregistrement par projet (description sans pixels) et un par calque
 // (image PNG 1-bit). C'est la copie de travail ; la synchronisation Supabase (sync.js) la reflète.
 import { projectMeta, projectFromMeta, pageLayers, allLayers } from './model.js';
-import { encodePNG2, canEncodePNG } from './png.js';
+import { encodePNG2, encodePNGRGBA, decodePNGRGBA, canEncodePNG } from './png.js';
 
 let dbPromise = null;
 function openDB() {
@@ -72,6 +72,12 @@ export function isBlank(data) {
 
 export async function encodeLayer(layer) {
   if (isBlank(layer.data)) return null;
+  if (layer.kind === 'color') {
+    if (canEncodePNG()) return encodePNGRGBA(layer.data, layer.w, layer.h);
+    const c = canvasFor(layer.w, layer.h), ctx = c.getContext('2d'), img = ctx.createImageData(layer.w, layer.h);
+    img.data.set(layer.data); ctx.putImageData(img, 0, 0);
+    return (await new Promise(r => c.toBlob(r, 'image/png'))).arrayBuffer();
+  }
   if (canEncodePNG()) return encodePNG2(layer.data, layer.w, layer.h);
   const c = canvasFor(layer.w, layer.h), ctx = c.getContext('2d');
   const img = ctx.createImageData(layer.w, layer.h), u32 = new Uint32Array(img.data.buffer), d = layer.data;
@@ -81,8 +87,18 @@ export async function encodeLayer(layer) {
   return blob.arrayBuffer();
 }
 
-export async function decodeLayer(png, w, h) {
-  const bmp = await createImageBitmap(new Blob([png], { type: 'image/png' }));
+export async function decodeLayer(png, w, h, kind) {
+  const blob = new Blob([png], { type: 'image/png' });
+  if (kind === 'color') {   // lecture exacte ; sinon canevas sans prémultiplication ni conversion de couleurs
+    try { const exact = await decodePNGRGBA(png, w, h); if (exact) return exact; } catch { /* repli sur le canevas */ }
+    let bmp;
+    try { bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }); } catch { bmp = await createImageBitmap(blob); }
+    const c = canvasFor(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    if (bmp.close) bmp.close();
+    return new Uint8Array(ctx.getImageData(0, 0, w, h).data.buffer);
+  }
+  const bmp = await createImageBitmap(blob);
   const c = canvasFor(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(bmp, 0, 0);
   if (bmp.close) bmp.close();
@@ -98,7 +114,7 @@ const newRev = () => Date.now().toString(36) + Math.random().toString(36).slice(
 export async function loadLayers(project, layers) {
   await Promise.all(layers.filter(l => !l.loaded).map(async l => {
     const rec = await getLayerRec(project.id, l.id);
-    l.data = rec && rec.png ? await decodeLayer(rec.png, l.w, l.h) : null;
+    l.data = rec && rec.png ? await decodeLayer(rec.png, l.w, l.h, l.kind) : null;
     l.loaded = true; l.dirty = false;
     if (rec && rec.rev) l.rev = rec.rev;
   }));

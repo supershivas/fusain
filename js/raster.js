@@ -1,7 +1,7 @@
 // Moteur raster 1-bit : annuler par différences de tuiles, pinceaux, formes, remplissage, composition.
 // Repris de Pixel Studio (pointeur, remplissage, tramage par Bayer), refait pour de grands canevas :
 // un calque est un tampon d'octets, et l'historique ne garde que les tuiles modifiées.
-import { ensureData, DRAFT_COLORS } from './model.js';
+import { ensureData, DRAFT_COLORS, bppOf } from './model.js';
 import { BAYER8 } from './dither.js';
 
 export const TILE = 64;
@@ -27,15 +27,15 @@ export class UndoStack {
     if (!this.cur) return;
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(layer.w, x1); y1 = Math.min(layer.h, y1);
     if (x1 <= x0 || y1 <= y0) return;
-    const data = ensureData(layer);
+    const data = ensureData(layer), b = bppOf(layer), W = layer.w * b;
     layer.dirty = true;
     for (let ty = (y0 / TILE) | 0; ty <= ((y1 - 1) / TILE) | 0; ty++) {
       for (let tx = (x0 / TILE) | 0; tx <= ((x1 - 1) / TILE) | 0; tx++) {
         const key = layer.id + ':' + tx + ',' + ty;
         if (this.cur.tiles.has(key)) continue;
         const px = tx * TILE, py = ty * TILE, tw = Math.min(TILE, layer.w - px), th = Math.min(TILE, layer.h - py);
-        const before = new Uint8Array(tw * th);
-        for (let y = 0; y < th; y++) before.set(data.subarray((py + y) * layer.w + px, (py + y) * layer.w + px + tw), y * tw);
+        const before = new Uint8Array(tw * th * b);
+        for (let y = 0; y < th; y++) before.set(data.subarray((py + y) * W + px * b, (py + y) * W + (px + tw) * b), y * tw * b);
         this.cur.tiles.set(key, { layer, px, py, tw, th, before });
       }
     }
@@ -48,12 +48,12 @@ export class UndoStack {
     if (!cur) return null;
     const ops = [];
     for (const t of cur.tiles.values()) {
-      const data = t.layer.data, after = new Uint8Array(t.tw * t.th);
+      const data = t.layer.data, b = bppOf(t.layer), W = t.layer.w * b, rw = t.tw * b, after = new Uint8Array(rw * t.th);
       let same = true;
       for (let y = 0; y < t.th; y++) {
-        const row = data.subarray((t.py + y) * t.layer.w + t.px, (t.py + y) * t.layer.w + t.px + t.tw);
-        after.set(row, y * t.tw);
-        if (same) for (let x = 0; x < t.tw; x++) if (row[x] !== t.before[y * t.tw + x]) { same = false; break; }
+        const row = data.subarray((t.py + y) * W + t.px * b, (t.py + y) * W + t.px * b + rw);
+        after.set(row, y * rw);
+        if (same) for (let x = 0; x < rw; x++) if (row[x] !== t.before[y * rw + x]) { same = false; break; }
       }
       if (!same) ops.push({ ...t, after });
     }
@@ -81,8 +81,8 @@ export class UndoStack {
   }
 
   _write(t, src) {
-    const data = ensureData(t.layer);
-    for (let y = 0; y < t.th; y++) data.set(src.subarray(y * t.tw, (y + 1) * t.tw), (t.py + y) * t.layer.w + t.px);
+    const data = ensureData(t.layer), b = bppOf(t.layer), rw = t.tw * b;
+    for (let y = 0; y < t.th; y++) data.set(src.subarray(y * rw, (y + 1) * rw), ((t.py + y) * t.layer.w + t.px) * b);
     t.layer.dirty = true;
     this.onApply(t.layer, { x: t.px, y: t.py, w: t.tw, h: t.th });
   }
@@ -143,11 +143,36 @@ const bayerKeep = (alpha, px, py) => alpha * 64 > BAYER8[py & 7][px & 7];
 function put(ctx, data, x, y) {
   if (!writable(ctx, x, y)) return;
   const a = ctx.paint.alpha;
+  if (ctx.rgba) { putRGBA(ctx, data, x, y, a ?? 1); return; }
   if (a !== undefined && a < 1 && !bayerKeep(a, x + ctx.ox, y + ctx.oy)) return;
   const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
   if (v < 0) return;
   data[y * ctx.layer.w + x] = v;
 }
+
+// Calque de couleur : vraie opacité. Un pixel n'est mélangé qu'une fois par trait (ctx.seen), pour qu'un trait
+// à 40 % reste à 40 % même là où ses tampons se recouvrent.
+function putRGBA(ctx, data, x, y, a) {
+  const k = y * ctx.layer.w + x;
+  if (ctx.seen) { if (ctx.seen[k]) return; }
+  const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
+  if (v < 0) return;
+  if (ctx.seen) ctx.seen[k] = 1;
+  const i = k * 4, da = data[i + 3] / 255;
+  if (v === 0) {   // gomme
+    const na = da * (1 - a);
+    if (na <= 0.002) { data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0; } else data[i + 3] = Math.round(na * 255);
+    return;
+  }
+  const c = v === INK ? ctx.paint.rgb || [0, 0, 0] : [255, 255, 255];
+  if (a >= 1 || da === 0) { data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = Math.max(Math.round(a * 255), a >= 1 ? 255 : 0); return; }
+  const oa = a + da * (1 - a);
+  data[i] = Math.round((c[0] * a + data[i] * da * (1 - a)) / oa);
+  data[i + 1] = Math.round((c[1] * a + data[i + 1] * da * (1 - a)) / oa);
+  data[i + 2] = Math.round((c[2] * a + data[i + 2] * da * (1 - a)) / oa);
+  data[i + 3] = Math.round(oa * 255);
+}
+export const hexToRgb = h => (/^#[0-9a-f]{6}$/i.test(h || '') ? [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)) : [0, 0, 0]);
 
 // ───────────────────────── Pinceau rond ─────────────────────────
 
@@ -481,7 +506,7 @@ const C_MASK = 0x802B39C0;
 export function compositeValues(panel, includeDraft = false) {
   const out = new Uint8Array(panel.ew * panel.eh);
   for (const l of panel.layers) {
-    if (!l.visible || !l.data || (l.draft && !includeDraft)) continue;
+    if (!l.visible || !l.data || (l.draft && !includeDraft) || l.kind === 'color') continue;   // la couleur ne fait pas barrière au remplissage
     const d = l.data;
     for (let i = 0; i < d.length; i++) if (d[i]) out[i] = d[i];
   }
@@ -497,7 +522,7 @@ export function compositeValues(panel, includeDraft = false) {
 //  opts.export : l'opacité d'un calque d'encre devient un gris tramé (Bayer 8 × 8), car l'impression est en 1 bit.
 // Couleur libre d'un calque d'encre ou de trame : `color` = « #rrggbb » (les brouillons gardent un nom de la palette).
 const HEX = /^#[0-9a-f]{6}$/i;
-export const tintOf = l => (!l.draft && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
+export const tintOf = l => (!l.draft && l.kind !== 'color' && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
 
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
@@ -507,6 +532,7 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
+    if (l.kind === 'color') { compositeColor(l, px, w, r, alpha); continue; }
     const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : (tintOf(l) || [0, 0, 0]);
     const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {
@@ -524,6 +550,22 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
         px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
         px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
       }
+    }
+  }
+}
+
+// Calque de couleur : mélange « par-dessus » de ses pixels RVBA, avec l'opacité du calque.
+function compositeColor(l, px, w, r, alpha) {
+  const d = l.data;
+  for (let y = r.y; y < r.y + r.h; y++) {
+    for (let x = r.x; x < r.x + r.w; x++) {
+      const i = (y * w + x) * 4, sa = d[i + 3];
+      if (!sa) continue;
+      const a = sa / 255 * alpha;
+      if (a >= 1) { px[i] = d[i]; px[i + 1] = d[i + 1]; px[i + 2] = d[i + 2]; px[i + 3] = 255; continue; }
+      const da = px[i + 3] / 255, oa = a + da * (1 - a);
+      px[i] = (d[i] * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (d[i + 1] * a + px[i + 1] * da * (1 - a)) / oa;
+      px[i + 2] = (d[i + 2] * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
     }
   }
 }

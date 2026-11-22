@@ -67,7 +67,7 @@ function packRGB(canvas) {
   for (let i = 0, j = 0; i < px.length; i += 4, j += 3) { out[j] = px[i]; out[j + 1] = px[i + 1]; out[j + 2] = px[i + 2]; }
   return out;
 }
-const usesColor = project => project.pages.some(pg => pg.panels.some(p => p.layers.some(l => !l.draft && /^#[0-9a-f]{6}$/i.test(l.color || ''))));
+const usesColor = project => project.pages.some(pg => pg.panels.some(p => p.layers.some(l => l.kind === 'color' || (!l.draft && /^#[0-9a-f]{6}$/i.test(l.color || '')))));
 
 // Chaîne PDF en UTF-16BE (accents corrects dans le titre du document).
 const pdfString = s => '<FEFF' + Array.from({ length: s.length }, (_, i) => s.charCodeAt(i).toString(16).padStart(4, '0')).join('').toUpperCase() + '>';

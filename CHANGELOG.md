@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.31.0 — 2026-11-22
+- Couleur : pastille de couleur à côté du noir et du blanc (crayon, pinceau trame, remplissage, formes) ; touchée une seconde fois, elle ouvre la palette du projet, les couleurs récentes et un sélecteur
+- La couleur se pose dans un calque « Couleur » de la case, créé au besoin sous les trames et l'encrage : le remplissage s'arrête aux traits, l'opacité est réelle, le PDF sort en couleur
+- Nouveau calque de couleur dans le volet Calques et le menu Calque ; touche C pour prendre la couleur
+
 ## 1.30.0 — 2026-11-22
 - Mode case : un double toucher sur une case (doigt ou main) l'ouvre seule, en plein écran, avec ses calques ; un double toucher ou « Page » ramène à la page
 - En mode case : flèches pour passer à la case voisine, seules les bulles de la case sont montrées, rien ne se dessine ailleurs (aussi : bouton de la barre de zoom, touche Entrée, menu Image)
