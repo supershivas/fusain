@@ -322,6 +322,25 @@ function ratioMove(pt) {
 }
 
 
+// Bouton de fusion : le rond et son étiquette « Fusionner » dessous.
+const onMerge = (at, m, touch) => Math.hypot(at.x - m.x, at.y - m.y) <= m.r + (touch ? 8 : 3)
+  || (Math.abs(at.x - m.x) <= 48 && at.y >= m.y && at.y <= m.y + m.r + 30);
+// Outil Taille des cases au doigt quand le stylet est en usage : un doigt posé sur un bouton de fusion, un « + », l'aperçu d'ajout
+// ou une gouttière agit dessus ; ailleurs, il déplace la vue.
+export function layoutTouchable(pt) {
+  if (ed.tool !== 'layout' || ed.focus) return false;
+  const at = toScreen(pt.x, pt.y), ap = page().panels.find(p => p.id === ed.panelId);
+  if (!ap) return false;
+  const pc = previewControls(ap);
+  if (pc) return true;   // pendant l'aperçu, tout toucher le règle, le valide ou l'abandonne
+  if (mergeButtons(ap).some(m => onMerge(at, m, true))) return true;
+  if (edgePluses(ap).some(pl => Math.hypot(at.x - pl.x, at.y - pl.y) <= pl.r + 10)) return true;
+  return gutterHandles().some(h => {
+    const v = h.axis === 'v', along = v ? pt.y : pt.x, across = Math.abs((v ? pt.x : pt.y) - h.pos) * view.s;
+    return along >= h.span[0] - 28 / view.s && along <= h.span[1] + 28 / view.s && across <= 28;
+  });
+}
+
 // On attrape une gouttière n'importe où le long de son trait.
 function layoutDown(pt) {
   const R = pt.type === 'touch' ? 28 : 18, at = toScreen(pt.x, pt.y);
@@ -334,7 +353,7 @@ function layoutDown(pt) {
     cancelAdd(); return;   // un toucher ailleurs abandonne l'aperçu sans rien faire d'autre
   }
   if (ap && !pc) for (const m of mergeButtons(ap)) {   // bouton de fusion posé dans la case voisine : la case active l'absorbe
-    if (Math.hypot(at.x - m.x, at.y - m.y) > m.r + (pt.type === 'touch' ? 8 : 3)) continue;
+    if (!onMerge(at, m, pt.type === 'touch')) continue;
     if (mergePanels(ap.id, m.id)) toast('Cases fusionnées.', { actionLabel: 'Annuler', duration: 6000, onAction: () => ed.undo.undo() });
     notify('tool'); setOverlay({}); return;
   }

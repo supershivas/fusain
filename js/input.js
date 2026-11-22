@@ -98,7 +98,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     const fingerPans = e.pointerType === 'touch' && ((penSeen && !ed.fingerDraws) || ed.tool === 'pan');
     const mousePan = e.pointerType !== 'touch' && (e.button === 1 || spaceHeld || ed.tool === 'pan');
     // outil Bulle : un doigt posé sur une bulle ou une de ses poignées agit sur elle, même quand le doigt déplace la vue
-    const onBubble = fingerPans && e.pointerType === 'touch' && tools.bubbleTouchable(point(e, el));
+    const onBubble = fingerPans && e.pointerType === 'touch' && (tools.bubbleTouchable(point(e, el)) || tools.layoutTouchable(point(e, el)));
     if ((fingerPans && !onBubble) || mousePan) { if (tapStart) tapStart.pan = true; startPan(e); return; }
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // au doigt, on attend un instant : un second doigt (zoom, annuler) ne doit pas laisser de point

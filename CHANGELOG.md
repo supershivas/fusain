@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.50.2 — 2026-11-22
+- Corrige le bouton « Fusionner » sur les cases : il répond au doigt même quand le stylet est en usage, et l'étiquette sous le rond se touche aussi (de même pour les « + », l'aperçu d'ajout et les gouttières)
+
 ## 1.50.1 — 2026-11-22
 - Corrige des traits hachés et dédoublés qui apparaissaient parfois en traçant vite au stylet sur iPad : les points du stylet arrivés en retard sont ignorés
 
