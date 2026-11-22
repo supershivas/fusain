@@ -28,7 +28,7 @@ const PRESETS = {
   parole: { ...BASE, shape: 'ellipse', tailStyle: 'pointe' },
   pensee: { ...BASE, shape: 'cloud', tailStyle: 'bulles', wobble: 0 },
   cri: { ...BASE, shape: 'eclair', tailStyle: 'pointe', wobble: 30, stroke: 0.5, tailW: 20 },
-  narration: { ...BASE, shape: 'rect', tailStyle: 'none', pad: 2, wobble: 12 },
+  narration: { ...BASE, shape: 'rect', tailStyle: 'none', pad: 2, wobble: 12, edge: 2 },
   texte: { ...BASE, shape: 'none', tailStyle: 'none', pad: 0, wobble: 0 },
 };
 // Modèles proposés dans la liste de l'outil Bulle : un type de bulle + un style. `mon-style` reprend le style préféré de l'auteur.
@@ -42,7 +42,7 @@ export const BUBBLE_TEMPLATES = [
   { id: 'nuage-doux', name: 'Nuage doux', kind: 'pensee', style: { lobes: 9, bulge: 22, cloudSoft: 1, wobble: 20 } },
 ];
 export const preset = kind => ({ ...(PRESETS[kind] || PRESETS.parole) });
-const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle']);
+const KEYS = Object.keys(BASE).concat(['shape', 'tailStyle', 'tailAngle', 'edge']);
 
 export function props(b) {
   const p = preset(b.kind);

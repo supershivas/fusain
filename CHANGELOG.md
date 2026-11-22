@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.46.0 — 2026-11-22
+- Bulles de narration : marge au bord de la case, réglable dans l'onglet Forme (2 mm par défaut) ; près d'un bord, la narration s'y cale à cette distance en glissant ou en changeant de taille
+- « Appliquer à toutes les narrations » donne cette marge à toutes celles du projet (celles déjà calées se recalent), avec Annuler
+
 ## 1.45.1 — 2026-11-22
 - Réordonner les calques se fait en direct : pendant qu'on tire un calque par sa poignée, les autres s'écartent en glissant vers la place qu'ils auront au lâcher
 

@@ -6,7 +6,7 @@ import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
-import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES } from './bubbles.js';
+import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES, bubblePanelOf } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
@@ -1028,6 +1028,48 @@ export function applyBubbleLines(src = bubble()) {
   const after = () => to;
   set(after); ed.undo.pushAction('Traits des bulles', () => set(b => before.get(b)), () => set(after));
   return all.length;
+}
+
+// ── Narration : marge au bord de la case ──
+// Un côté de la bulle à moins de `zone` px de la ligne « bord de la case − marge » s'y cale (déplacement, ou taille si `resize`).
+// Une bulle tournée ne se cale pas.
+export const EDGE_ZONE_MM = 3;
+export function snapNarration(b, panels, { resize = false, zone } = {}) {
+  if (!b || b.kind !== 'narration' || b.rot) return false;
+  const p = bubblePanelOf(b, panels);
+  if (!p) return false;
+  const dpi = ed.project.dpi, m = mmToPx(bubbleProps(b).edge ?? 0, dpi), z = zone ?? mmToPx(EDGE_ZONE_MM, dpi);
+  const L = p.x + m, T = p.y + m, R = p.x + p.w - m, Bt = p.y + p.h - m;
+  let moved = false;
+  if (resize) {
+    if (Math.abs(b.x + b.w - R) <= z && R - b.x >= 80) { b.w = Math.round(R - b.x); moved = true; }
+    if (Math.abs(b.y + b.h - Bt) <= z && Bt - b.y >= 60) { b.h = Math.round(Bt - b.y); moved = true; }
+    return moved;
+  }
+  let dx = 0, dy = 0;
+  if (Math.abs(b.x - L) <= z) dx = L - b.x; else if (Math.abs(b.x + b.w - R) <= z) dx = R - (b.x + b.w);
+  if (Math.abs(b.y - T) <= z) dy = T - b.y; else if (Math.abs(b.y + b.h - Bt) <= z) dy = Bt - (b.y + b.h);
+  if (!dx && !dy) return false;
+  b.x = Math.round(b.x + dx); b.y = Math.round(b.y + dy);
+  if (b.tail) b.tail = { x: Math.round(b.tail.x + dx), y: Math.round(b.tail.y + dy) };
+  if (b.path) b.path = b.path.map(q => ({ x: Math.round(q.x + dx), y: Math.round(q.y + dy) }));
+  return true;
+}
+// Donne la marge de `src` à toutes les narrations du projet ; celles qui étaient calées à un bord s'y recalent. Annulable.
+export function applyNarrationEdge(src = bubble()) {
+  if (!src) return 0;
+  const edge = bubbleProps(src).edge ?? 0, dpi = ed.project.dpi;
+  const list = ed.project.pages.flatMap(pg => pg.bubbles.filter(b => b.kind === 'narration').map(b => ({ b, pg })));
+  const before = list.map(({ b }) => ({ b, s: { x: b.x, y: b.y, edge: b.edge, tail: b.tail && { ...b.tail }, path: b.path && b.path.map(q => ({ ...q })) } }));
+  for (const { b, pg } of list) {
+    const old = mmToPx(bubbleProps(b).edge ?? 0, dpi);
+    b.edge = edge;
+    snapNarration(b, pg.panels, { zone: Math.abs(mmToPx(edge, dpi) - old) + mmToPx(1, dpi) });   // seules les bulles déjà calées bougent
+  }
+  const after = list.map(({ b }) => ({ b, s: { x: b.x, y: b.y, edge: b.edge, tail: b.tail && { ...b.tail }, path: b.path && b.path.map(q => ({ ...q })) } }));
+  const set = st => { for (const { b, s } of st) Object.assign(b, s); notify('bubbles'); requestRender(); markChanged(); };
+  set(after); ed.undo.pushAction('Marge des narrations', () => set(before), () => set(after));
+  return list.length;
 }
 
 export function deleteBubble(b = bubble()) {

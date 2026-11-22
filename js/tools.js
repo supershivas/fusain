@@ -1,7 +1,7 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, toRGBA, fillLayer, moveStrokeBelow, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
+  ed, page, activeLayer, toRGBA, fillLayer, moveStrokeBelow, snapNarration, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
@@ -381,6 +381,7 @@ function bubbleMove(pt) {
     if (into) b.panel = into.id;
     if (o.tail) b.tail = { x: Math.round(o.tail.x + dx), y: Math.round(o.tail.y + dy) };
     if (o.path) b.path = o.path.map(q => ({ x: Math.round(q.x + dx), y: Math.round(q.y + dy) }));
+    snapNarration(b, page().panels);   // narration : calée à sa marge près des bords de la case
   } else if (s.mode === 'resize') {
     // le déplacement se mesure dans l'axe de la bulle tournée ; le centre bouge de moitié, donc on recale x, y pour garder le coin haut gauche en place
     const a = (o.rot || 0) * Math.PI / 180, ld = { x: dx * Math.cos(a) + dy * Math.sin(a), y: -dx * Math.sin(a) + dy * Math.cos(a) };
@@ -390,6 +391,7 @@ function bubbleMove(pt) {
       b.x = Math.round(o.x + (dw / 2) * (cs - 1) - (dh / 2) * sn); b.y = Math.round(o.y + (dw / 2) * sn + (dh / 2) * (cs - 1));
     }
     if (o.path) { const kx = b.w / o.w, ky = b.h / o.h; b.path = o.path.map(q => ({ x: Math.round(b.x + (q.x - o.x) * kx), y: Math.round(b.y + (q.y - o.y) * ky) })); }
+    if (!a) snapNarration(b, page().panels, { resize: true });
   } else if (s.mode === 'rotate') {
     let deg = Math.atan2(pt.y - (o.y + o.h / 2), pt.x - (o.x + o.w / 2)) * 180 / Math.PI + 90;
     deg = ((Math.round(deg) % 360) + 360) % 360;

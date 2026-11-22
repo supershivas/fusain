@@ -3,14 +3,14 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, snapNarration, applyNarrationEdge, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
 import { colorDrop } from './tools.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf } from './model.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -1300,7 +1300,7 @@ const SLIDERS = {
   'b-lobes': ['lobes', v => `Lobes : ${v ? v : 'auto'}`], 'b-bulge': ['bulge', v => `Bombé des lobes : ${v} %`],
   'b-vround': ['valleyRound', v => `Creux arrondis : ${v} %`], 'b-tround': ['tipRound', v => `Pointes arrondies : ${v} %`],
   'b-spikes': ['spikes', v => `Pointes : ${v}`], 'b-depth': ['depth', v => `Profondeur : ${v} %`],
-  'b-rot': ['rot', v => `Rotation : ${v}°`],
+  'b-rot': ['rot', v => `Rotation : ${v}°`], 'b-edge': ['edge', v => `Marge au bord de la case : ${String(v).replace('.', ',')} mm`],
   'b-tailangle': ['tailAngle', v => `Position de l'origine : ${v}°`],
   'b-tailw': ['tailW', v => `Largeur de la queue : ${v} %`], 'b-tailround': ['tailRound', v => `Arrondi des côtés : ${v > 0 ? '+' : ''}${v}`],
   'b-tailbend': ['tailBend', v => `Courbure : ${v > 0 ? '+' : ''}${v}`], 'b-tailtip': ['tailTip', v => `Pointe émoussée : ${v} %`],
@@ -1333,6 +1333,8 @@ function bubbleShape(b) {
       <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
       ${b.clip ? `<label class="check compact"><input type="checkbox" id="b-noframe" ${b.noFrame ? 'checked' : ''}> Pas de trait de case là où la bulle la touche</label>` : ''}
       <button class="btn small" data-act="bubble-lines-all" style="margin:2px 0 8px">Appliquer ces traits à toutes les bulles</button>
+      ${b.kind === 'narration' ? `${slider('b-edge', p, 0, 10, 0.5)}<small class="note" style="display:block">Près d'un bord de sa case, la narration s'y cale à cette distance${b.rot ? ' (pas quand elle est tournée)' : ''}.</small>
+      <button class="btn small" data-act="edge-all" style="margin:2px 0 8px">Appliquer à toutes les narrations</button>` : ''}
       ${slider('b-rot', p, 0, 359)}
       <button class="btn small" data-act="tpl-save" style="margin-top:6px">${icon('device-floppy')} Enregistrer comme modèle…</button>`;
 }
@@ -1439,6 +1441,7 @@ async function onDock(e) {
   }
   else if (a === 'swipe-dup') { selectLayer(act.dataset.for); dupWithToast(); }
   else if (a === 'tint-reset') { setLayerProp(activeLayer().id, 'color', undefined); }
+  else if (a === 'edge-all') { const n = applyNarrationEdge(bubble()); if (n) toast(`Marge appliquée à ${n} narration${n > 1 ? 's' : ''}.`, { actionLabel: 'Annuler', duration: 6000, onAction: undo }); }
   else if (a === 'bubble-lines-all') { const n = applyBubbleLines(bubble()); if (n) toast(`Traits appliqués à ${n} bulle${n > 1 ? 's' : ''}.`); }
   else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
@@ -1542,7 +1545,7 @@ function setTail(b, on) {
 }
 
 // Le dernier style réglé pour un type de bulle devient celui des prochaines bulles de ce type.
-const STYLE_KEYS = ['align', 'valign', 'lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
+const STYLE_KEYS = ['edge', 'align', 'valign', 'lobes', 'bulge', 'cloudSoft', 'valleyRound', 'tipRound', 'spikes', 'depth', 'pt', 'caps', 'auto', 'font', 'shape', 'radius', 'pad', 'stroke', 'wobble', 'tailStyle', 'tailW', 'tailRound', 'tailBend', 'tailTip'];
 function rememberBubble(b) {
   const d = {};
   for (const k of STYLE_KEYS) if (b[k] !== undefined && !(k === 'shape' && b.shape === 'libre')) d[k] = b[k];
@@ -1732,6 +1735,7 @@ function onDockInput0(e) {
     b[key] = +e.target.value; e.target.previousElementSibling.textContent = label(b[key]);
     if (key === 'rot' && !b.rot) delete b.rot;
     if (key === 'pad') refitBubble(b);
+    if (key === 'edge') snapNarration(b, page().panels, { zone: mmToPx(10.5, ed.project.dpi) });   // la bulle suit sa marge
   }
   else if (id === 'b-cloudsoft') { if (e.target.checked) b.cloudSoft = 1; else b.cloudSoft = 0; }
   else if (id === 'b-clip') { if (e.target.checked) b.clip = true; else { delete b.clip; delete b.noFrame; } }
