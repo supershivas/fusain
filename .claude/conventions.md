@@ -158,10 +158,22 @@ Le motif est simple, lisible à 16 px, dans les couleurs des tokens.
 - Stockage : Supabase. Ne crée pas de nouveau projet Supabase sans me demander.
   Réutilise un projet existant avec des tables préfixées par le nom de l'app.
 - Les clés et secrets ne sont jamais commités.
+- Tout ce que l'app stocke ou exporte porte un numéro de format
+  (`schemaVersion`) : à la lecture, l'app migre les anciens formats au lieu
+  de casser ou de les ignorer, et un export se réimporte sans perte.
 
 ## 8. Interface
 
 - Interface en français.
+- **Écran de chargement, toujours** (Jérôme, 2026-11-14). Tant que l'app n'est
+  pas prête (code, données, polices, session), un écran de chargement couvre
+  tout : la page d'accueil n'apparaît qu'ensuite. Il est dans le HTML servi (ou
+  le rendu serveur), affiché d'emblée, pas créé après coup par le JS, et
+  disparaît quand l'accueil est utilisable. Aux couleurs de l'app (tokens),
+  une barre indéterminée, figée sous `prefers-reduced-motion`. Si le chargement
+  échoue, il le dit à la place du texte (jamais une page blanche ni un bouton
+  sans effet). Pourquoi : un bouton visible avant que l'app soit prête ne fait
+  rien, et l'utilisateur la croit cassée.
 - Cible : par défaut, une app fonctionne sur téléphone et sur ordinateur. Une app
   peut être déclarée « uniquement mobile » ou « uniquement bureau » : c'est
   indiqué dans la section Description de son `CLAUDE.md`.
@@ -185,6 +197,15 @@ Le motif est simple, lisible à 16 px, dans les couleurs des tokens.
   téléphone sans rien casser : un bandeau discret, refermable, indique
   « Cette app est prévue pour un écran d'ordinateur ». Ne l'optimise pas pour
   le mobile sans ma demande.
+- Masquage fiable : `[hidden] { display: none !important; }` est déclaré avant
+  toute autre règle `display`. Sinon une classe comme `.panneau { display: flex }`
+  l'emporte et l'élément « masqué » reste affiché.
+- Une `<dialog>` (ou un tiroir) ne reçoit une règle `display` que sous `[open]`
+  (`dialog.tiroir[open] { display: flex }`) : le navigateur la masque fermée par
+  un `display: none` que toute règle `display` sans `[open]` écrase.
+- Le toast est un `popover` (`popover="manual"`, ouvert par `showPopover()`) : il
+  passe ainsi dans la couche supérieure, devant les `<dialog>` ouvertes, que
+  aucun `z-index` ne permet de dépasser.
 
 ## 8 bis. Jeux
 
