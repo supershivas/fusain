@@ -11,7 +11,7 @@ import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubb
 import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
-import { selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
+import { currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
 let session = null, hinted = null;   // hinted : dernier calque d'aplat signalé (référence active)
 export const busy = () => !!session;
@@ -160,6 +160,20 @@ function inkHint(p, layer, entry, tool) {
     },
     action2Label: 'Ne plus demander', onAction2: () => { layer.noInkHint = true; markChanged(); },
   });
+}
+
+// Remplir la sélection dans le calque actif, avec la couleur principale et la trame du pinceau.
+export function fillSelection() {
+  const p = page().panels.find(q => q.id === ed.panelId) || page().panels[0], s = currentSelection(p);
+  if (!s) return 'none';
+  const layer = activeLayer(p);
+  if (!layer.visible || layer.locked) return 'locked';
+  if (ed.ink === 3 && !layer.draft) toRGBA(layer);
+  ed.undo.begin('Remplir la sélection');
+  applyRegion(makeCtx(p, layer, { v: inkV(), trame: currentTrama(), scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha: 1 }), { mask: s.mask, x0: s.x0, y0: s.y0, x1: s.x1 - 1, y1: s.y1 - 1 });
+  ed.undo.commit();
+  invalidate(p, { x: s.x0, y: s.y0, w: s.x1 - s.x0, h: s.y1 - s.y0 }); markChanged();
+  return 'ok';
 }
 
 // Trou toléré dans un contour : le curseur (0–100) va jusqu'à 2,5 mm.

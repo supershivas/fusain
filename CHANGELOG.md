@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.49.0 — 2026-11-22
+- Sélection : miroir horizontal ou vertical, quart de tour, agrandir ou réduire le contenu (sans sélection : toute la case)
+- Couper, copier et coller dans un nouveau calque « Collage », prêt à déplacer (Ctrl+X, C, V et menu Édition) ; remplir la sélection avec la couleur et la trame du pinceau ; agrandir ou rétrécir la sélection de 0,5 mm
+
 ## 1.48.1 — 2026-11-22
 - Bulles au doigt, même en dessinant au stylet : toucher une bulle la choisit, on la déplace, on tire son coin, sa queue ou sa poignée de rotation ; ailleurs, le doigt déplace toujours la vue
 

@@ -8,7 +8,7 @@ import {
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
-import { colorDrop } from './tools.js';
+import { colorDrop, fillSelection } from './tools.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
@@ -22,7 +22,7 @@ import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
 import { stampLibrary } from './library.js';
 import { syncSoon } from './sync.js';
-import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection } from './selection.js';
+import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection, transformSelection, TRANSFORMS, copySelection, pasteClip, hasClip, growSelection } from './selection.js';
 
 export const TOOLS = [
   { id: 'pencil', icon: 'brush', label: 'Pinceaux et trames (B)', key: 'b' },
@@ -612,6 +612,16 @@ function selectBar() {
     + `<button class="icon-btn icon-only" data-selact="invert" title="Inverser la sélection" aria-label="Inverser la sélection">${icon('switch-horizontal')}</button>`
     + `<button class="icon-btn icon-only" data-selact="clear" title="Effacer le contenu sélectionné" aria-label="Effacer le contenu sélectionné" ${has ? '' : 'disabled'}>${icon('eraser')}</button>`
     + `<button class="icon-btn icon-only" data-selact="none" title="Désélectionner (Échap)" aria-label="Désélectionner" ${has ? '' : 'disabled'}>${icon('square-off')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="grow" title="Agrandir la sélection de 0,5 mm" aria-label="Agrandir la sélection" ${has ? '' : 'disabled'}>${icon('square-plus')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="shrink" title="Rétrécir la sélection de 0,5 mm" aria-label="Rétrécir la sélection" ${has ? '' : 'disabled'}>${icon('square-minus')}</button>`
+    + `<span class="sep-v"></span>`
+    + [['flipH', 'flip-vertical'], ['flipV', 'flip-horizontal'], ['rotCCW', 'rotate-2'], ['rotCW', 'rotate-clockwise-2'], ['scaleUp', 'arrows-maximize'], ['scaleDown', 'arrows-minimize']].map(([k, ic]) =>
+      `<button class="icon-btn icon-only" data-seltf="${k}" title="${TRANSFORMS[k]}${has ? '' : ' (tout le contenu de la case)'}" aria-label="${TRANSFORMS[k]}">${icon(ic)}</button>`).join('')
+    + `<span class="sep-v"></span>`
+    + `<button class="icon-btn icon-only" data-selact="cut" title="Couper (Ctrl+X) : calque actif" aria-label="Couper">${icon('scissors')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="copyclip" title="Copier (Ctrl+C) : calque actif" aria-label="Copier">${icon('clipboard-copy')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="paste" title="Coller dans un nouveau calque (Ctrl+V)" aria-label="Coller" ${hasClip() ? '' : 'disabled'}>${icon('clipboard-check')}</button>`
+    + `<button class="icon-btn icon-only" data-selact="fill" title="Remplir la sélection (couleur et trame du pinceau, calque actif)" aria-label="Remplir la sélection" ${has ? '' : 'disabled'}>${icon('bucket-droplet')}</button>`
     + (hint ? `<span class="hint">${hint}</span>` : '');
 }
 function onSelect(b) {
@@ -627,7 +637,33 @@ function onSelect(b) {
   else if (d.selact === 'polycancel') polyCancel();
   else if (d.selact === 'polyok') { if (!polyFinish()) toast('Il faut au moins trois points.'); }
   else if (d.selact === 'clear') eraseSelection();
+  else if (d.selact === 'grow' || d.selact === 'shrink') { const px = Math.max(1, Math.round(0.5 / 25.4 * ed.project.dpi)); growSelection(d.selact === 'grow' ? px : -px); }
+  else if (d.seltf) {
+    polyCancel(); const r = transformSelection(d.seltf);
+    if (r === 'ok') toast(`${TRANSFORMS[d.seltf]}.`, { actionLabel: 'Annuler', duration: 4000, onAction: undo }); else toast('Aucun calque visible et déverrouillé à transformer.');
+  }
+  else if (d.selact === 'copyclip' || d.selact === 'cut') clipAction(d.selact === 'cut');
+  else if (d.selact === 'paste') pasteAction();
+  else if (d.selact === 'fill') {
+    const r = fillSelection();
+    if (r === 'ok') toast('Sélection remplie.', { actionLabel: 'Annuler', duration: 4000, onAction: undo }); else if (r === 'locked') toast('Le calque actif est masqué ou verrouillé.');
+  }
   renderOptbar();
+}
+function clipAction(cut) {
+  const n = activeLayer().name, r = copySelection(cut);
+  if (r === 'ok') toast(cut ? `Coupé depuis « ${n} ».` : `Copié depuis « ${n} ».`, cut ? { actionLabel: 'Annuler', duration: 5000, onAction: undo } : { duration: 1800 });
+  else if (r === 'locked') toast(`Le calque « ${n} » est verrouillé.`);
+  else toast(`Rien à copier dans « ${n} » à cet endroit.`, { duration: 2000 });
+  renderOptbar();
+}
+function pasteAction() {
+  if (!hasClip()) { toast('Rien à coller.'); return; }
+  if (!ed.focus) setFocus(true);
+  if (ed.tool !== 'select') setTool('select');
+  const l = pasteClip(name => { addLayer('ink'); const nl = activeLayer(); renameLayer(nl.id, name); return nl; });
+  if (l) { ed.selMove = true; toast(`Collé dans « ${l.name} » : fais glisser pour le placer.`, { actionLabel: 'Annuler', duration: 5000, onAction: () => { undo(); undo(); } }); }
+  renderOptbar(); renderDock();
 }
 function eraseSelection() {
   const r = clearSelectionContent();
@@ -700,7 +736,7 @@ function onOptbar(e) {
     renderOptbar(); renderPop(); return;
   }
   if (b.dataset.openfocus) { setFocus(true); return; }
-  if (b.dataset.selmode || b.dataset.selop || b.dataset.selact) onSelect(b);
+  if (b.dataset.selmode || b.dataset.selop || b.dataset.selact || b.dataset.seltf) onSelect(b);
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -2082,6 +2118,8 @@ const COMMANDS = {
   'tool-layout': () => setTool('layout'),
   'sel-all': () => { if (ed.tool !== 'select') setTool('select'); selectAll(panel()); },
   'sel-none': () => { polyCancel(); clearSelection(); renderOptbar(); },
+  'sel-copy': () => { if (ed.tool !== 'select') setTool('select'); clipAction(false); }, 'sel-cut': () => { if (ed.tool !== 'select') setTool('select'); clipAction(true); },
+  'sel-paste': () => pasteAction(),
   'move-case': () => { if (ed.tool !== 'select') setTool('select'); polyCancel(); clearSelection(); ed.selMove = true; renderOptbar(); toast('Fais glisser pour déplacer tout le contenu de la case.', { duration: 3000 }); },
   relayout: async () => { const id = await pickLayout('Disposition des cases'); if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); } },
   frame: () => { secState.cf = true; setFocus(false); showDock('page'); },
@@ -2102,7 +2140,7 @@ const COMMANDS = {
   'hide-bubbles': () => togglePageBubbles(),
 };
 Object.assign(COMMANDS, { 'lib-brushes': () => libraryModal('brushes'), 'lib-tramas': () => libraryModal('tramas'), 'lib-bubbles': () => libraryModal('bubbles') });
-const CASE_COMMANDS = ['add-color', 'add-ink', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
+const CASE_COMMANDS = ['sel-copy', 'sel-cut', 'add-color', 'add-ink', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
   'sel-all', 'sel-none', 'move-case', 'dither', 'dup-bubble', 'del-bubble', 'lib-brushes', 'lib-tramas', 'lib-bubbles'];
 export function runCommand(id) {
   if (id.startsWith('tool:')) { if (ed.project) setTool(id.slice(5)); return; }
@@ -2123,6 +2161,8 @@ function onKey(e) {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && (k === 'c' || k === 'x') && ed.focus) { e.preventDefault(); if (ed.tool !== 'select') setTool('select'); clipAction(k === 'x'); return; }
+  if (mod && k === 'v' && hasClip()) { e.preventDefault(); pasteAction(); return; }
   if (mod && k === 'a') { e.preventDefault(); if (ed.tool !== 'select') setTool('select'); selectAll(panel()); return; }
   if (mod) return;
   const t = TOOLS.find(x => x.key === k);

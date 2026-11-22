@@ -248,3 +248,128 @@ export function cancelMove(m) {
   invalidate(m.p, { x: m.s.x0, y: m.s.y0, w: m.bw, h: m.bh });
   if (m.implicit) applySel(null); else requestRender();
 }
+
+// ───────────────────────── Transformer, copier / couper / coller, agrandir / rétrécir ─────────────────────────
+
+const bppL = l => (l.kind === 'color' || l.rgba ? 4 : 1);
+const hasPx = (buf, i, b) => (b === 4 ? buf[i * 4 + 3] : buf[i]);
+
+// Miroir, quart de tour, agrandir / réduire le contenu sélectionné (sans sélection : tout le contenu de la case),
+// autour du centre de la sélection, au plus proche voisin (le trait 1 bit reste net). Pixels et sélection : une entrée d'historique.
+export const TRANSFORMS = { flipH: 'Miroir horizontal', flipV: 'Miroir vertical', rotCW: 'Quart de tour à droite', rotCCW: 'Quart de tour à gauche', scaleUp: 'Agrandir', scaleDown: 'Réduire' };
+export function transformSelection(kind, p = panel()) {
+  let s = currentSelection(p), implicit = false;
+  if (!s) { s = selectAll(p, false); implicit = true; }
+  const ls = targets(p).filter(l => l.data);
+  if (!s || !ls.length) { if (implicit) applySel(null); return 'locked'; }
+  const W = p.ew, H = p.eh, bw = s.x1 - s.x0, bh = s.y1 - s.y0, k = kind === 'scaleUp' ? 1.25 : kind === 'scaleDown' ? 0.8 : 1;
+  const rot = kind === 'rotCW' || kind === 'rotCCW';
+  const nw = rot ? bh : Math.max(1, Math.round(bw * k)), nh = rot ? bw : Math.max(1, Math.round(bh * k));
+  const nx0 = Math.round((s.x0 + s.x1) / 2 - nw / 2), ny0 = Math.round((s.y0 + s.y1) / 2 - nh / 2);
+  // case d'origine (x, y) dans l'ancienne boîte, pour la case (u, v) de la nouvelle
+  const src = (u, v) => kind === 'flipH' ? [bw - 1 - u, v] : kind === 'flipV' ? [u, bh - 1 - v] : kind === 'rotCW' ? [v, bh - 1 - u]
+    : kind === 'rotCCW' ? [bw - 1 - v, u] : [Math.min(bw - 1, Math.floor(u / k)), Math.min(bh - 1, Math.floor(v / k))];
+  const box = { x0: Math.max(0, Math.min(s.x0, nx0)), y0: Math.max(0, Math.min(s.y0, ny0)), x1: Math.min(W, Math.max(s.x1, nx0 + nw)), y1: Math.min(H, Math.max(s.y1, ny0 + nh)) };
+  ed.undo.begin(TRANSFORMS[kind]);
+  for (const l of ls) {
+    const b = bppL(l), d = ensureData(l), buf = new Uint8Array(bw * bh * b);
+    ed.undo.touch(l, box.x0, box.y0, box.x1, box.y1);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {   // on soulève le contenu sélectionné
+      const i = (s.y0 + y) * W + s.x0 + x;
+      if (!s.mask[i]) continue;
+      buf.set(d.subarray(i * b, i * b + b), (y * bw + x) * b); d.fill(0, i * b, i * b + b);
+    }
+    for (let v = 0; v < nh; v++) for (let u = 0; u < nw; u++) {   // et on le repose transformé
+      const tx = nx0 + u, ty = ny0 + v;
+      if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
+      const [x, y] = src(u, v), j = y * bw + x;
+      if (!s.mask[(s.y0 + y) * W + s.x0 + x] || !hasPx(buf, j, b)) continue;
+      d.set(buf.subarray(j * b, j * b + b), (ty * W + tx) * b);
+    }
+  }
+  let next = null;
+  if (!implicit) {
+    const mask = new Uint8Array(W * H);
+    for (let v = 0; v < nh; v++) for (let u = 0; u < nw; u++) {
+      const tx = nx0 + u, ty = ny0 + v; if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
+      const [x, y] = src(u, v); if (s.mask[(s.y0 + y) * W + s.x0 + x]) mask[ty * W + tx] = 1;
+    }
+    next = build(p, mask, { x0: Math.max(0, nx0), y0: Math.max(0, ny0), x1: Math.min(W, nx0 + nw), y1: Math.min(H, ny0 + nh) });
+  }
+  ed.undo.commit(implicit ? undefined : { before: s, after: next });
+  invalidate(p, { x: box.x0, y: box.y0, w: box.x1 - box.x0, h: box.y1 - box.y0 }); markChanged();
+  applySel(next);
+  return 'ok';
+}
+
+// Presse-papiers de l'éditeur : pixels du calque actif sous la sélection (sans sélection : toute la case).
+let clip = null;
+export const hasClip = () => !!clip;
+export function copySelection(cut = false, p = panel()) {
+  const cur = currentSelection(p), s = cur || selectAll(p, false), l = activeLayer(p), done = r => { if (!cur) applySel(null); return r; };
+  if (!s) return 'none';
+  if (!l.data) return done('empty');
+  const W = p.ew, b = bppL(l), bw = s.x1 - s.x0, bh = s.y1 - s.y0, buf = new Uint8Array(bw * bh * b), mask = new Uint8Array(bw * bh);
+  let any = false;
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const i = (s.y0 + y) * W + s.x0 + x;
+    if (!s.mask[i] || !hasPx(l.data, i, b)) continue;
+    buf.set(l.data.subarray(i * b, i * b + b), (y * bw + x) * b); mask[y * bw + x] = 1; any = true;
+  }
+  if (!any) return done('empty');
+  clip = { b, w: bw, h: bh, buf, mask, x: s.x0 + p.ex, y: s.y0 + p.ey, name: l.name };   // position en coordonnées de page
+  if (cut) {
+    if (l.locked) return done('locked');
+    ed.undo.begin('Couper');
+    ed.undo.touch(l, s.x0, s.y0, s.x1, s.y1);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (mask[y * bw + x]) { const i = (s.y0 + y) * W + s.x0 + x; l.data.fill(0, i * b, i * b + b); }
+    ed.undo.commit();
+    invalidate(p, { x: s.x0, y: s.y0, w: bw, h: bh }); markChanged();
+  }
+  return done('ok');
+}
+// Coller : un nouveau calque au-dessus de l'actif, au même endroit de la page (ramené dans la case), sélectionné et prêt à déplacer.
+export function pasteClip(newLayerFn, p = panel()) {
+  if (!clip) return null;
+  const l = newLayerFn('Collage');
+  if (clip.b === 4) l.rgba = true;
+  const W = p.ew, H = p.eh, b = clip.b, d = ensureData(l);
+  const f = frameOf(p);
+  let x0 = clip.x - p.ex, y0 = clip.y - p.ey;
+  x0 = Math.max(f.x0, Math.min(f.x1 - Math.min(clip.w, f.x1 - f.x0), x0)); y0 = Math.max(f.y0, Math.min(f.y1 - Math.min(clip.h, f.y1 - f.y0), y0));
+  const mask = new Uint8Array(W * H);
+  ed.undo.begin('Coller');
+  ed.undo.touch(l, x0, y0, x0 + clip.w, y0 + clip.h);
+  for (let y = 0; y < clip.h; y++) for (let x = 0; x < clip.w; x++) {
+    if (!clip.mask[y * clip.w + x]) continue;
+    const tx = x0 + x, ty = y0 + y; if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
+    const j = y * clip.w + x;
+    d.set(clip.buf.subarray(j * b, j * b + b), (ty * W + tx) * b); mask[ty * W + tx] = 1;
+  }
+  const next = build(p, mask, { x0: Math.max(0, x0), y0: Math.max(0, y0), x1: Math.min(W, x0 + clip.w), y1: Math.min(H, y0 + clip.h) });
+  ed.undo.commit({ before: ed.sel, after: next });
+  invalidate(p, { x: x0, y: y0, w: clip.w, h: clip.h }); markChanged();
+  applySel(next);
+  return l;
+}
+
+// Agrandir / rétrécir la sélection de r pixels (r < 0 : rétrécir).
+export function growSelection(r, p = panel()) {
+  const s = currentSelection(p);
+  if (!s || !r) return false;
+  const W = p.ew, H = p.eh, n = Math.abs(r), src = r > 0 ? s.mask : s.mask.map(v => (v ? 0 : 1));
+  const box = r > 0 ? { x0: Math.max(0, s.x0 - n), y0: Math.max(0, s.y0 - n), x1: Math.min(W, s.x1 + n), y1: Math.min(H, s.y1 + n) } : { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 };
+  const tmp = new Uint8Array(W * H), out = new Uint8Array(W * H);
+  for (let y = box.y0; y < box.y1; y++) for (let x = box.x0; x < box.x1; x++) {   // passe horizontale
+    let on = 0; for (let k = Math.max(0, x - n); k <= Math.min(W - 1, x + n) && !on; k++) on = src[y * W + k];
+    tmp[y * W + x] = on;
+  }
+  for (let y = box.y0; y < box.y1; y++) for (let x = box.x0; x < box.x1; x++) {   // puis verticale
+    let on = 0; for (let k = y - n; k <= y + n && !on; k++) on = k < 0 || k >= H ? 0 : k < box.y0 || k >= box.y1 ? (r < 0 ? 1 : 0) : tmp[k * W + x];
+    out[y * W + x] = r > 0 ? on : on ? 0 : 1;
+  }
+  if (r < 0) for (let y = box.y0; y < box.y1; y++) for (let x = box.x0; x < box.x1; x++) if (!s.mask[y * W + x]) out[y * W + x] = 0;
+  const b = clipToFrame(p, out, box);
+  setSel(build(p, out, b));
+  return true;
+}
