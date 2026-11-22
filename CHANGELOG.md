@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.52.0 — 2026-11-22
+- Mise en page à l'impression et au PDF : planches en regard (pages impaires à droite), livret à plier (recto verso, pages remises dans l'ordre), 4 pages par feuille pour une épreuve
+- La fenêtre indique la taille de la feuille (A3 pour deux pages A4, A4 pour deux pages A5)
+
 ## 1.51.0 — 2026-11-22
 - Imprimer directement depuis l'app (AirPrint sur iPad), menu Fichier ou Ctrl+P
 - Choix à l'impression et à l'export PDF : toutes les pages, la page affichée ou une liste (« 1-3, 5 »), brouillons et bulles inclus ou non

@@ -2062,6 +2062,15 @@ const printPrefs = () => { try { return { ...PRINT_DEFAULTS, ...JSON.parse(local
 const BLUE_HELP = ['Noir et blanc (ou couleur si la planche en a), sans aide visuelle.',
   'Tout est imprimé en bleu clair : on encre par-dessus, sur papier, et le scanner en noir et blanc ne voit pas le bleu.'];
 
+// Explication de la mise en page choisie, avec la taille de la feuille (A3 pour deux pages A4, A4 pour deux pages A5…).
+const PAPER = [['A2', 420, 594], ['A3', 297, 420], ['A4', 210, 297], ['A5', 148, 210]];
+function impHelp(id) {
+  const x = IMPOSITIONS.find(i => i.id === id) || IMPOSITIONS[0], f = ed.project.format;
+  const w = x.id === 'spread' || x.id === 'booklet' ? 2 * f.wmm : f.wmm, h = f.hmm;
+  const [a, b] = [w, h].sort((u, v) => u - v), paper = (PAPER.find(([, pa, pb]) => Math.abs(pa - a) <= 2 && Math.abs(pb - b) <= 2) || [])[0];   // 2 × A5 = 296 mm : A4
+  return `${esc(x.help)} Feuille : ${w} × ${h} mm${paper ? ` (${paper}${w > h ? ' à l\'italienne' : ''})` : ''}.`;
+}
+
 function printModal(action = 'pdf') {
   const o = printPrefs(), count = ed.project.pages.length;
   const seg = (name, items) => `<div class="seg" role="group" data-seg="${name}" style="display:flex">${items.map(([v, label, ic]) =>
@@ -2072,9 +2081,9 @@ function printModal(action = 'pdf') {
         <input type="text" id="pr-range" placeholder="Ex. : 1-3, 5" value="${esc(o.range)}" autocomplete="off" ${o.pages === 'range' ? '' : 'hidden'}></div>
       <div class="field"><span>Rendu</span>${seg('blue', [['false', 'Planche finale', 'brush'], ['true', 'Bleu non photo', 'pencil']])}
         <small id="pr-blue-help">${BLUE_HELP[+o.blue]}</small></div>
-      <div class="field" id="pr-imp" hidden><span>Mise en page</span>
+      <div class="field"><span>Mise en page</span>
         <select id="pr-imposition">${IMPOSITIONS.map(x => `<option value="${x.id}" ${o.imposition === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
-        <small id="pr-imp-help">${esc((IMPOSITIONS.find(x => x.id === o.imposition) || IMPOSITIONS[0]).help)}</small></div>
+        <small id="pr-imp-help">${impHelp(o.imposition)}</small></div>
       <label class="check"><input type="checkbox" id="pr-drafts" ${o.drafts ? 'checked' : ''}> Imprimer les brouillons</label>
       <label class="check"><input type="checkbox" id="pr-bubbles" ${o.bubbles ? 'checked' : ''}> Bulles et textes</label>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
@@ -2101,10 +2110,9 @@ function printModal(action = 'pdf') {
     if (o.pages === 'range' && !pages) { toast(`Pages à choisir entre 1 et ${count}, par exemple « 1-3, 5 ».`, { type: 'error' }); range.focus(); return; }
     try { localStorage.setItem(PRINT_KEY, JSON.stringify(o)); } catch {}
     m.close();
-    const imp = $('#pr-imp', box).hidden ? 'single' : o.imposition;
-    runPrint(go.dataset.go, { pages: pages || undefined, imposition: imp, drafts: o.drafts, bubbles: o.bubbles, blue: o.blue });
+    runPrint(go.dataset.go, { pages: pages || undefined, imposition: o.imposition, drafts: o.drafts, bubbles: o.bubbles, blue: o.blue });
   });
-  $('#pr-imposition', box).addEventListener('change', e => { $('#pr-imp-help', box).textContent = (IMPOSITIONS.find(x => x.id === e.target.value) || IMPOSITIONS[0]).help; });
+  $('#pr-imposition', box).addEventListener('change', e => { $('#pr-imp-help', box).innerHTML = impHelp(e.target.value); });
 }
 
 async function runPrint(how, opts) {
