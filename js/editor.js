@@ -27,12 +27,12 @@ export const notify = what => subs.forEach(fn => fn(what));
 
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
-  pencil: { sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null },
-  texture: { sizeMm: 3, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
-  eraser: { sizeMm: 3, alpha: 1, slotId: null, brushId: 'stylo', brushParams: null },
+  pencil: { sizeMm: 0.5, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null },
+  texture: { sizeMm: 3, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  eraser: { sizeMm: 3, alpha: 1, ticks: null, slotId: null, brushId: 'stylo', brushParams: null },
   fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
-  shape: { sizeMm: 0.5, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
-  mask: { sizeMm: 6, maskErase: false },
+  shape: { sizeMm: 0.5, ticks: null, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  mask: { sizeMm: 6, ticks: null, maskErase: false },
 };
 export function storeToolSettings() {
   const d = TOOL_DEFAULTS[ed.tool];
@@ -75,6 +75,9 @@ export function deleteBrush(id) {
 // Un emplacement garde le pinceau entier (réglages, taille, opacité, et la trame pour le pinceau trame).
 // Tant qu'un emplacement est actif, ce qu'on règle (taille, opacité, réglages) y est enregistré.
 export const BRUSH_TOOLS = ['pencil', 'texture', 'eraser'];
+// Repères des curseurs latéraux (valeurs en mm et en opacité 0–1) : le curseur s'y aimante.
+export const copyTicks = t => ({ size: [...((t && t.size) || [])], alpha: [...((t && t.alpha) || [])] });
+export const ticksOf = () => (ed.ticks || (ed.ticks = copyTicks(null)));
 export const SLOT_MAX = 8;
 const SLOT_DEFAULTS = {
   pencil: [['stylo'], ['plumeg'], ['brushpen'], ['hb'], ['fusain']],
@@ -106,6 +109,7 @@ export function applySlot(id) {
   if (!s) return;
   ed.slotId = s.id; ed.brushId = s.base; ed.brushParams = { ...BRUSH_DEFAULTS, ...s.spec };
   ed.alpha = s.alpha ?? 1;
+  ed.ticks = copyTicks(s.ticks);
   if (ed.tool === 'texture') Object.assign(ed, { tramaId: s.tramaId, tramaScale: s.tramaScale, tramaOpaque: s.tramaOpaque });
   setSizeMm(s.sizeMm);
 }
@@ -114,7 +118,7 @@ export function storeSlot() {
   const s = activeSlot();
   if (!s) return;
   s.spec = { ...ed.brushParams }; for (const k of ['id', 'name', 'group', 'custom']) delete s.spec[k];
-  s.sizeMm = ed.sizeMm; s.alpha = ed.alpha;
+  s.sizeMm = ed.sizeMm; s.alpha = ed.alpha; s.ticks = copyTicks(ed.ticks);
   if (ed.tool === 'texture') Object.assign(s, { tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque });
   markChanged();
 }
@@ -940,7 +944,13 @@ export function setBubbleProp(b, key, value) {
 }
 export function togglePageBubbles() { const pg = page(); pg.bubblesHidden = !pg.bubblesHidden; notify('bubbles'); requestRender(); markChanged(); }
 
-export function selectBubble(id) { ed.bubbleId = id; notify('bubbles'); requestRender(); }
+export function selectBubble(id) {
+  ed.bubbleId = id;
+  // une bulle appartient à sa case : la choisir ouvre sa case dans le volet (hors mode case, qui reste sur la sienne)
+  const b = id && page().bubbles.find(x => x.id === id);
+  if (b && !ed.focus) { linkBubbles(page()); if (b.panel && b.panel !== ed.panelId && page().panels.some(p => p.id === b.panel)) { ed.panelId = b.panel; notify('panel'); } }
+  notify('bubbles'); requestRender();
+}
 
 // Une modification de bulle (déplacement, texte…) devient une entrée d'historique.
 export function commitBubbleEdit(b, before) {

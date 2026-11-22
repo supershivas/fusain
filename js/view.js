@@ -214,7 +214,7 @@ function renderFrame() {
   if (!pg.bubblesHidden) {
     // mode case : seules les bulles qui touchent la case, rognées à son cadre
     if (fp) { ctx.save(); ctx.beginPath(); ctx.rect(fp.x, fp.y, fp.w, fp.h); ctx.clip(); }
-    for (const b of pg.bubbles) if (!b.hidden && (!fp || overlaps(b, fp))) drawPageBubble(ctx, b, ed.project.dpi, pg.panels);
+    for (const b of pg.bubbles) if (!b.hidden && (!fp || b.panel === fp.id)) drawPageBubble(ctx, b, ed.project.dpi, pg.panels);
     if (fp) {
       ctx.restore();
       const bw = mmToPx(panelStroke(fp), ed.project.dpi);
@@ -255,13 +255,6 @@ function renderFrame() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 0.5, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 0.5, 0, Math.PI * 2); ctx.stroke();
   }
-}
-
-// Une bulle (ou sa queue) touche-t-elle la case ?
-function overlaps(b, p) {
-  const m = 4, xs = [b.x, b.x + b.w], ys = [b.y, b.y + b.h];
-  if (b.tail) { xs.push(b.tail.x); ys.push(b.tail.y); }
-  return Math.max(...xs) >= p.x - m && Math.min(...xs) <= p.x + p.w + m && Math.max(...ys) >= p.y - m && Math.min(...ys) <= p.y + p.h + m;
 }
 
 // Sélection : voile et contour (octets 0/1 → pixels), mis en cache sur l'objet sélection ; le contenu soulevé se montre par-dessus.

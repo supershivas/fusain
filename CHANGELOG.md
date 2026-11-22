@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.33.0 — 2026-11-22
+- Curseurs de taille et d'opacité : un appui long pose un repère où le curseur s'aimante (appui long dessus pour le retirer) ; les repères sont gardés avec chaque pinceau de la palette
+- Bulles et textes liés à leur case : le volet ne montre que ceux de la case ouverte, comme les calques ; choisir une bulle ouvre sa case
+- En mode case, seules les bulles de la case sont montrées et touchables
+
 ## 1.32.0 — 2026-11-22
 - Bibliothèque partagée : « Mes pinceaux », « Mes gommes », réglages de trame et modèles de bulles suivent ton compte sur tous tes projets et appareils
 - Une suppression sur un appareil n'est pas annulée par un autre qui avait encore l'élément

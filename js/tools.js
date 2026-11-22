@@ -318,6 +318,7 @@ function bubbleDown(pt) {
   }
   for (let i = pg.bubbles.length - 1; i >= 0; i--) {
     const bb = pg.bubbles[i];
+    if (ed.focus && bb.panel !== ed.panelId) continue;   // mode case : seules les bulles de la case se touchent
     if (bb.hidden || pg.bubblesHidden) continue;
     if (hitBubble(bb, pt.x, pt.y)) { selectBubble(bb.id); if (!bb.locked) start(bb, 'move', pt); return; }
   }

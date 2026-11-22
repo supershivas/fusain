@@ -461,3 +461,5 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .cpick { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: .85rem; cursor: pointer; }
 .cpick input[type=color] { width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); }
 .tag.ctag { color: var(--accent); border-color: var(--accent); }
+.qs-tick { position: absolute; left: -5px; right: -5px; height: 2px; margin-bottom: -1px; background: var(--text-secondary); border-radius: 1px; pointer-events: none; }
+.qs.snap .qs-thumb { background: var(--accent); }

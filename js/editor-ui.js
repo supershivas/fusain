@@ -1,9 +1,9 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
-  ed, page, panel, selectPanel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
+  ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -275,13 +275,16 @@ export function setFocus(on, panelId) {
   if (on && ed.tool === 'layout') setTool('pencil');   // la taille des cases se règle sur la page entière
   if (ed.focus === on && !panelId) return;
   ed.focus = on;
+  dropForeignBubble();
   fit(); renderZoombar(); renderOptbar(); renderDock(); requestRender();
 }
 function stepCase(d) {
   const list = page().panels, i = list.indexOf(panel()) + d;
   if (i < 0 || i >= list.length) return;
-  selectPanel(list[i].id); fit(); renderZoombar(); renderDock();
+  selectPanel(list[i].id); dropForeignBubble(); fit(); renderZoombar(); renderDock();
 }
+// En mode case, une bulle choisie qui appartient à une autre case est désélectionnée.
+function dropForeignBubble() { const b = bubble(); if (ed.focus && b && b.panel !== ed.panelId) { ed.bubbleId = null; renderOptbar(); } }
 // Double toucher (doigt qui déplace la vue, main, souris en mode main) : ouvre la case touchée, ou revient à la page.
 function onDoubleTap(panelId) {
   if (ed.focus) setFocus(false);
@@ -382,9 +385,27 @@ function paintSlots(scope) {
 
 // ── Réglages rapides : taille et opacité en curseurs verticaux au bord du canevas, à portée du pouce ──
 const QUICK = {
-  size: { label: 'Taille', get: () => sizeToV(ed.sizeMm) / 100, set: v => setSizeMm(vToSize(v * 100)), fmt: () => fmtMm(ed.sizeMm) + ' mm' },
-  alpha: { label: 'Opacité', get: () => (ed.alpha - 0.05) / 0.95, set: v => setAlpha(0.05 + 0.95 * v), fmt: () => Math.round(ed.alpha * 100) + ' %' },
+  size: { label: 'Taille', get: () => sizeToV(ed.sizeMm) / 100, set: v => setSizeMm(vToSize(v * 100)), fmt: () => fmtMm(ed.sizeMm) + ' mm',
+    val: () => ed.sizeMm, toV: mm => sizeToV(mm) / 100, setVal: mm => setSizeMm(mm), say: mm => fmtMm(mm) + ' mm' },
+  alpha: { label: 'Opacité', get: () => (ed.alpha - 0.05) / 0.95, set: v => setAlpha(0.05 + 0.95 * v), fmt: () => Math.round(ed.alpha * 100) + ' %',
+    val: () => ed.alpha, toV: a => (a - 0.05) / 0.95, setVal: a => setAlpha(a), say: a => Math.round(a * 100) + ' %' },
 };
+const TICK_SNAP = 0.035, LONG_MS = 500;   // aimant : 3,5 % de la course ; appui long : une demi-seconde
+const tickHtml = k => ticksOf()[k].map(t => `<i class="qs-tick" style="bottom:${Math.max(0, Math.min(1, QUICK[k].toV(t))) * 100}%"></i>`).join('');
+const nearTick = (k, v) => {
+  let best = null, bd = TICK_SNAP;
+  for (const t of ticksOf()[k]) { const d = Math.abs(QUICK[k].toV(t) - v); if (d <= bd) { bd = d; best = t; } }
+  return best;
+};
+// Appui long sur un curseur : pose un repère à la valeur touchée, ou retire celui qui s'y trouve.
+function toggleTick(k) {
+  const list = ticksOf()[k], v = QUICK[k].get(), t = nearTick(k, v);
+  if (t !== null) { list.splice(list.indexOf(t), 1); toast(`Repère ${QUICK[k].say(t)} retiré.`, { duration: 1400 }); }
+  else { const val = +QUICK[k].val().toFixed(3); list.push(val); list.sort((a, b) => a - b); toast(`Repère posé à ${QUICK[k].say(val)} : le curseur s'y aimante.`, { duration: 1800 }); }
+  const tr = $(`[data-quick="${k}"] .qs-track`, root);
+  if (tr) { $$('.qs-tick', tr).forEach(x => x.remove()); tr.insertAdjacentHTML('beforeend', tickHtml(k)); }
+  afterBrushChange();
+}
 function renderQuick() {
   const q = $('#quick', root);
   if (!q) return;
@@ -393,7 +414,7 @@ function renderQuick() {
   if (!on) { q.innerHTML = ''; return; }
   const keys = BRUSH_TOOLS.includes(ed.tool) ? ['size', 'alpha'] : ['size'];
   q.innerHTML = keys.map(k => `<div class="qs" data-quick="${k}" role="slider" tabindex="0" aria-label="${QUICK[k].label}" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(QUICK[k].get() * 100)}" aria-valuetext="${QUICK[k].fmt()}">
-      <div class="qs-track"><div class="qs-fill" style="height:${QUICK[k].get() * 100}%"></div><div class="qs-thumb" style="bottom:${QUICK[k].get() * 100}%"></div></div>
+      <div class="qs-track"><div class="qs-fill" style="height:${QUICK[k].get() * 100}%"></div>${tickHtml(k)}<div class="qs-thumb" style="bottom:${QUICK[k].get() * 100}%"></div></div>
       <span class="qs-val">${QUICK[k].fmt()}</span></div>`).join('');
 }
 function updateQuick(k) {
@@ -411,22 +432,27 @@ function quickDown(e) {
   if (!el) return;
   e.preventDefault(); e.stopPropagation();
   try { el.setPointerCapture(e.pointerId); } catch { /* */ }
-  quickDrag = { el, k: el.dataset.quick, id: e.pointerId };
+  const g = quickDrag = { el, k: el.dataset.quick, id: e.pointerId, x0: e.clientX, y0: e.clientY };
+  g.timer = setTimeout(() => { if (quickDrag === g) { g.long = true; toggleTick(g.k); } }, LONG_MS);
   el.classList.add('active');
   quickMove(e);
 }
 function quickMove(e) {
   const g = quickDrag;
   if (!g || e.pointerId !== g.id) return;
-  const r = g.el.querySelector('.qs-track').getBoundingClientRect();
-  QUICK[g.k].set(Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height)));
+  if (g.timer && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) > 8) { clearTimeout(g.timer); g.timer = null; }   // le doigt glisse : pas d'appui long
+  const r = g.el.querySelector('.qs-track').getBoundingClientRect(), v = Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height));
+  const t = nearTick(g.k, v);
+  if (t !== null && !g.long) QUICK[g.k].setVal(t); else QUICK[g.k].set(v);   // aimanté au repère proche
+  g.el.classList.toggle('snap', t !== null);
   updateQuick(g.k);
   paintSlots($('#optbar', root));
 }
 function quickUp(e) {
   const g = quickDrag;
   if (!g || e.pointerId !== g.id) return;
-  quickDrag = null; g.el.classList.remove('active');
+  clearTimeout(g.timer);
+  quickDrag = null; g.el.classList.remove('active', 'snap');
   afterBrushChange();
 }
 function quickKey(e) {
@@ -714,9 +740,11 @@ function layersTab() {
   const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : l.kind === 'color' ? `<span class="tag ctag" title="Calque de couleur">couleur</span>` : '';
   const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
-  const bubRows = pg.bubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
+  linkBubbles(pg);
+  const caseBubbles = pg.bubbles.filter(b => b.panel === p.id);
+  const bubRows = caseBubbles.map(b => swipe(`<div class="layer ${b.id === ed.bubbleId ? 'on' : ''}" data-bub="${b.id}">
       <button class="icon-btn icon-only" data-act="bub-vis" aria-label="${b.hidden ? 'Afficher' : 'Masquer'} la bulle">${icon(b.hidden ? 'eye-off' : 'eye')}</button>
-      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button><span class="tag" title="Case liée">C${pg.panels.findIndex(q => q.id === b.panel) + 1 || '?'}</span>
+      <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
       <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
   const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${target === l ? 'target' : ''}" data-layer="${l.id}">
@@ -751,7 +779,7 @@ function layersTab() {
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
     <small class="note">${cur.kind === 'color' ? (cur.opacity < 100 ? 'Imprimé avec cette opacité.' : '') : cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.kind !== 'draft' && cur.kind !== 'color' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
-  return sec('bubs', `Bulles et textes · ${pg.bubbles.length}`, bubRows || '<small class="note">Aucune bulle sur cette page.</small>', pg.bubbles.length > 0, eye)
+  return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
     + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
     + sec('layp', `Calque « ${esc(cur.name)} »`, props, true);
 }
