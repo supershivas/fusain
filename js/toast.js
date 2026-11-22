@@ -1,5 +1,5 @@
 // Notifications non bloquantes (même aspect dans toutes les apps : voir les tokens).
-// opts : { actionLabel, onAction, duration, type: 'info' | 'error' }
+// opts : { actionLabel, onAction, action2Label, onAction2, duration, type: 'info' | 'error' }
 export function toast(msg, opts = {}) {
   const host = document.getElementById('toasts');
   const el = document.createElement('div');
@@ -11,6 +11,11 @@ export function toast(msg, opts = {}) {
   if (opts.actionLabel && opts.onAction) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-action'; b.textContent = opts.actionLabel;
     b.addEventListener('click', () => { close(); opts.onAction(); });
+    el.appendChild(b);
+  }
+  if (opts.action2Label && opts.onAction2) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toast-action'; b.textContent = opts.action2Label;
+    b.addEventListener('click', () => { close(); opts.onAction2(); });
     el.appendChild(b);
   }
   const x = document.createElement('button'); x.type = 'button'; x.className = 'toast-x'; x.setAttribute('aria-label', 'Fermer');

@@ -236,7 +236,7 @@ export function toRGBA(l) {
   const p = page().panels.find(q => q.layers.includes(l));
   const apply = () => { l.rgba = true; l.data = next; delete l.color; l.dirty = true; if (p) invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { l.rgba = false; l.data = old; if (oldColor) l.color = oldColor; l.dirty = true; if (p) invalidate(p); notify('layers'); markChanged(); };
-  apply(); ed.undo.pushAction('Calque en couleur', unapply, apply);
+  apply(); ed.undo.pushAction('Calque en couleur', unapply, apply).rgbaLayer = l;
   return l;
 }
 
@@ -763,6 +763,38 @@ export function fillLayer(p) {
   const apply = () => { p.layers.splice(at, 0, l); invalidate(p); notify('layers'); markChanged(); };
   const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
   apply(); ed.undo.pushAction('Nouveau calque', unapply, apply);
+  return l;
+}
+
+// Le dernier trait (entrée `entry` de l'historique, encore au sommet) quitte `layer` pour un calque « Couleurs » créé juste dessous.
+// On défait le trait, on crée le calque, puis on y repose les pixels que le trait avait changés.
+export function moveStrokeBelow(p, layer, entry) {
+  const u = ed.undo;
+  if (u.stack[u.ptr - 1] !== entry || !entry.ops) return null;
+  const b = entry.ops[0].before.length === entry.ops[0].tw * entry.ops[0].th * 4 ? 4 : 1;   // octets par pixel du trait
+  u.undo();
+  // l'encrage venait de passer en couleur pour ce trait : il redevient noir et blanc (plus léger)
+  const top = u.stack[u.ptr - 1];
+  if (top && top.rgbaLayer === layer) u.undo();
+  const l = newLayer('Couleurs', p.ew, p.eh);
+  if (b === 4) l.rgba = true;
+  const at = Math.max(0, p.layers.indexOf(layer)), prev = p.active;
+  const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prev; invalidate(p); notify('layers'); markChanged(); };
+  apply(); u.pushAction('Nouveau calque', unapply, apply);
+  u.begin('Colorier dessous');
+  const data = ensureData(l);
+  for (const o of entry.ops) {
+    if (o.layer !== layer || o.before.length !== o.tw * o.th * b) continue;
+    u.touch(l, o.px, o.py, o.px + o.tw, o.py + o.th);
+    for (let y = 0; y < o.th; y++) for (let x = 0; x < o.tw; x++) {
+      const k = (y * o.tw + x) * b;
+      let changed = false;
+      for (let c = 0; c < b; c++) if (o.after[k + c] !== o.before[k + c]) { changed = true; break; }
+      if (changed) data.set(o.after.subarray(k, k + b), ((o.py + y) * l.w + o.px + x) * b);
+    }
+  }
+  u.commit(); invalidate(p); markChanged();
   return l;
 }
 

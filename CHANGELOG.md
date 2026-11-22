@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.43.0 — 2026-11-22
+- Colorier sur un calque d'encrage (une référence, ou un calque nommé Dessin, Encrage…) propose de le faire dans un calque dessous : « Déplacer » y emporte le trait qu'on vient de faire, « Ne plus demander » arrête pour ce calque
+
 ## 1.42.0 — 2026-11-22
 - Calques tous pareils : chaque outil dessine dans le calque actif (fini l'aiguillage vers « Encrage » ou « Trames ») ; on ajoute un « Calque » ou un « Brouillon »
 - Une nouvelle case commence avec « Dessin » (référence) et « Brouillon » ; remplir sur la référence pose l'aplat dans un calque « Aplats » créé dessous

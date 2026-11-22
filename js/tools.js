@@ -1,7 +1,7 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, toRGBA, fillLayer, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
+  ed, page, activeLayer, toRGBA, fillLayer, moveStrokeBelow, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
@@ -115,7 +115,7 @@ function begin(p, pt) {
     ed.undo.begin('Remplir');
     const ctx = makeCtx(p, layer, { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
     applyRegion(ctx, region);
-    ed.undo.commit();
+    inkHint(p, layer, ed.undo.commit(), 'fill');
     invalidate(p, { x: region.x0, y: region.y0, w: region.x1 - region.x0 + 1, h: region.y1 - region.y0 + 1 });
     markChanged();
   } else if (tool === 'shape') {
@@ -137,10 +137,29 @@ export function colorDrop(pt) {
   if (ed.ink === 3) toRGBA(layer);
   ed.undo.begin('Glisser la couleur');
   applyRegion(makeCtx(p, layer, { v: inkV(), alpha: 1 }), region);
-  ed.undo.commit();
+  inkHint(p, layer, ed.undo.commit(), 'drop');
   invalidate(p, { x: region.x0, y: region.y0, w: region.x1 - region.x0 + 1, h: region.y1 - region.y0 + 1 });
   markChanged();
   return layer;
+}
+
+// ── Conseil « on colorie sur l'encrage » : signes explicites seulement (référence, ou nom de calque d'encrage) ──
+const INK_NAME = /dessin|encrage|encre|line|trait|ink/i;
+const inkHinted = new Set();   // une fois par calque et par séance
+const looksLikeInk = l => !!l && !l.draft && !l.noInkHint && (l.reference || INK_NAME.test(l.name || ''));
+// geste de mise en couleur : remplissage, couleur glissée, ou pinceau en couleur, tramé, large ou transparent
+const coloring = tool => tool === 'fill' || tool === 'drop' || (tool === 'pencil' && (ed.ink === 3 || !!currentTrama() || ed.sizeMm >= 3 || ed.alpha < 1));
+function inkHint(p, layer, entry, tool) {
+  if (!entry || !entry.ops || !looksLikeInk(layer) || inkHinted.has(layer.id) || !coloring(tool)) return;
+  inkHinted.add(layer.id);
+  toast(`« ${layer.name} » ressemble à un encrage. Colorier dans un calque dessous ?`, {
+    duration: 9000,
+    actionLabel: 'Déplacer', onAction: () => {
+      const l = moveStrokeBelow(p, layer, entry);
+      toast(l ? `Coloriage déplacé dans « ${l.name} », qui reste actif.` : 'Trop tard : d\'autres changements ont suivi.', { duration: 2600 });
+    },
+    action2Label: 'Ne plus demander', onAction2: () => { layer.noInkHint = true; markChanged(); },
+  });
 }
 
 // Trou toléré dans un contour : le curseur (0–100) va jusqu'à 2,5 mm.
@@ -199,7 +218,8 @@ export function up() {
     if (s.ctx.brush && s.ctx.brush.spec.smooth && (s.last.x !== s.target.x || s.last.y !== s.target.y)) {   // rattrape le retard de la stabilisation
       strokeSegment(s.ctx, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
     }
-    ed.undo.commit(); markChanged();
+    const entry = ed.undo.commit(); markChanged();
+    inkHint(s.p, s.layer, entry, ed.tool);
   } else if (s.kind === 'shape') {
     setOverlay({ shape: null });
     if (s.x1 === undefined) return;

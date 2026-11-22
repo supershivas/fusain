@@ -143,7 +143,7 @@ export function newBubble(kind, x, y) {
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, rev: l.rev });
+  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, rev: l.rev });
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
@@ -160,7 +160,7 @@ export function projectMeta(project) {
 
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock,
+  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint,
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,
