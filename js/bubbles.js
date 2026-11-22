@@ -36,7 +36,7 @@ export const BUBBLE_TEMPLATES = [
   { id: 'parole', name: 'Parole', kind: 'parole' }, { id: 'pensee', name: 'Pensée', kind: 'pensee' }, { id: 'cri', name: 'Cri (éclair)', kind: 'cri' },
   { id: 'narration', name: 'Narration', kind: 'narration' }, { id: 'texte', name: 'Texte libre', kind: 'texte' },
   { id: 'mon-style', name: 'Mon style BD', kind: 'parole', style: { shape: 'rect', radius: 10, wobble: 45, pad: 6, sameStroke: true, clip: true, noFrame: true,
-    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: false, auto: false } },
+    tailStyle: 'pointe', tailW: 19, tailRound: 25, tailBend: 75, tailTip: 0, font: 'architects', pt: 10.5, caps: false, auto: true } },
   { id: 'eclair-fort', name: 'Cri très pointu', kind: 'cri', style: { spikes: 18, depth: 42, wobble: 45, stroke: 0.6 } },
   { id: 'eclair-rond', name: 'Éclair arrondi', kind: 'cri', style: { spikes: 12, depth: 26, wobble: 25, valleyRound: 75, tipRound: 10 } },
   { id: 'nuage-doux', name: 'Nuage doux', kind: 'pensee', style: { lobes: 9, bulge: 22, cloudSoft: 1, wobble: 20 } },
@@ -101,12 +101,16 @@ function padOf(b, p, dpi) {
 export function fitSize(ctx, b, dpi) {
   setFont(ctx, b, dpi);
   const p = props(b), fp = fontPx(b, dpi), pad = padOf(b, p, dpi), text = shown(b) || ' ';
-  const target = Math.max(fp * 6, Math.min(fp * 14, Math.sqrt(ctx.measureText(text).width * fp * 3.2)));
+  // largeur des lignes : celle choisie en tirant le coin (b.wrap, la bulle garde alors cette largeur), sinon une proportion agréable
+  const target = b.wrap ? Math.max(fp * 2, b.wrap) : Math.max(fp * 6, Math.min(fp * 14, Math.sqrt(ctx.measureText(text).width * fp * 3.2)));
   const lines = wrapText(ctx, text, target);
-  const tw = Math.max(...lines.map(l => ctx.measureText(l).width)), th = lines.length * fp * 1.2;
+  const tw = b.wrap ? target : Math.max(...lines.map(l => ctx.measureText(l).width)), th = lines.length * fp * 1.2;
   const f = innerFactor(p);
   return { w: Math.round((tw + pad * 2) / f), h: Math.round((th + pad * 2) / f) };
 }
+
+// Largeur des lignes qui donne à la bulle la largeur `w` (inverse de fitSize).
+export function wrapForWidth(b, w, dpi) { const p = props(b); return Math.max(10, w * innerFactor(p) - padOf(b, p, dpi) * 2); }
 
 export function autoSize(ctx, b, dpi) {
   const s = fitSize(ctx, b, dpi);

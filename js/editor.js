@@ -6,7 +6,7 @@ import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
 import { syncSoon } from './sync.js';
-import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES, bubblePanelOf } from './bubbles.js';
+import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES, bubblePanelOf, wrapForWidth } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
@@ -1041,9 +1041,8 @@ export function snapNarration(b, panels, { resize = false, zone } = {}) {
   const dpi = ed.project.dpi, m = mmToPx(bubbleProps(b).edge ?? 0, dpi), z = zone ?? mmToPx(EDGE_ZONE_MM, dpi);
   const L = p.x + m, T = p.y + m, R = p.x + p.w - m, Bt = p.y + p.h - m;
   let moved = false;
-  if (resize) {
-    if (Math.abs(b.x + b.w - R) <= z && R - b.x >= 80) { b.w = Math.round(R - b.x); moved = true; }
-    if (Math.abs(b.y + b.h - Bt) <= z && Bt - b.y >= 60) { b.h = Math.round(Bt - b.y); moved = true; }
+  if (resize) {   // seule la largeur se règle (la hauteur suit le texte) : le bord droit se cale à la marge
+    if (Math.abs(b.x + b.w - R) <= z && R - b.x >= 80) { resizeBubbleWidth(b, R - b.x, { x: b.x, y: b.y }); moved = true; }
     return moved;
   }
   let dx = 0, dy = 0;
@@ -1058,15 +1057,17 @@ export function snapNarration(b, panels, { resize = false, zone } = {}) {
 // Donne la marge de `src` à toutes les narrations du projet ; celles qui étaient calées à un bord s'y recalent. Annulable.
 export function applyNarrationEdge(src = bubble()) {
   if (!src) return 0;
-  const edge = bubbleProps(src).edge ?? 0, dpi = ed.project.dpi;
+  const edge = bubbleProps(src).edge ?? 0, pad = bubbleProps(src).pad, dpi = ed.project.dpi;
   const list = ed.project.pages.flatMap(pg => pg.bubbles.filter(b => b.kind === 'narration').map(b => ({ b, pg })));
-  const before = list.map(({ b }) => ({ b, s: { x: b.x, y: b.y, edge: b.edge, tail: b.tail && { ...b.tail }, path: b.path && b.path.map(q => ({ ...q })) } }));
+  const snap = b => ({ x: b.x, y: b.y, w: b.w, h: b.h, edge: b.edge, pad: b.pad, wrap: b.wrap, auto: b.auto, tail: b.tail && { ...b.tail }, path: b.path && b.path.map(q => ({ ...q })) });
+  const before = list.map(({ b }) => ({ b, s: snap(b) }));
   for (const { b, pg } of list) {
     const old = mmToPx(bubbleProps(b).edge ?? 0, dpi);
-    b.edge = edge;
-    snapNarration(b, pg.panels, { zone: Math.abs(mmToPx(edge, dpi) - old) + mmToPx(1, dpi) });   // seules les bulles déjà calées bougent
+    b.edge = edge; b.pad = pad;
+    if (!b.path) { const x0 = b.x, y0 = b.y; b.auto = true; b.wrap = b.wrap || Math.round(wrapForWidth(b, b.w, dpi)); autoSize(measureCtx(), b, dpi); b.x = x0; b.y = y0; }   // nouvelle marge intérieure : la bulle se réajuste, coin haut gauche fixe
+    snapNarration(b, pg.panels, { zone: Math.abs(mmToPx(edge, dpi) - old) + mmToPx(3, dpi) });   // seules les bulles déjà calées bougent
   }
-  const after = list.map(({ b }) => ({ b, s: { x: b.x, y: b.y, edge: b.edge, tail: b.tail && { ...b.tail }, path: b.path && b.path.map(q => ({ ...q })) } }));
+  const after = list.map(({ b }) => ({ b, s: snap(b) }));
   const set = st => { for (const { b, s } of st) Object.assign(b, s); notify('bubbles'); requestRender(); markChanged(); };
   set(after); ed.undo.pushAction('Marge des narrations', () => set(before), () => set(after));
   return list.length;
@@ -1106,8 +1107,35 @@ export function commitBubbleEdit(b, before) {
 }
 
 export function refitBubble(b) {
-  if (b.auto) { autoSize(measureCtx(), b, ed.project.dpi); }
+  if (!b.auto && !b.path) { b.wrap = Math.round(wrapForWidth(b, b.w, ed.project.dpi)); b.auto = true; }   // ancienne bulle à taille fixe : elle garde sa largeur
+  if (b.auto) {
+    const held = sidesAtEdge(b);   // une narration calée à un bord y reste quand elle change de taille
+    autoSize(measureCtx(), b, ed.project.dpi);
+    if (held) keepSides(b, held);
+  }
   requestRender();
+}
+// Côtés d'une narration posés sur la ligne « bord de la case − marge » (à 2 px près), et cette ligne.
+function sidesAtEdge(b) {
+  if (b.kind !== 'narration' || b.rot) return null;
+  const p = bubblePanelOf(b, page().panels);
+  if (!p) return null;
+  const m = mmToPx(bubbleProps(b).edge ?? 0, ed.project.dpi), L = p.x + m, T = p.y + m, R = p.x + p.w - m, B = p.y + p.h - m, near = (a, c) => Math.abs(a - c) <= 2;
+  const s = { L: near(b.x, L) && L, T: near(b.y, T) && T, R: near(b.x + b.w, R) && R, B: near(b.y + b.h, B) && B };
+  return s.L !== false || s.T !== false || s.R !== false || s.B !== false ? s : null;
+}
+function keepSides(b, s) {
+  const x0 = b.x, y0 = b.y;
+  if (s.L !== false) b.x = s.L; else if (s.R !== false) b.x = s.R - b.w;
+  if (s.T !== false) b.y = s.T; else if (s.B !== false) b.y = s.B - b.h;
+  const dx = b.x - x0, dy = b.y - y0;
+  if (b.tail && (dx || dy)) b.tail = { x: b.tail.x + dx, y: b.tail.y + dy };
+}
+// Tirer le coin d'une bulle : on choisit la largeur (donc la forme), la hauteur suit le texte. Coin haut gauche fixe.
+export function resizeBubbleWidth(b, w, keep) {
+  b.auto = true; b.wrap = Math.round(wrapForWidth(b, Math.max(80, w), ed.project.dpi));
+  autoSize(measureCtx(), b, ed.project.dpi);
+  if (keep) { b.x = keep.x; b.y = keep.y; }
 }
 
 export const snapshotBubble = b => clone(b);

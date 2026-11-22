@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.47.0 — 2026-11-22
+- Bulles : la taille s'ajuste toujours au texte ; tirer le coin ne change que la forme (la largeur des lignes), la hauteur suit — plus de case « Taille auto » ni d'alignement vertical
+- Marge intérieure en tête de l'onglet Forme, à côté de la marge au bord pour les narrations ; « Appliquer ces marges à toutes les narrations » applique les deux
+- Une narration calée à un bord y reste quand son texte ou sa marge change
+
 ## 1.46.0 — 2026-11-22
 - Bulles de narration : marge au bord de la case, réglable dans l'onglet Forme (2 mm par défaut) ; près d'un bord, la narration s'y cale à cette distance en glissant ou en changeant de taille
 - « Appliquer à toutes les narrations » donne cette marge à toutes celles du projet (celles déjà calées se recalent), avec Annuler

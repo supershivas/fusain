@@ -1315,26 +1315,26 @@ function bubbleText(b) {
       <div class="bl-step"><button data-act="pt-" aria-label="Plus petit">A−</button><input type="number" id="b-pt" min="5" max="200" step="0.5" value="${b.pt}" aria-label="Corps en points"><span>pt</span><button data-act="pt+" aria-label="Plus grand">A+</button></div>
       <div class="row tight" style="margin:2px 0 6px;align-items:center;gap:6px 10px">
         <span class="seg" role="group" aria-label="Alignement horizontal du texte">${[['left', 'align-left', 'À gauche'], ['center', 'align-center', 'Centré'], ['right', 'align-right', 'À droite']].map(([id, ic, n]) => `<button type="button" data-act="talign" data-v="${id}" class="${p.align === id ? 'on' : ''}" aria-label="${n}" aria-pressed="${p.align === id}" title="${n}">${icon(ic)}</button>`).join('')}</span>
-        <span class="seg" role="group" aria-label="Alignement vertical du texte">${[['top', 'layout-align-top', 'En haut'], ['middle', 'layout-align-middle', 'Au milieu'], ['bottom', 'layout-align-bottom', 'En bas']].map(([id, ic, n]) => `<button type="button" data-act="tvalign" data-v="${id}" class="${p.valign === id ? 'on' : ''}" aria-label="${n}" aria-pressed="${p.valign === id}" title="${n}">${icon(ic)}</button>`).join('')}</span></div>
-      ${b.auto && p.valign !== 'middle' ? '<small class="note">L\'alignement vertical se voit quand « Taille auto » est décoché.</small>' : ''}
-      <div class="row" style="gap:0 14px"><label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
-        <label class="check compact"><input type="checkbox" id="b-auto" ${b.auto ? 'checked' : ''}> Taille auto</label></div>`;
+      </div>
+      <label class="check compact"><input type="checkbox" id="b-caps" ${b.caps ? 'checked' : ''}> Majuscules</label>
+      <small class="note" style="display:block">La bulle s'ajuste toujours à son texte ; tire son coin pour changer sa forme (la largeur des lignes).</small>`;
 }
 function bubbleShape(b) {
   const p = props(b);
-  return `<label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
+  return `${slider('b-pad', p, 0, 10, 0.5)}
+      ${b.kind === 'narration' ? `${slider('b-edge', p, 0, 10, 0.5)}<small class="note" style="display:block">Près d'un bord de sa case, la narration s'y cale à cette distance${b.rot ? ' (pas quand elle est tournée)' : ''}.</small>
+      <button class="btn small" data-act="edge-all" style="margin:2px 0 8px">Appliquer ces marges à toutes les narrations</button>` : ''}
+      <label class="field inline"><span>Modèle</span><select id="b-kind">${BUBBLE_KINDS.map(k => `<option value="${k.id}" ${k.id === b.kind ? 'selected' : ''}>${k.name}</option>`).join('')}</select></label>
       <label class="field inline"><span>Contour</span><select id="b-shape">${BUBBLE_SHAPES.filter(x => x.id !== 'libre' || b.path).map(x => `<option value="${x.id}" ${x.id === p.shape ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
       ${p.shape === 'rect' ? slider('b-radius', p, 0, 100, 5) : ''}
       ${p.shape === 'eclair' ? slider('b-spikes', p, 5, 32) + slider('b-depth', p, 8, 65) + slider('b-vround', p, 0, 100, 5) + slider('b-tround', p, 0, 100, 5) : ''}
       ${p.shape === 'cloud' ? slider('b-lobes', p, 0, 40) + slider('b-bulge', p, 0, 100, 5) + `<label class="check compact"><input type="checkbox" id="b-cloudsoft" ${p.cloudSoft ? 'checked' : ''}> Creux arrondis (nuage doux)</label>` : ''}
       ${p.shape === 'ellipse' || p.shape === 'rect' || p.shape === 'cloud' || p.shape === 'eclair' ? `${slider('b-wobble', p, 0, 100)}<button class="btn small" data-act="reseed" style="margin:-2px 0 8px">${icon('dice-3')} Autre tracé</button>` : ''}
-      ${slider('b-pad', p, 0, 10, 0.5)}${b.auto ? '<small class="note">En taille auto, la marge garde toujours le texte à distance du trait.</small>' : ''}${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
+      ${b.sameStroke ? `<small class="note">Trait : ${fmtMm(panelStroke(bubblePanelOf(b, page().panels) || panel()))} mm, comme le cadre de la case.</small>` : slider('b-stroke', p, 0, 2, 0.05)}
       <label class="check compact"><input type="checkbox" id="b-samestroke" ${b.sameStroke ? 'checked' : ''}> Même épaisseur que le cadre des cases</label>
       <label class="check compact"><input type="checkbox" id="b-clip" ${b.clip ? 'checked' : ''}> Rogner à la case (ne sort pas du cadre)</label>
       ${b.clip ? `<label class="check compact"><input type="checkbox" id="b-noframe" ${b.noFrame ? 'checked' : ''}> Pas de trait de case là où la bulle la touche</label>` : ''}
       <button class="btn small" data-act="bubble-lines-all" style="margin:2px 0 8px">Appliquer ces traits à toutes les bulles</button>
-      ${b.kind === 'narration' ? `${slider('b-edge', p, 0, 10, 0.5)}<small class="note" style="display:block">Près d'un bord de sa case, la narration s'y cale à cette distance${b.rot ? ' (pas quand elle est tournée)' : ''}.</small>
-      <button class="btn small" data-act="edge-all" style="margin:2px 0 8px">Appliquer à toutes les narrations</button>` : ''}
       ${slider('b-rot', p, 0, 359)}
       <button class="btn small" data-act="tpl-save" style="margin-top:6px">${icon('device-floppy')} Enregistrer comme modèle…</button>`;
 }
