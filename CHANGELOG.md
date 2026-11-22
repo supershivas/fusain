@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.50.0 — 2026-11-22
+- Info-bulles : un appui long sur un bouton, un outil, une option ou une section affiche son nom, son raccourci et ce qu'il fait (sans déclencher l'action)
+- Navigation page / case (case ouverte, précédente, suivante, retour à la planche) en tête du volet de droite ; le zoom reste en bas du dessin
+
 ## 1.49.0 — 2026-11-22
 - Sélection : miroir horizontal ou vertical, quart de tour, agrandir ou réduire le contenu (sans sélection : toute la case)
 - Couper, copier et coller dans un nouveau calque « Collage », prêt à déplacer (Ctrl+X, C, V et menu Édition) ; remplir la sélection avec la couleur et la trame du pinceau ; agrandir ou rétrécir la sélection de 0,5 mm

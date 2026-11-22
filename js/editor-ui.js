@@ -143,6 +143,7 @@ export function mountEditor(el) {
   $('#dock', root).addEventListener('pointermove', e => { gripMove(e); swipeMove(e); });
   $('#dock', root).addEventListener('pointerup', e => { gripUp(e); swipeUp(e); });
   $('#dock', root).addEventListener('pointercancel', e => { gripUp(e, true); swipeUp(e); });
+  $('#dock', root).addEventListener('click', e => { if (e.target.closest('.dock-nav [data-z]')) { e.stopImmediatePropagation(); onZoombar(e); } });
   $('#dock', root).addEventListener('click', onDock);
   $('#dock', root).addEventListener('click', onDockFoot);
   $('#dock', root).addEventListener('toggle', onSecToggle, true);
@@ -283,7 +284,7 @@ function setDock(mode) {
   d.classList.toggle('closed', !dockOpen); d.classList.toggle('mini', dockMini); d.classList.toggle('gone', !dockOpen && !dockMini);
   $('#dockreopen', root).hidden = dockOpen || dockMini || narrow();
   try { localStorage.setItem(DOCK_KEY, mode); } catch { /* */ }
-  renderToolbar(); renderDock(); setTimeout(resize, 0);
+  renderToolbar(); renderDock(); renderZoombar(); setTimeout(resize, 0);
 }
 const dockMode = () => (dockOpen ? 'full' : dockMini ? 'mini' : 'hidden');
 function toggleDock(open = !dockOpen) { setDock(open ? 'full' : narrow() ? 'hidden' : 'mini'); }
@@ -299,25 +300,33 @@ function onDockFoot(e) {
 
 // ───────────────────────── Zoom et pages ─────────────────────────
 
-function renderZoombar() {
+// Navigation page / case : en tête du volet de droite quand il est visible (complet ou réduit), sinon dans la barre flottante.
+const navInDock = () => !narrow() && (dockOpen || dockMini);
+function navHtml(mini) {
   const n = ed.project.pages.length, panels = page().panels, ci = panels.indexOf(panel());
-  // mode case : on passe d'une case à l'autre, et « Page » ramène à la page entière
-  const nav = ed.focus
-    ? `<button class="btn small" data-z="page" title="Revenir à la page entière (double toucher)" aria-label="Revenir à la page entière">${icon('layout-grid')} Page</button>
-    <button class="icon-btn icon-only" data-z="pcase" aria-label="Case précédente" ${ci <= 0 ? 'disabled' : ''}>${icon('chevron-left')}</button>
-    <span class="zb-label">Case ${ci + 1} / ${panels.length}</span>
-    <button class="icon-btn icon-only" data-z="ncase" aria-label="Case suivante" ${ci >= panels.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`
-    : `<button class="icon-btn icon-only" data-z="focus" title="Ouvrir la case ${ci + 1} seule (double toucher)" aria-label="Ouvrir la case ${ci + 1} seule">${icon('focus-2')}</button>
-    <button class="icon-btn icon-only" data-z="prev" aria-label="Page précédente" ${ed.pageIdx === 0 ? 'disabled' : ''}>${icon('chevron-left')}</button>
-    <span class="zb-label">${ed.pageIdx + 1} / ${n}</span>
-    <button class="icon-btn icon-only" data-z="next" aria-label="Page suivante" ${ed.pageIdx >= n - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`;
+  const up = mini ? 'chevron-up' : 'chevron-left', down = mini ? 'chevron-down' : 'chevron-right';
+  // mode case : on passe d'une case à l'autre, et « Page » ramène à la planche
+  return ed.focus
+    ? `<button class="${mini ? 'icon-btn icon-only' : 'btn small'}" data-z="page" title="Revenir à la planche (double toucher)" aria-label="Revenir à la planche">${icon('layout-grid')}${mini ? '' : ' Page'}</button>
+    <button class="icon-btn icon-only" data-z="pcase" title="Case précédente" aria-label="Case précédente" ${ci <= 0 ? 'disabled' : ''}>${icon(up)}</button>
+    <span class="zb-label" title="Case ouverte / nombre de cases">${mini ? '' : 'Case '}${ci + 1} / ${panels.length}</span>
+    <button class="icon-btn icon-only" data-z="ncase" title="Case suivante" aria-label="Case suivante" ${ci >= panels.length - 1 ? 'disabled' : ''}>${icon(down)}</button>`
+    : `<button class="${mini ? 'icon-btn icon-only' : 'btn small'}" data-z="focus" title="Ouvrir la case ${ci + 1} pour dessiner (double toucher)" aria-label="Ouvrir la case ${ci + 1}">${icon('focus-2')}${mini ? '' : ` Case ${ci + 1}`}</button>
+    <button class="icon-btn icon-only" data-z="prev" title="Page précédente" aria-label="Page précédente" ${ed.pageIdx === 0 ? 'disabled' : ''}>${icon(up)}</button>
+    <span class="zb-label" title="Page affichée / nombre de pages">${mini ? '' : 'Page '}${ed.pageIdx + 1} / ${n}</span>
+    <button class="icon-btn icon-only" data-z="next" title="Page suivante" aria-label="Page suivante" ${ed.pageIdx >= n - 1 ? 'disabled' : ''}>${icon(down)}</button>`;
+}
+function renderZoombar() {
+  const inDock = navInDock();
   $('#zoombar', root).innerHTML = `
     <button class="icon-btn icon-only mob-only" data-act="undo" aria-label="Annuler">${icon('arrow-back-up')}</button>
     <button class="icon-btn icon-only mob-only" data-act="redo" aria-label="Rétablir">${icon('arrow-forward-up')}</button>
-    ${nav}
-    <button class="icon-btn icon-only" data-z="out" aria-label="Zoom arrière">${icon('zoom-out')}</button>
-    <button class="icon-btn icon-only" data-z="in" aria-label="Zoom avant">${icon('zoom-in')}</button>
-    <button class="icon-btn icon-only" data-z="fit" aria-label="Ajuster à l'écran">${icon('zoom-scan')}</button>`;
+    ${inDock ? '' : navHtml(false)}
+    <button class="icon-btn icon-only" data-z="out" title="Zoom arrière" aria-label="Zoom arrière">${icon('zoom-out')}</button>
+    <button class="icon-btn icon-only" data-z="in" title="Zoom avant" aria-label="Zoom avant">${icon('zoom-in')}</button>
+    <button class="icon-btn icon-only" data-z="fit" title="Ajuster à l'écran (0)" aria-label="Ajuster à l'écran">${icon('zoom-scan')}</button>`;
+  const nav = $('#dock .dock-nav', root);
+  if (nav) nav.innerHTML = navHtml(dockMini);
 }
 
 function onZoombar(e) {
@@ -879,8 +888,9 @@ export function renderDock() {
     ${narrow() ? '' : `<button class="icon-btn icon-only" data-act="dock-hide" title="Masquer le panneau" aria-label="Masquer le panneau">${icon('x')}</button>`}</div>`;
   dockTab = ed.focus ? 'layers' : 'page';
   if (!dockOpen && !dockMini) { d.innerHTML = ''; return; }
-  d.innerHTML = dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}`
-    : `<div class="dock-mini" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Pages'}">${dockTab === 'layers' ? miniLayers() : miniPages()}</div>${foot}`;
+  const nav = navInDock() ? `<div class="dock-nav" role="navigation" aria-label="${ed.focus ? 'Cases' : 'Pages'}">${navHtml(dockMini)}</div>` : '';
+  d.innerHTML = nav + (dockOpen ? `<div class="dock-body" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Page'}">${({ layers: () => layersTab() + caseDrawTab(), page: pageTab })[dockTab]()}</div>${foot}`
+    : `<div class="dock-mini" aria-label="${dockTab === 'layers' ? 'Calques de la case' : 'Pages'}">${dockTab === 'layers' ? miniLayers() : miniPages()}</div>${foot}`);
   if (dockOpen) { $('.dock-body', d).scrollTop = prevScroll; paintSwatches(d); }
   if (dockMini || (dockOpen && ed.focus)) paintMiniThumbs(d);
   if (dockMini) placeMiniOpts(d);

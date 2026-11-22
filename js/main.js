@@ -1,4 +1,5 @@
 // Point d'entrée : en-tête, routage (accueil / éditeur), mise à jour automatique, synchronisation.
+import { initTips } from './tips.js';
 import { startUpdateCheck, isBusyDefault } from './app-update.js';
 import { openProject as loadProjectRecord } from './store.js';
 import { onBroadcast } from './store.js';
@@ -120,6 +121,7 @@ sync.registerLibrary({
   set: doc => { applyLibrary(ed, doc); savePrefs(); window.dispatchEvent(new Event('fusain:library')); },
 });
 initMenus();
+initTips();
 startUpdateCheck({
   onUpdated: v => toast(`Mis à jour en v${v}`),
   isBusy: () => isBusyDefault() || tools.busy() || hasPendingSave(),
