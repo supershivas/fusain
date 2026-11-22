@@ -11,7 +11,7 @@ const menus = () => {
   return [
     ['Fichier', [
       ['home', 'Mes dessins', 'home-2'], ['new-project', 'Nouveau projet…', 'file-plus'], ['rename', 'Renommer le projet…', 'pencil'], null,
-      ['export-pdf', 'Exporter en PDF', 'file-type-pdf'], ['export-png', `Exporter la page ${ed.pageIdx + 1} en PNG`, 'photo'], ['export-json', 'Sauvegarde JSON du projet', 'file-export'], null,
+      ['print', 'Imprimer…', 'printer', 'Ctrl+P'], ['export-pdf', 'Exporter en PDF…', 'file-type-pdf'], ['export-png', `Exporter la page ${ed.pageIdx + 1} en PNG`, 'photo'], ['export-json', 'Sauvegarde JSON du projet', 'file-export'], null,
       ['import-decoupage', 'Importer un découpage…', 'file-import'], ['settings', 'Réglages…', 'settings']]],
     ['Édition', [
       ['undo', 'Annuler', 'arrow-back-up', 'Ctrl+Z', !ed.undo.canUndo], ['redo', 'Rétablir', 'arrow-forward-up', 'Ctrl+Maj+Z', !ed.undo.canRedo], null,

@@ -17,7 +17,7 @@ import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } fro
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
 import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
-import { buildPDF, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
+import { buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
 import { stampLibrary } from './library.js';
@@ -2019,14 +2019,15 @@ function exportMenu() {
     title: 'Exporter', narrow: true,
     body: `<div style="display:flex;flex-direction:column;gap:8px">
       <button class="btn primary" data-m="pdf">${icon('file-type-pdf')} PDF · ${ed.project.pages.length} page${ed.project.pages.length > 1 ? 's' : ''}, ${ed.project.dpi} dpi</button>
+      <button class="btn" data-m="print">${icon('printer')} Imprimer</button>
       <button class="btn" data-m="png">${icon('photo')} PNG · page ${ed.pageIdx + 1}</button>
       <button class="btn" data-m="json">${icon('file-export')} Sauvegarde JSON du projet</button></div>
-      <p style="margin-top:12px;color:var(--text-muted);font-size:.82rem">Le PDF contient les cases, leurs cadres et les bulles ; les calques « brouillon » et les notes ne sont pas imprimés.</p>`,
+      <p style="margin-top:12px;color:var(--text-muted);font-size:.82rem">Le PDF contient les cases, leurs cadres et les bulles ; les notes ne sont jamais imprimées, les brouillons seulement si on le demande.</p>`,
   });
   m.el.onclick = e => {
     const b = e.target.closest('[data-m]'); if (!b) return;
     m.close();
-    if (b.dataset.m === 'pdf') exportPdf(); else if (b.dataset.m === 'png') exportPng(); else exportJson();
+    if (b.dataset.m === 'pdf') exportPdf(); else if (b.dataset.m === 'print') printModal('print'); else if (b.dataset.m === 'png') exportPng(); else exportJson();
   };
 }
 
@@ -2053,19 +2054,76 @@ export function projectMenu() {
   };
 }
 
-async function exportPdf() {
-  await saveNow();
-  const close = toast('Création du PDF…', { duration: 600000 });
-  try {
-    const blob = await buildPDF(ed.project, {
-      prepare: pg => loadPage(ed.project, pg),
-      release: pg => { if (pg !== page()) unloadPage(pg); },
-    });
-    download(blob, safeName(ed.project.title) + '.pdf');
-    toast('PDF prêt.');
-  } catch (err) { console.error(err); toast('Le PDF n\'a pas pu être créé.', { type: 'error' }); }
-  close();
+// Imprimer ou exporter en PDF : choix des pages, du rendu (final ou bleu non photo), des brouillons et des bulles.
+// Les derniers choix sont gardés sur l'appareil (`fusain:print`).
+const PRINT_KEY = 'fusain:print';
+const PRINT_DEFAULTS = { pages: 'all', range: '', blue: false, drafts: false, bubbles: true, imposition: 'single' };
+const printPrefs = () => { try { return { ...PRINT_DEFAULTS, ...JSON.parse(localStorage.getItem(PRINT_KEY) || '{}') }; } catch { return { ...PRINT_DEFAULTS }; } };
+const BLUE_HELP = ['Noir et blanc (ou couleur si la planche en a), sans aide visuelle.',
+  'Tout est imprimé en bleu clair : on encre par-dessus, sur papier, et le scanner en noir et blanc ne voit pas le bleu.'];
+
+function printModal(action = 'pdf') {
+  const o = printPrefs(), count = ed.project.pages.length;
+  const seg = (name, items) => `<div class="seg" role="group" data-seg="${name}" style="display:flex">${items.map(([v, label, ic]) =>
+    `<button type="button" data-v="${v}" class="${String(o[name]) === String(v) ? 'on' : ''}" style="flex:1">${ic ? icon(ic) : ''} ${label}</button>`).join('')}</div>`;
+  const m = openModal({
+    title: action === 'print' ? 'Imprimer' : 'Exporter en PDF', narrow: true, noFocus: true,
+    body: `<div class="field"><span>Pages</span>${seg('pages', [['all', `Toutes (${count})`], ['current', `Page ${ed.pageIdx + 1}`], ['range', 'Choisir']])}
+        <input type="text" id="pr-range" placeholder="Ex. : 1-3, 5" value="${esc(o.range)}" autocomplete="off" ${o.pages === 'range' ? '' : 'hidden'}></div>
+      <div class="field"><span>Rendu</span>${seg('blue', [['false', 'Planche finale', 'brush'], ['true', 'Bleu non photo', 'pencil']])}
+        <small id="pr-blue-help">${BLUE_HELP[+o.blue]}</small></div>
+      <div class="field" id="pr-imp" hidden><span>Mise en page</span>
+        <select id="pr-imposition">${IMPOSITIONS.map(x => `<option value="${x.id}" ${o.imposition === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
+        <small id="pr-imp-help">${esc((IMPOSITIONS.find(x => x.id === o.imposition) || IMPOSITIONS[0]).help)}</small></div>
+      <label class="check"><input type="checkbox" id="pr-drafts" ${o.drafts ? 'checked' : ''}> Imprimer les brouillons</label>
+      <label class="check"><input type="checkbox" id="pr-bubbles" ${o.bubbles ? 'checked' : ''}> Bulles et textes</label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <button type="button" class="btn ${action === 'print' ? 'primary' : ''}" data-go="print">${icon('printer')} Imprimer</button>
+        <button type="button" class="btn ${action === 'print' ? '' : 'primary'}" data-go="pdf">${icon('file-type-pdf')} Télécharger le PDF</button></div>`,
+  });
+  const box = m.el, range = $('#pr-range', box);
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-seg] button');
+    if (b) {
+      const name = b.parentElement.dataset.seg;
+      o[name] = name === 'blue' ? b.dataset.v === 'true' : b.dataset.v;
+      $$('button', b.parentElement).forEach(x => x.classList.toggle('on', x === b));
+      if (name === 'pages') { range.hidden = o.pages !== 'range'; if (!range.hidden) range.focus(); }
+      if (name === 'blue') { $('#pr-blue-help', box).textContent = BLUE_HELP[+o.blue]; $('#pr-drafts', box).checked = o.blue; }   // en bleu, on imprime le crayonné
+      return;
+    }
+    const go = e.target.closest('[data-go]');
+    if (!go) return;
+    o.range = range.value.trim();
+    o.drafts = $('#pr-drafts', box).checked; o.bubbles = $('#pr-bubbles', box).checked;
+    o.imposition = $('#pr-imposition', box).value;
+    const pages = o.pages === 'current' ? [ed.pageIdx] : o.pages === 'range' ? parsePageRange(o.range, count) : null;
+    if (o.pages === 'range' && !pages) { toast(`Pages à choisir entre 1 et ${count}, par exemple « 1-3, 5 ».`, { type: 'error' }); range.focus(); return; }
+    try { localStorage.setItem(PRINT_KEY, JSON.stringify(o)); } catch {}
+    m.close();
+    const imp = $('#pr-imp', box).hidden ? 'single' : o.imposition;
+    runPrint(go.dataset.go, { pages: pages || undefined, imposition: imp, drafts: o.drafts, bubbles: o.bubbles, blue: o.blue });
+  });
+  $('#pr-imposition', box).addEventListener('change', e => { $('#pr-imp-help', box).textContent = (IMPOSITIONS.find(x => x.id === e.target.value) || IMPOSITIONS[0]).help; });
 }
+
+async function runPrint(how, opts) {
+  await saveNow();
+  const close = toast(how === 'print' ? 'Préparation de l\'impression…' : 'Création du PDF…', { duration: 600000 });
+  const io = { ...opts, prepare: pg => loadPage(ed.project, pg), release: pg => { if (pg !== page()) unloadPage(pg); } };
+  try {
+    if (how === 'print') await printProject(ed.project, io, close);
+    else {
+      const blob = await buildPDF(ed.project, io);
+      download(blob, safeName(ed.project.title) + (opts.blue ? '-bleu' : '') + '.pdf');
+      close(); toast('PDF prêt.');
+    }
+  } catch (err) {
+    console.error(err); close();
+    toast(how === 'print' ? 'L\'impression n\'a pas pu être préparée.' : 'Le PDF n\'a pas pu être créé.', { type: 'error' });
+  }
+}
+const exportPdf = () => printModal('pdf');
 
 async function exportPng() {
   await ensureFonts(ed.project, [page()]);
@@ -2120,7 +2178,7 @@ const needLayer = () => { if (!deleteLayer()) toast('Une case garde au moins un 
 const COMMANDS = {
   'new-project': () => newProjectModal(), 'import-decoupage': () => decoupageModal(),
   rename: async () => { const name = await promptModal({ title: 'Renommer le projet', label: 'Titre', value: ed.project.title }); if (name) { ed.project.title = name; markChanged(); notify('title'); } },
-  'export-pdf': exportPdf, 'export-png': exportPng, 'export-json': exportJson,
+  'export-pdf': exportPdf, print: () => printModal('print'), 'export-png': exportPng, 'export-json': exportJson,
   undo, redo, 'clear-layer': clearActiveLayer, 'copy-case': copyModal,
   'del-case': () => { if (page().panels.length > 1) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); } else toast('Une page garde au moins une case.'); },
   'del-bubble': () => { const b = bubble(); if (b) deleteBubble(b); else toast('Aucune bulle sélectionnée.'); },
@@ -2171,6 +2229,7 @@ function onKey(e) {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && k === 'p') { e.preventDefault(); printModal('print'); return; }
   if (mod && (k === 'c' || k === 'x') && ed.focus) { e.preventDefault(); if (ed.tool !== 'select') setTool('select'); clipAction(k === 'x'); return; }
   if (mod && k === 'v' && hasClip()) { e.preventDefault(); pasteAction(); return; }
   if (mod && k === 'a') { e.preventDefault(); if (ed.tool !== 'select') setTool('select'); selectAll(panel()); return; }

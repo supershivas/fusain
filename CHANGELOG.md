@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.51.0 — 2026-11-22
+- Imprimer directement depuis l'app (AirPrint sur iPad), menu Fichier ou Ctrl+P
+- Choix à l'impression et à l'export PDF : toutes les pages, la page affichée ou une liste (« 1-3, 5 »), brouillons et bulles inclus ou non
+- Rendu « bleu non photo » : le crayonné imprimé en bleu clair pour l'encrer à la main sur papier
+
 ## 1.50.2 — 2026-11-22
 - Corrige le bouton « Fusionner » sur les cases : il répond au doigt même quand le stylet est en usage, et l'étiquette sous le rond se touche aussi (de même pour les « + », l'aperçu d'ajout et les gouttières)
 

@@ -1,6 +1,6 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-22 (v1.50.2).
+Dernière mise à jour : 2026-11-22 (v1.51.0).
 
 ## Fait (v1.29.0 → v1.50.2, 22 novembre 2026)
 
@@ -62,6 +62,10 @@ Dernière mise à jour : 2026-11-22 (v1.50.2).
 ### Labo
 - [x] Groupes Dessin, Couleur, Planche (v1.40) et Calques, sujets Curseurs, Taille des bulles, Narration au bord (v1.48)
 
+### Impression
+- [x] Imprimer directement (AirPrint), choix des pages, brouillons et bulles inclus ou non (v1.51)
+- [x] Rendu bleu non photo pour encrer sur papier (v1.51)
+
 ## Reste à faire
 
 ### À vérifier sur iPad
@@ -72,6 +76,16 @@ Dernière mise à jour : 2026-11-22 (v1.50.2).
 
 ### À faire par toi
 - [ ] Supabase : exécuter le bloc `fusain_library` de `supabase/fusain.sql` (bibliothèque partagée ; les Réglages le signalent tant qu'il manque)
+
+### Impression (suite)
+- [ ] Mise en page : planches en regard, livret à plier, 4 pages par feuille (en cours)
+- [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF
+- [ ] Noir et blanc / niveaux de gris / couleur au choix, alerte sur les trames trop fines
+- [ ] PDF pour imprimeur : fond perdu 3 mm, TrimBox / BleedBox, traits de coupe
+- [ ] Couleur CMJN / PDF/X (album couleur chez un imprimeur)
+
+### À vérifier sur iPad (impression)
+- [ ] Imprimer par AirPrint depuis Safari et depuis l'app installée : format de page respecté, une page par feuille
 
 ### Améliorations possibles
 - [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet

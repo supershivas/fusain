@@ -286,7 +286,16 @@ input[type=range]:disabled { opacity: .45; }
   .brand-name { font-size: 1.05rem; }
 }
 @media (hover: none) { .stage .zoombar { bottom: 8px; } }
-@media print { body { display: none; } }
+#print-sheets { display: none; }
+@media print {
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  body > *:not(#print-sheets) { display: none !important; }
+  #print-sheets { display: block; }
+  .print-sheet { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+  .print-sheet:last-child { break-after: auto; page-break-after: auto; }
+  .print-sheet img, .print-sheet span { position: absolute; }
+  .print-sheet span { font: 9pt/1 sans-serif; color: #000; }
+}
 
 .font-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card-bg); margin-bottom: 6px; font-size: 1.15rem; text-align: left; }
 .font-opt span { font-size: .95rem; color: var(--text-secondary); }
