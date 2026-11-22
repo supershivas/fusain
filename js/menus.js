@@ -15,17 +15,18 @@ const menus = () => {
       ['import-decoupage', 'Importer un découpage…', 'file-import'], ['settings', 'Réglages…', 'settings']]],
     ['Édition', [
       ['undo', 'Annuler', 'arrow-back-up', 'Ctrl+Z', !ed.undo.canUndo], ['redo', 'Rétablir', 'arrow-forward-up', 'Ctrl+Maj+Z', !ed.undo.canRedo], null,
+      ['sel-cut', 'Couper', 'scissors', 'Ctrl+X'], ['sel-copy', 'Copier', 'clipboard-copy', 'Ctrl+C'], ['sel-paste', 'Coller dans un nouveau calque', 'clipboard-check', 'Ctrl+V'], null, ['sel-all', 'Tout sélectionner', 'select-all', 'Ctrl+A'], ['sel-none', 'Désélectionner', 'square-off', '', !ed.sel], ['move-case', 'Déplacer le contenu de la case', 'arrows-move'], null,
       ['clear-layer', 'Vider le calque', 'eraser'], ['copy-case', 'Copier la case vers…', 'copy'], null,
       ['del-case', 'Supprimer la case', 'trash', '', pg.panels.length < 2], ['del-bubble', 'Supprimer la bulle', 'message-circle-off', 'Suppr', !bubble()]]],
     ['Outils', [
       ...TOOLS.map(t => ['tool:' + t.id, t.label.replace(/ \(.\)$/, ''), t.icon, t.key.toUpperCase()]), null,
       ['lib-brushes', 'Bibliothèque de pinceaux…', 'brush'], ['lib-tramas', 'Bibliothèque de trames…', 'texture'], ['lib-bubbles', 'Modèles de bulles…', 'message-circle']]],
     ['Image', [
-      ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
+      ['focus', ed.focus ? 'Revenir à la page' : `Ouvrir la case ${idx + 1} seule`, ed.focus ? 'layout-grid' : 'focus-2', 'Entrée'], ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['rot-view', 'Tourner la page de 90°', 'rotate-clockwise'], ['rot-reset', 'Remettre la page droite', 'rotate-2'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
       ['tool-layout', 'Taille des cases', 'layout-board-split', 'L'], ['relayout', 'Disposition des cases…', 'layout-grid'], ['frame', `Trait du cadre (case ${idx + 1})`, 'border-style'], ['dither', 'Image tramée…', 'photo']]],
     ['Calque', [
-      ['add-ink', 'Nouveau calque d\'encre', 'plus'], ['add-tram', 'Nouveau calque de trame', 'plus'], ['add-draft', 'Nouveau brouillon', 'plus'], null,
-      ['dup-layer', 'Dupliquer', 'copy'], ['merge-layer', 'Fusionner vers le bas', 'stack-pop'], ['del-layer', 'Supprimer', 'trash', '', panel().layers.length < 2], null,
+      ['add-ink', 'Nouveau calque', 'plus'], ['add-draft', 'Nouveau brouillon', 'plus'], null,
+      ['dup-layer', 'Dupliquer', 'copy'], ['dup-bubble', 'Dupliquer la bulle', 'message-circle'], ['merge-layer', 'Fusionner vers le bas', 'stack-pop'], ['del-layer', 'Supprimer', 'trash', '', panel().layers.length < 2], null,
       ['lock-layer', layer.locked ? 'Déverrouiller' : 'Verrouiller', layer.locked ? 'lock-open' : 'lock'], ['solo-layer', ed.solo === layer.id ? 'Afficher tous les calques' : 'Afficher seul', 'eye']]],
     ['Page', [
       ['add-page', 'Nouvelle page…', 'file-plus'], ['dup-page', 'Dupliquer', 'copy'], ['del-page', 'Supprimer', 'trash', '', !many], null,
@@ -33,7 +34,7 @@ const menus = () => {
       ['page-prev', 'Page précédente', 'chevron-left', '', ed.pageIdx === 0], ['page-next', 'Page suivante', 'chevron-right', '', ed.pageIdx >= ed.project.pages.length - 1]]],
     ['Affichage', [
       ...(canFullscreen() ? [['fullscreen', isFullscreen() ? 'Quitter le plein écran' : 'Plein écran', 'arrows-maximize']] : []),
-      ['dock', 'Panneau de droite', 'layout-sidebar-right'], ['notes', ed.showNotes ? 'Masquer les notes' : 'Afficher les notes', 'notes'],
+      ['dock', 'Panneau de droite : complet, réduit, masqué', 'layout-sidebar-right'], ['notes', ed.showNotes ? 'Masquer les notes' : 'Afficher les notes', 'notes'],
       ['hide-bubbles', pg.bubblesHidden ? 'Afficher les bulles' : 'Masquer les bulles', pg.bubblesHidden ? 'eye' : 'eye-off']]],
   ];
 };

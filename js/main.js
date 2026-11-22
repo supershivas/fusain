@@ -1,9 +1,11 @@
 // Point d'entrée : en-tête, routage (accueil / éditeur), mise à jour automatique, synchronisation.
+import { initTips } from './tips.js';
 import { startUpdateCheck, isBusyDefault } from './app-update.js';
 import { openProject as loadProjectRecord } from './store.js';
 import { onBroadcast } from './store.js';
 import { ed, openInEditor, closeEditor, hasPendingSave, subscribe, saveNow } from './editor.js';
-import { mountEditor, unmountEditor, projectMenu, loadPrefs } from './editor-ui.js';
+import { mountEditor, unmountEditor, projectMenu, loadPrefs, savePrefs } from './editor-ui.js';
+import { stampLibrary, libraryDoc, mergeLibrary, sameLibrary, applyLibrary } from './library.js';
 import { renderHome, setOpenProject } from './home.js';
 import { openSettings, syncDotClass } from './settings.js';
 import * as sync from './sync.js';
@@ -113,7 +115,13 @@ window.addEventListener('pagehide', () => saveNow());
 
 installGuards();
 loadPrefs();
+stampLibrary(ed);
+sync.registerLibrary({
+  get: () => libraryDoc(ed), merge: mergeLibrary, same: sameLibrary,
+  set: doc => { applyLibrary(ed, doc); savePrefs(); window.dispatchEvent(new Event('fusain:library')); },
+});
 initMenus();
+initTips();
 startUpdateCheck({
   onUpdated: v => toast(`Mis à jour en v${v}`),
   isBusy: () => isBusyDefault() || tools.busy() || hasPendingSave(),

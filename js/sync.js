@@ -106,6 +106,29 @@ async function check(res, what) {
   throw new Error(what + ' : ' + res.status + ' ' + t.slice(0, 160));
 }
 
+// ───────────────────────── Bibliothèque personnelle (table fusain_library) ─────────────────────────
+// Le fournisseur (main.js) donne la bibliothèque locale et sait installer la version fusionnée.
+
+let library = null, libraryMissing = false;
+export const registerLibrary = provider => { library = provider; };
+export const libraryTableMissing = () => libraryMissing;
+
+async function syncLibrary() {
+  if (!library) return;
+  const res = await api('/rest/v1/fusain_library?select=data,updated_at');
+  // table absente (supabase/fusain.sql pas encore exécuté) : la bibliothèque reste sur l'appareil, sans erreur
+  if (res.status === 404 || res.status === 400) { libraryMissing = true; return; }
+  const rows = await (await check(res, 'Lecture de la bibliothèque')).json();
+  libraryMissing = false;
+  const local = library.get(), remote = rows[0] ? rows[0].data : null, merged = library.merge(local, remote);
+  if (!library.same(merged, local)) library.set(merged);
+  if (remote && library.same(merged, remote)) return;
+  await check(await api('/rest/v1/fusain_library', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ owner: userId(), data: merged, updated_at: new Date().toISOString() }),
+  }), 'Envoi de la bibliothèque');
+}
+
 // ───────────────────────── Projets distants ─────────────────────────
 
 const objPath = (pid, lid) => `${userId()}/${pid}/${lid}.png`;
@@ -207,6 +230,7 @@ export async function syncAll() {
     const locals = await listRecords(), localIds = new Set(locals.map(r => r.id));
     for (const row of rows) if (!localIds.has(row.id)) await pull(null, row);
     for (const rec of locals) await syncOne(rec, byId.get(rec.id));
+    await syncLibrary();
     setStatus('idle');
   } catch (e) {
     setStatus(navigator.onLine ? 'error' : 'offline', e.message || String(e));

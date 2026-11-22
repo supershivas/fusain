@@ -81,11 +81,13 @@ export const DRAFT_COLORS = {
 };
 
 // opacity : 0 à 100 ; locked : on ne peut plus y dessiner ; color : couleur d'un brouillon.
-// kind : 'ink' (encrage), 'tram' (trames) ou 'draft' (brouillon). Les outils ne dessinent que dans les calques de leur sorte.
+// kind : 'ink' (encrage), 'tram' (trames), 'draft' (brouillon) ou 'color' (couleur). Les outils ne dessinent que dans les calques de leur sorte.
+// Encre, trame et brouillon : un octet par pixel (0 transparent, 1 encre, 2 blanc). Couleur : RVBA, 4 octets par pixel,
+// non prémultiplié ; un calque de couleur couvre l'étendue de sa case, comme les autres.
 export function newLayer(name, w, h, opts = {}) {
   const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
   return {
-    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : undefined,
+    id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : kind === 'color' ? undefined : opts.color,
     w, h, data: null, loaded: true, dirty: false, rev: null,
   };
 }
@@ -93,22 +95,23 @@ export function newLayer(name, w, h, opts = {}) {
 // Anciens projets : le type se déduit du brouillon ou du nom du calque.
 const kindOf = l => l.kind ?? (l.draft ? 'draft' : /tram/i.test(l.name || '') ? 'tram' : 'ink');
 
+export const bppOf = l => (l && (l.kind === 'color' || l.rgba) ? 4 : 1);
 export function ensureData(layer) {
-  if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h);
+  if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h * bppOf(layer));
   return layer.data;
 }
 
 export function newPanel(rect) {
+  // Calques tous pareils : on dessine dans le calque actif. Le dessin sert de référence au remplissage.
   const layers = [
     newLayer('Brouillon', rect.w, rect.h, { draft: true }),
-    newLayer('Trames', rect.w, rect.h, { kind: 'tram' }),
-    newLayer('Encrage', rect.w, rect.h),
+    Object.assign(newLayer('Dessin', rect.w, rect.h), { reference: true }),
   ];
   // La case montre le rectangle x,y,w,h ; les calques couvrent l'étendue ex,ey,ew,eh (au moins ce rectangle).
   // Réduire une case ne coupe donc jamais le dessin : il reste en réserve hors du cadre.
   return {
     id: uid(), x: rect.x, y: rect.y, w: rect.w, h: rect.h, ex: rect.x, ey: rect.y, ew: rect.w, eh: rect.h,
-    layers, active: layers[2].id, mask: null,
+    layers, active: layers[1].id, mask: null,
     note: { plan: '', description: '' },
   };
 }
@@ -133,18 +136,18 @@ export function newProject({ title, format, dpi, layoutId }) {
 export function newBubble(kind, x, y) {
   const textual = kind === 'texte';
   return {
-    id: uid(), kind, x, y, w: 500, h: 300, text: '', pt: 9, caps: !textual, auto: true,
-    tail: kind === 'parole' || kind === 'pensee' ? { x: x + 120, y: y + 460 } : null,
+    id: uid(), kind, x, y, w: 500, h: 300, text: '', pt: 9, caps: false, auto: true, font: 'architects',
+    tail: kind === 'parole' || kind === 'pensee' || kind === 'cri' ? { x: x + 120, y: y + 460 } : null,
   };
 }
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rev: l.rev });
+  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, blend: l.blend && l.blend !== 'normal' ? l.blend : undefined, rev: l.rev });
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
-    margin: project.margin, gutter: project.gutter, tramas: project.tramas,
+    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, palettes: project.palettes, paletteId: project.paletteId,
     pages: project.pages.map(p => ({
       id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
       panels: p.panels.map(c => ({
@@ -157,7 +160,7 @@ export function projectMeta(project) {
 
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color,
+  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal',
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,

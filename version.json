@@ -1,8 +1,7 @@
 {
-  "version": "1.10.0",
-  "date": "2026-10-28",
+  "version": "1.50.2",
+  "date": "2026-11-22",
   "changes": [
-    "Double tape du bout du stylet : bascule plume et gomme (aussi le bouton du flanc ; le bout gomme du stylet gomme)",
-    "Rejet de la paume assoupli : seul le déplacement ou le trait d'un doigt isolé près du stylet est ignoré, zoom et annuler restent libres"
+    "Corrige le bouton « Fusionner » sur les cases : il répond au doigt même quand le stylet est en usage, et l'étiquette sous le rond se touche aussi (de même pour les « + », l'aperçu d'ajout et les gouttières)"
   ]
 }

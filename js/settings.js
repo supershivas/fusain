@@ -81,7 +81,7 @@ export async function openSettings({ onImported } = {}) {
   pad.addEventListener('pointerup', () => { $('#s-pad-bar', box).style.width = '0'; });
   const renderStatus = () => {
     const st = sync.getStatus();
-    $('#s-status', box).innerHTML = `${st.status === 'off' ? '' : `<span class="sync-dot ${syncDotClass(st)}" style="position:static;display:inline-block;border-color:var(--card-bg)"></span>`} ${esc(STATUS_TEXT[st.status] || '')}${st.lastError ? `<br><small style="color:var(--accent)">${esc(st.lastError)}</small>` : ''}`;
+    $('#s-status', box).innerHTML = `${st.status === 'off' ? '' : `<span class="sync-dot ${syncDotClass(st)}" style="position:static;display:inline-block;border-color:var(--card-bg)"></span>`} ${esc(STATUS_TEXT[st.status] || '')}${st.lastError ? `<br><small style="color:var(--accent)">${esc(st.lastError)}</small>` : ''}${sync.libraryTableMissing() ? '<br><small style="color:var(--text-muted)">Bibliothèque de pinceaux : la table <code>fusain_library</code> manque, exécute <code>supabase/fusain.sql</code> dans Supabase pour la partager.</small>' : ''}`;
     renderAuth();
   };
   function renderAuth() {

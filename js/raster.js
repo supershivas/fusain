@@ -1,7 +1,7 @@
 // Moteur raster 1-bit : annuler par différences de tuiles, pinceaux, formes, remplissage, composition.
 // Repris de Pixel Studio (pointeur, remplissage, tramage par Bayer), refait pour de grands canevas :
 // un calque est un tampon d'octets, et l'historique ne garde que les tuiles modifiées.
-import { ensureData, DRAFT_COLORS } from './model.js';
+import { ensureData, DRAFT_COLORS, bppOf } from './model.js';
 import { BAYER8 } from './dither.js';
 
 export const TILE = 64;
@@ -12,7 +12,7 @@ export const INK = 1, PAPER = 2;
 export class UndoStack {
   constructor(limitBytes = 96 * 1024 * 1024) {
     this.stack = []; this.ptr = 0; this.bytes = 0; this.limit = limitBytes;
-    this.cur = null; this.onApply = () => {}; this.onChange = () => {};
+    this.cur = null; this.onApply = () => {}; this.onChange = () => {}; this.onSelect = () => {};
   }
   get canUndo() { return this.ptr > 0; }
   get canRedo() { return this.ptr < this.stack.length; }
@@ -27,37 +27,38 @@ export class UndoStack {
     if (!this.cur) return;
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(layer.w, x1); y1 = Math.min(layer.h, y1);
     if (x1 <= x0 || y1 <= y0) return;
-    const data = ensureData(layer);
+    const data = ensureData(layer), b = bppOf(layer), W = layer.w * b;
     layer.dirty = true;
     for (let ty = (y0 / TILE) | 0; ty <= ((y1 - 1) / TILE) | 0; ty++) {
       for (let tx = (x0 / TILE) | 0; tx <= ((x1 - 1) / TILE) | 0; tx++) {
         const key = layer.id + ':' + tx + ',' + ty;
         if (this.cur.tiles.has(key)) continue;
         const px = tx * TILE, py = ty * TILE, tw = Math.min(TILE, layer.w - px), th = Math.min(TILE, layer.h - py);
-        const before = new Uint8Array(tw * th);
-        for (let y = 0; y < th; y++) before.set(data.subarray((py + y) * layer.w + px, (py + y) * layer.w + px + tw), y * tw);
+        const before = new Uint8Array(tw * th * b);
+        for (let y = 0; y < th; y++) before.set(data.subarray((py + y) * W + px * b, (py + y) * W + (px + tw) * b), y * tw * b);
         this.cur.tiles.set(key, { layer, px, py, tw, th, before });
       }
     }
   }
 
   // Termine l'action : ne garde que les tuiles réellement modifiées.
-  commit() {
+  // sel = { before, after } : la sélection fait partie de la même entrée (annuler / rétablir la remettent avec les pixels).
+  commit(sel) {
     const cur = this.cur; this.cur = null;
     if (!cur) return null;
     const ops = [];
     for (const t of cur.tiles.values()) {
-      const data = t.layer.data, after = new Uint8Array(t.tw * t.th);
+      const data = t.layer.data, b = bppOf(t.layer), W = t.layer.w * b, rw = t.tw * b, after = new Uint8Array(rw * t.th);
       let same = true;
       for (let y = 0; y < t.th; y++) {
-        const row = data.subarray((t.py + y) * t.layer.w + t.px, (t.py + y) * t.layer.w + t.px + t.tw);
-        after.set(row, y * t.tw);
-        if (same) for (let x = 0; x < t.tw; x++) if (row[x] !== t.before[y * t.tw + x]) { same = false; break; }
+        const row = data.subarray((t.py + y) * W + t.px * b, (t.py + y) * W + t.px * b + rw);
+        after.set(row, y * rw);
+        if (same) for (let x = 0; x < rw; x++) if (row[x] !== t.before[y * rw + x]) { same = false; break; }
       }
       if (!same) ops.push({ ...t, after });
     }
     if (!ops.length) return null;
-    return this._push({ label: cur.label, ops, bytes: ops.reduce((s, o) => s + o.before.length * 2, 0) });
+    return this._push({ label: cur.label, ops, sel, bytes: ops.reduce((s, o) => s + o.before.length * 2, 0) });
   }
 
   // Annule l'action en cours (geste interrompu) : remet les tuiles d'origine sans rien empiler.
@@ -80,8 +81,8 @@ export class UndoStack {
   }
 
   _write(t, src) {
-    const data = ensureData(t.layer);
-    for (let y = 0; y < t.th; y++) data.set(src.subarray(y * t.tw, (y + 1) * t.tw), (t.py + y) * t.layer.w + t.px);
+    const data = ensureData(t.layer), b = bppOf(t.layer), rw = t.tw * b;
+    for (let y = 0; y < t.th; y++) data.set(src.subarray(y * rw, (y + 1) * rw), ((t.py + y) * t.layer.w + t.px) * b);
     t.layer.dirty = true;
     this.onApply(t.layer, { x: t.px, y: t.py, w: t.tw, h: t.th });
   }
@@ -90,6 +91,7 @@ export class UndoStack {
     if (!this.canUndo) return null;
     const e = this.stack[--this.ptr];
     if (e.ops) for (const t of e.ops) this._write(t, t.before); else e.undo();
+    if (e.sel) this.onSelect(e.sel.before);
     this.onChange();
     return e;
   }
@@ -97,6 +99,7 @@ export class UndoStack {
     if (!this.canRedo) return null;
     const e = this.stack[this.ptr++];
     if (e.ops) for (const t of e.ops) this._write(t, t.after); else e.redo();
+    if (e.sel) this.onSelect(e.sel.after);
     this.onChange();
     return e;
   }
@@ -134,12 +137,51 @@ function grow(ctx, x0, y0, x1, y1) {
   if (x1 > d.x1) d.x1 = x1; if (y1 > d.y1) d.y1 = y1;
 }
 
+// Opacité d'un trait (paint.alpha < 1) : seuil de Bayer 8 × 8 accroché à la page, donc un gris tramé régulier
+// qui ne fonce pas quand les tampons se recouvrent ; le même rendu que l'opacité d'un calque à l'export.
+const bayerKeep = (alpha, px, py) => alpha * 64 > BAYER8[py & 7][px & 7];
 function put(ctx, data, x, y) {
   if (!writable(ctx, x, y)) return;
+  const a = ctx.paint.alpha;
+  if (ctx.alphaLock) {   // verrouillage alpha : seuls les pixels déjà peints changent, et la gomme ne fait rien
+    if (ctx.paint.v === 0) return;
+    const k = y * ctx.layer.w + x;
+    if (ctx.rgba ? !data[k * 4 + 3] : !data[k]) return;
+  }
+  if (ctx.rgba) { putRGBA(ctx, data, x, y, a ?? 1); return; }
+  if (a !== undefined && a < 1 && !bayerKeep(a, x + ctx.ox, y + ctx.oy)) return;
   const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
   if (v < 0) return;
   data[y * ctx.layer.w + x] = v;
 }
+
+// Calque de couleur : vraie opacité. Un pixel n'est mélangé qu'une fois par trait (ctx.seen), pour qu'un trait
+// à 40 % reste à 40 % même là où ses tampons se recouvrent.
+function putRGBA(ctx, data, x, y, a) {
+  const k = y * ctx.layer.w + x;
+  if (ctx.seen) { if (ctx.seen[k]) return; }
+  const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
+  if (v < 0) return;
+  if (ctx.seen) ctx.seen[k] = 1;
+  const i = k * 4, da = data[i + 3] / 255;
+  if (v === 0) {   // gomme
+    const na = da * (1 - a);
+    if (na <= 0.002) { data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0; } else data[i + 3] = Math.round(na * 255);
+    return;
+  }
+  const c = v === INK ? ctx.paint.rgb || [0, 0, 0] : [255, 255, 255];
+  if (ctx.alphaLock) {   // garde la transparence du pixel, ne change que sa couleur
+    for (let j = 0; j < 3; j++) data[i + j] = Math.round(c[j] * a + data[i + j] * (1 - a));
+    return;
+  }
+  if (a >= 1 || da === 0) { data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = Math.max(Math.round(a * 255), a >= 1 ? 255 : 0); return; }
+  const oa = a + da * (1 - a);
+  data[i] = Math.round((c[0] * a + data[i] * da * (1 - a)) / oa);
+  data[i + 1] = Math.round((c[1] * a + data[i + 1] * da * (1 - a)) / oa);
+  data[i + 2] = Math.round((c[2] * a + data[i + 2] * da * (1 - a)) / oa);
+  data[i + 3] = Math.round(oa * 255);
+}
+export const hexToRgb = h => (/^#[0-9a-f]{6}$/i.test(h || '') ? [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)) : [0, 0, 0]);
 
 // ───────────────────────── Pinceau rond ─────────────────────────
 
@@ -186,8 +228,8 @@ export const BRUSH_DEFAULTS = {
   angle: 0,            // degrés
   follow: false,       // l'axe long reste perpendiculaire au geste
   sizeMm: 0.5,
-  press: 0,            // 0 à 1 : effet de la pression du stylet sur la taille
-  pressMin: 0.25,      // taille relative à pression nulle (quand press = 1)
+  press: 1,            // 0 à 1 : effet de la pression du stylet sur la taille (par défaut 100 %)
+  pressMin: 0.1,       // taille relative à pression nulle (par défaut 10 %)
   speed: 0,            // 0 à 1 : le trait s'affine quand le geste va vite
   start: 0,            // départ effilé, en diamètres
   grain: 1,            // couverture 0 à 1 (1 = plein)
@@ -201,24 +243,24 @@ export const BRUSH_DEFAULTS = {
 export const BRUSH_GROUPS = ['Encrage', 'Esquisse', 'Pinceaux', 'Calligraphie', 'Texture'];
 const B = (id, name, group, o) => ({ id, name, group, ...o });
 export const BUILTIN_BRUSHES = [
-  B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5, press: 0.6, pressMin: 0.3 }),
-  B('technique', 'Stylo technique', 'Encrage', { sizeMm: 0.3, smooth: 0.25 }),
-  B('plume', 'Plume d\'encrage', 'Encrage', { sizeMm: 0.5, press: 0.6, pressMin: 0.35, speed: 0.25, smooth: 0.15 }),
-  B('plumeg', 'Plume G (manga)', 'Encrage', { sizeMm: 0.8, press: 0.9, pressMin: 0.1, speed: 0.6, start: 3, smooth: 0.35 }),
-  B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, press: 1, pressMin: 0.08, speed: 0.8, start: 4, smooth: 0.4 }),
-  B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, press: 0.4, pressMin: 0.5, spacing: 0.18 }),
-  B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2, press: 0.5, pressMin: 0.4 }),
+  B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5 }),
+  B('technique', 'Stylo technique', 'Encrage', { sizeMm: 0.3, press: 0, smooth: 0.25 }),
+  B('plume', 'Plume d\'encrage', 'Encrage', { sizeMm: 0.5, speed: 0.25, smooth: 0.15 }),
+  B('plumeg', 'Plume G (manga)', 'Encrage', { sizeMm: 0.8, speed: 0.6, start: 3, smooth: 0.35 }),
+  B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, speed: 0.8, start: 4, smooth: 0.4 }),
+  B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, spacing: 0.18 }),
+  B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2 }),
   B('mine', 'Mine à plat', 'Esquisse', { sizeMm: 3.5, shape: 'rect', ratio: 0.25, angle: 20, grain: 0.55, grainType: 'paper' }),
-  B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, press: 1, pressMin: 0.1, speed: 0.5, start: 2.5, smooth: 0.3 }),
+  B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, speed: 0.5, start: 2.5, smooth: 0.3 }),
   B('plat', 'Pinceau plat', 'Pinceaux', { sizeMm: 4, shape: 'rect', ratio: 0.35, follow: true }),
-  B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, press: 0.5, pressMin: 0.5, smooth: 0.2 }),
-  B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square', press: 0.3, pressMin: 0.6 }),
-  B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40, press: 0.4, pressMin: 0.5 }),
+  B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, smooth: 0.2 }),
+  B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square' }),
+  B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40 }),
   B('plate2', 'Plume plate suivie', 'Calligraphie', { sizeMm: 2.5, shape: 'nib', ratio: 0.2, follow: true }),
-  B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15, press: 0.6, pressMin: 0.4 }),
-  B('craie', 'Craie', 'Texture', { sizeMm: 6, grainType: 'paper', grain: 0.5, grainScale: 2, scatter: 0.05, press: 0.5, pressMin: 0.5 }),
-  B('spray', 'Aérographe', 'Texture', { sizeMm: 8, grainType: 'spray', grain: 0.5, press: 0.7, pressMin: 0.3 }),
-  B('point', 'Pointillé', 'Texture', { sizeMm: 1.2, spacing: 2.4 }),
+  B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15 }),
+  B('craie', 'Craie', 'Texture', { sizeMm: 6, grainType: 'paper', grain: 0.5, grainScale: 2, scatter: 0.05 }),
+  B('spray', 'Aérographe', 'Texture', { sizeMm: 8, grainType: 'spray', grain: 0.5 }),
+  B('point', 'Pointillé', 'Texture', { sizeMm: 1.2, press: 0, spacing: 2.4 }),
 ];
 export const brushSpec = (id, custom = []) => ({ ...BRUSH_DEFAULTS, ...(BUILTIN_BRUSHES.concat(custom).find(b => b.id === id) || BUILTIN_BRUSHES[0]) });
 
@@ -312,9 +354,11 @@ export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
 }
 
 // Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.
-export function previewBrush(canvas, spec, sizePx) {
+export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scale = 1, color = null) {
   const w = canvas.width, h = canvas.height, layer = { id: 'preview', w, h, data: new Uint8Array(w * h), dirty: false };
-  const ctx = { layer, undo: { touch() {} }, paint: { v: INK }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
+  // une couleur (ni noir ni blanc) se peint en RVBA : vraie transparence, pas de gris tramé
+  const trueAlpha = !!color && /^#[0-9a-f]{6}$/i.test(color) && !/^#(000000|ffffff)$/i.test(color);
+  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha: trueAlpha ? 1 : alpha, trame, scale }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
   let last = null;
   for (let i = 0; i <= 60; i++) {
     const t = i / 60, x = 10 + t * (w - 20), y = h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p = Math.pow(Math.sin(Math.PI * t), 0.6);
@@ -327,7 +371,10 @@ export function previewBrush(canvas, spec, sizePx) {
     last = { x, y, d };
   }
   const cx = canvas.getContext('2d'), img = cx.createImageData(w, h), u = new Uint32Array(img.data.buffer);
-  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] ? 0xFF1A1714 : 0xFFFFFFFF;
+  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16)) : null;
+  const mix = v => Math.round(v * (trueAlpha ? alpha : 1) + 255 * (trueAlpha ? 1 - alpha : 0));
+  const ink = c ? (0xFF000000 | (mix(c[2]) << 16) | (mix(c[1]) << 8) | mix(c[0])) >>> 0 : 0xFF1A1714;
+  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] === 1 ? ink : 0xFFFFFFFF;
   cx.putImageData(img, 0, 0);
 }
 
@@ -375,10 +422,13 @@ export function drawEllipse(ctx, x0, y0, x1, y1, d, filled) {
 
 // Région connexe du « même type » que le point de départ : encre (1) ou non-encre (0 ou 2).
 // src : valeurs composées de la case (0/1/2), w × h. Renvoie { mask, x0, y0, x1, y1 } ou null.
-export function floodRegion(src, w, h, sx, sy) {
+// gap : largeur en pixels des trous d'un contour qu'on accepte de traverser (0 = contour fermé exigé).
+export function floodRegion(src, w, h, sx, sy, gap = 0) {
   if (sx < 0 || sy < 0 || sx >= w || sy >= h) return null;
   const isInk = v => v === INK ? 1 : 0;
   const target = isInk(src[sy * w + sx]);
+  const r = Math.floor(gap / 2);
+  if (r > 0 && !target) return floodClosed(src, w, h, sx, sy, r);
   const mask = new Uint8Array(w * h);
   const stack = [sx, sy];
   let x0 = sx, x1 = sx, y0 = sy, y1 = sy;
@@ -402,6 +452,56 @@ export function floodRegion(src, w, h, sx, sy) {
   return { mask, x0, y0, x1, y1 };
 }
 
+// Dilatation carrée de rayon r d'un masque 0/1 (fenêtre glissante, une passe par axe).
+function dilate(m, w, h, r) {
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let n = 0; const o = y * w;
+    for (let x = 0; x < Math.min(r, w); x++) n += m[o + x];
+    for (let x = 0; x < w; x++) {
+      if (x + r < w) n += m[o + x + r];
+      if (x - r - 1 >= 0) n -= m[o + x - r - 1];
+      tmp[o + x] = n > 0 ? 1 : 0;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let y = 0; y < Math.min(r, h); y++) n += tmp[y * w + x];
+    for (let y = 0; y < h; y++) {
+      if (y + r < h) n += tmp[(y + r) * w + x];
+      if (y - r - 1 >= 0) n -= tmp[(y - r - 1) * w + x];
+      out[y * w + x] = n > 0 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+// Remplissage qui traverse les trous : l'encre est épaissie de r pour boucher les contours ouverts, on remplit la zone libre
+// atteinte, puis on la regonfle de r (sans entrer dans l'encre) pour qu'elle rejoigne les traits.
+function floodClosed(src, w, h, sx, sy, r) {
+  const ink = new Uint8Array(w * h);
+  for (let i = 0; i < ink.length; i++) ink[i] = src[i] === INK ? 1 : 0;
+  const wall = dilate(ink, w, h, r);
+  let seed = sy * w + sx;
+  if (wall[seed]) {   // le clic est tout près d'un trait : on part du point libre le plus proche
+    let best = -1, bd = Infinity;
+    for (let y = Math.max(0, sy - 3 * r); y <= Math.min(h - 1, sy + 3 * r); y++) for (let x = Math.max(0, sx - 3 * r); x <= Math.min(w - 1, sx + 3 * r); x++) {
+      const d = (x - sx) ** 2 + (y - sy) ** 2;
+      if (!wall[y * w + x] && d < bd) { bd = d; best = y * w + x; }
+    }
+    if (best < 0) return floodRegion(src, w, h, sx, sy, 0);
+    seed = best;
+  }
+  const core = floodRegion(wall.map(v => v ? INK : 0), w, h, seed % w, (seed / w) | 0, 0);
+  const grown = dilate(core.mask, w, h, r);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (grown[i] && !ink[i]) { grown[i] = 1; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } else grown[i] = 0;
+  }
+  return x1 < 0 ? null : { mask: grown, x0, y0, x1, y1 };
+}
+
 export function applyRegion(ctx, region) {
   const data = ensureData(ctx.layer), w = ctx.layer.w;
   ctx.undo.touch(ctx.layer, region.x0, region.y0, region.x1 + 1, region.y1 + 1);
@@ -419,9 +519,15 @@ const C_MASK = 0x802B39C0;
 // Hors du cadre visible, la valeur est 1 (encre) : un remplissage s'arrête au bord de la case.
 export function compositeValues(panel, includeDraft = false) {
   const out = new Uint8Array(panel.ew * panel.eh);
-  for (const l of panel.layers) {
-    if (!l.visible || !l.data || (l.draft && !includeDraft)) continue;
+  // calques « référence » visibles : eux seuls guident le remplissage (le dessin de l'auteur reste séparé des aplats)
+  const refs = panel.layers.filter(l => l.reference && l.visible && l.data);
+  for (const l of refs.length ? refs : panel.layers) {
+    if (!l.visible || !l.data || (!l.reference && ((l.draft && !includeDraft) || l.kind === 'color'))) continue;   // le calque « Couleur » ne fait pas barrière au remplissage
     const d = l.data;
+    if (bppOf(l) === 4) {   // encre ou trame en couleur : pixel opaque = trait (blanc pur = blanc)
+      for (let i = 0, j = 0; i < out.length; i++, j += 4) if (d[j + 3] >= 128) out[i] = d[j] > 240 && d[j + 1] > 240 && d[j + 2] > 240 ? PAPER : INK;
+      continue;
+    }
     for (let i = 0; i < d.length; i++) if (d[i]) out[i] = d[i];
   }
   const x0 = panel.x - panel.ex, y0 = panel.y - panel.ey;
@@ -434,6 +540,35 @@ export function compositeValues(panel, includeDraft = false) {
 // Peint le rectangle `r` de la case dans une ImageData (RGBA 32 bits).
 //  draft : montrer les brouillons ; opts.solo : id d'un calque à voir seul ;
 //  opts.export : l'opacité d'un calque d'encre devient un gris tramé (Bayer 8 × 8), car l'impression est en 1 bit.
+// Couleur libre d'un calque d'encre ou de trame : `color` = « #rrggbb » (les brouillons gardent un nom de la palette).
+const HEX = /^#[0-9a-f]{6}$/i;
+export const tintOf = l => (!l.draft && bppOf(l) === 1 && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
+
+// Modes de fusion d'un calque (`l.blend`) : la couleur du calque se combine à ce qu'il recouvre (calques du dessous
+// posés sur le papier blanc), puis se pose avec son opacité.
+export const BLEND_MODES = [['normal', 'Normal'], ['multiply', 'Produit'], ['screen', 'Écran'], ['overlay', 'Incrustation'], ['darken', 'Obscurcir'], ['lighten', 'Éclaircir'], ['difference', 'Différence']];
+function blendCh(m, s, b) {
+  switch (m) {
+    case 'multiply': return s * b / 255;
+    case 'screen': return 255 - (255 - s) * (255 - b) / 255;
+    case 'overlay': return b < 128 ? 2 * s * b / 255 : 255 - 2 * (255 - s) * (255 - b) / 255;
+    case 'darken': return Math.min(s, b);
+    case 'lighten': return Math.max(s, b);
+    case 'difference': return Math.abs(s - b);
+    default: return s;
+  }
+}
+function paintOver(px, i, cr, cg, cb, a, mode) {
+  if (mode && mode !== 'normal') {
+    const da = px[i + 3] / 255;   // fond = calques du dessous sur le papier blanc
+    cr = blendCh(mode, cr, px[i] * da + 255 * (1 - da)); cg = blendCh(mode, cg, px[i + 1] * da + 255 * (1 - da)); cb = blendCh(mode, cb, px[i + 2] * da + 255 * (1 - da));
+  }
+  if (a >= 1) { px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255; return; }
+  const da = px[i + 3] / 255, oa = a + da * (1 - a);
+  px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
+  px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
+}
+
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
   for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, y * w + r.x, y * w + r.x + r.w);
@@ -442,7 +577,8 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
-    const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : [0, 0, 0];
+    if (bppOf(l) === 4) { compositeColor(l, px, w, r, alpha); continue; }
+    const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : (tintOf(l) || [0, 0, 0]);
     const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {
       const row = y * w;
@@ -453,12 +589,20 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
         if (ditherOut) { if (alpha * 64 <= BAYER8[(y + panel.ey) & 7][(x + panel.ex) & 7]) continue; a = 1; }
         const i = (row + x) * 4;
         if (v !== INK && l.draft) { if (a >= 1) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; } continue; }   // le blanc d'un brouillon gomme ce qu'il recouvre
-        const cr = v === INK ? rgb[0] : 255, cg = v === INK ? rgb[1] : 255, cb = v === INK ? rgb[2] : 255;
-        if (a >= 1) { px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255; continue; }
-        const da = px[i + 3] / 255, oa = a + da * (1 - a);
-        px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
-        px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
+        paintOver(px, i, v === INK ? rgb[0] : 255, v === INK ? rgb[1] : 255, v === INK ? rgb[2] : 255, a, l.blend);
       }
+    }
+  }
+}
+
+// Calque de couleur : mélange « par-dessus » de ses pixels RVBA, avec l'opacité du calque.
+function compositeColor(l, px, w, r, alpha) {
+  const d = l.data;
+  for (let y = r.y; y < r.y + r.h; y++) {
+    for (let x = r.x; x < r.x + r.w; x++) {
+      const i = (y * w + x) * 4, sa = d[i + 3];
+      if (!sa) continue;
+      paintOver(px, i, d[i], d[i + 1], d[i + 2], sa / 255 * alpha, l.blend);
     }
   }
 }
