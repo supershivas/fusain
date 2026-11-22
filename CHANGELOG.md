@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.43.1 — 2026-11-22
+- Effacer un calque en frottant à trois doigts ne fait plus tourner ni zoomer la page : la vue ne bouge plus dès que trois doigts sont posés, même quand ils se lèvent un par un
+- Le frottement est plus facile : trois allers-retours suffisent
+
 ## 1.43.0 — 2026-11-22
 - Colorier sur un calque d'encrage (une référence, ou un calque nommé Dessin, Encrage…) propose de le faire dans un calque dessous : « Déplacer » y emporte le trait qu'on vient de faire, « Ne plus demander » arrête pour ce calque
 

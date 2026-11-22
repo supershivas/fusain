@@ -82,7 +82,15 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
         }, 550);
       }
       if (n === 2) { cancelDrawing(); stopPan(); startGesture(); return; }
-      if (n > 2) { if (gesture) gesture.max = Math.max(gesture.max, n); return; }
+      if (n > 2) {
+        if (gesture) {
+          gesture.max = Math.max(gesture.max, n);
+          // le troisième doigt arrive juste après les deux premiers : ce n'était pas un zoom, on remet la vue d'avant
+          if (!gesture.three && performance.now() - gesture.t0 < 500) { const v = gesture.view0; setView(v.s, v.ox, v.oy, v.r); }
+          gesture.three = true;
+        }
+        return;
+      }
     }
     const fingerPans = e.pointerType === 'touch' && ((penSeen && !ed.fingerDraws) || ed.tool === 'pan');
     const mousePan = e.pointerType !== 'touch' && (e.button === 1 || spaceHeld || ed.tool === 'pan');
@@ -105,8 +113,10 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     if (e.pointerType === 'pen' && penInfo && penInfo.t) penInfo.max = Math.max(penInfo.max, Math.hypot(e.clientX - penInfo.x, e.clientY - penInfo.y));
     if (gesture && rec.type === 'touch') {
       e.preventDefault();
-      // trois doigts : on ne zoome plus ; un frottement ou une rotation vide le calque (geste de Procreate)
-      if (touchCount() >= 3) { if (!gesture.cleared && !penRecent() && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
+      // dès que trois doigts ont été posés, plus de zoom ni de rotation jusqu'à ce que tous soient levés
+      // (ils se lèvent l'un après l'autre : les deux derniers ne doivent pas faire tourner la page) ;
+      // un frottement ou une rotation à trois doigts vide le calque (geste de Procreate)
+      if (gesture.three) { if (touchCount() >= 3 && !gesture.cleared && !penRecent() && scrubbed()) { gesture.cleared = true; gesture.moved = true; onClear(); } return; }
       moveGesture(); return;
     }
     if (panning && panning.id === e.pointerId) {
@@ -223,7 +233,8 @@ function metrics() {
 function startGesture() {
   const m = metrics(), r = canvasEl().getBoundingClientRect();
   const anchor = toPage(m.mx - r.left, m.my - r.top);
-  gesture = { t0: performance.now(), dist0: m.dist, mx0: m.mx, my0: m.my, s0: view.s, r0: view.r, ang0: m.ang, spin: 0, anchor, moved: false, max: 2, left: r.left, top: r.top };
+  gesture = { t0: performance.now(), dist0: m.dist, mx0: m.mx, my0: m.my, s0: view.s, r0: view.r, ang0: m.ang, spin: 0, anchor, moved: false, max: 2, left: r.left, top: r.top,
+    view0: { s: view.s, ox: view.ox, oy: view.oy, r: view.r }, three: false };
 }
 
 // Frottement (va-et-vient du centre des trois doigts) ou rotation répétée : déclenche le vidage du calque.
@@ -241,12 +252,12 @@ function scrubbed() {
     const dx = cx - sc.last.x, dy = cy - sc.last.y, along = Math.abs(dx) >= Math.abs(dy) ? dx : dy;   // axe dominant du geste
     if (Math.abs(along) > 4) {
       const dir = Math.sign(along);
-      if (sc.dir && dir !== sc.dir) { if (sc.since > 36) sc.rev++; sc.since = 0; }
+      if (sc.dir && dir !== sc.dir) { if (sc.since > 24) sc.rev++; sc.since = 0; }
       sc.dir = dir; sc.since += Math.abs(along);
       sc.last = { x: cx, y: cy };
     }
   } else sc.last = { x: cx, y: cy };
-  return sc.rev >= 4 || sc.ang > 5.5;
+  return sc.rev >= 3 || sc.ang > 4;
 }
 
 function moveGesture() {
