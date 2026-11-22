@@ -345,9 +345,11 @@ export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
 }
 
 // Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.
-export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scale = 1) {
+export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scale = 1, color = null) {
   const w = canvas.width, h = canvas.height, layer = { id: 'preview', w, h, data: new Uint8Array(w * h), dirty: false };
-  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha, trame, scale }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
+  // une couleur (ni noir ni blanc) se peint en RVBA : vraie transparence, pas de gris tramé
+  const trueAlpha = !!color && /^#[0-9a-f]{6}$/i.test(color) && !/^#(000000|ffffff)$/i.test(color);
+  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha: trueAlpha ? 1 : alpha, trame, scale }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
   let last = null;
   for (let i = 0; i <= 60; i++) {
     const t = i / 60, x = 10 + t * (w - 20), y = h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p = Math.pow(Math.sin(Math.PI * t), 0.6);
@@ -360,7 +362,10 @@ export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scal
     last = { x, y, d };
   }
   const cx = canvas.getContext('2d'), img = cx.createImageData(w, h), u = new Uint32Array(img.data.buffer);
-  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] ? 0xFF1A1714 : 0xFFFFFFFF;
+  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16)) : null;
+  const mix = v => Math.round(v * (trueAlpha ? alpha : 1) + 255 * (trueAlpha ? 1 - alpha : 0));
+  const ink = c ? (0xFF000000 | (mix(c[2]) << 16) | (mix(c[1]) << 8) | mix(c[0])) >>> 0 : 0xFF1A1714;
+  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] === 1 ? ink : 0xFFFFFFFF;
   cx.putImageData(img, 0, 0);
 }
 

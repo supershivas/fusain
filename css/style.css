@@ -504,3 +504,10 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .bp-preview { width: 100%; height: auto; aspect-ratio: 5 / 1; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; image-rendering: pixelated; display: block; margin-bottom: 4px; }
 .pgroup { border-top: 1px solid var(--border); padding-top: 4px; margin-top: 8px; }
 .pgroup .clabel { margin-top: 4px; }
+
+/* Aperçu du trait pendant le réglage de la taille ou de l'opacité */
+.qprev { position: absolute; z-index: 4; padding: 6px; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,.22); pointer-events: none; opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .15s; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.qprev.on { opacity: 1; transform: none; }
+.qprev canvas { display: block; border-radius: var(--radius-md); background: #fff; image-rendering: pixelated; }
+.qprev span { font: 500 .72rem var(--font-mono); color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .qprev { transition: none; } }

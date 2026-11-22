@@ -95,6 +95,7 @@ export function mountEditor(el) {
         <textarea class="bedit" id="bedit" hidden aria-label="Texte de la bulle"></textarea>
         <div class="zoombar" id="zoombar"></div>
         <div class="quick" id="quick" hidden></div>
+        <div class="qprev" id="qprev" hidden aria-hidden="true"><canvas></canvas><span></span></div>
       </div>
       <div class="optwrap"><div class="pop" id="pop" role="dialog" aria-label="Réglages de l'outil" hidden></div><div class="optbar" id="optbar"></div></div>
     </section>
@@ -467,6 +468,31 @@ function updateQuick(k) {
   el.querySelector('.qs-val').textContent = QUICK[k].fmt();
   el.setAttribute('aria-valuenow', Math.round(v * 100)); el.setAttribute('aria-valuetext', QUICK[k].fmt());
 }
+// Aperçu du trait à côté du curseur, à sa taille réelle à l'écran (zoom compris), avec trame, opacité et couleur.
+let qprevRaf = 0;
+function showQprev(g) {
+  const box = $('#qprev', root);
+  if (!box || !BRUSH_TOOLS.includes(ed.tool) && ed.tool !== 'shape' && ed.tool !== 'mask') return;
+  box.hidden = false; box.classList.add('on');
+  const r = g.el.getBoundingClientRect(), wrap = box.parentElement.getBoundingClientRect();
+  box.style.left = (r.right - wrap.left + 10) + 'px';
+  cancelAnimationFrame(qprevRaf);
+  qprevRaf = requestAnimationFrame(() => {
+    const dpr = window.devicePixelRatio || 1, d = Math.max(1, ed.size * view.s);   // diamètre à l'écran
+    const cw = 220, ch = Math.round(Math.max(56, Math.min(240, d * 1.9 + 24)));
+    const cv = $('canvas', box);
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
+    const t = ed.tool === 'pencil' ? tramaById(ed.project, ed.tramaId) : null;
+    const eraser = ed.tool === 'eraser';
+    previewBrush(cv, ed.tool === 'mask' || ed.tool === 'shape' ? { ...ed.brushParams, shape: 'round', press: 0, start: 0, grainType: 'none', grain: 1, scatter: 0 } : ed.brushParams,
+      Math.max(1, Math.round(d * dpr)), eraser ? 1 : ed.alpha, t && !t.solid ? t : null, Math.max(1, Math.round(ed.tramaScale * view.s * dpr)) || 1, eraser ? '#9A9A9A' : ed.color);
+    $('span', box).textContent = g.k === 'alpha' ? QUICK.alpha.fmt() : QUICK.size.fmt();
+    const top = Math.max(8, Math.min(wrap.height - ch - 30, (g.lastY ?? r.top + r.height / 2) - wrap.top - ch / 2));
+    box.style.top = top + 'px';
+  });
+}
+function hideQprev() { const box = $('#qprev', root); if (box) { box.classList.remove('on'); setTimeout(() => { if (!quickDrag) box.hidden = true; }, 180); } }
+
 let quickDrag = null;
 function quickDown(e) {
   const el = e.target.closest('[data-quick]');
@@ -478,6 +504,7 @@ function quickDown(e) {
   el.classList.add('active');
   quickMove(e);
 }
+
 function quickMove(e) {
   const g = quickDrag;
   if (!g || e.pointerId !== g.id) return;
@@ -486,7 +513,8 @@ function quickMove(e) {
   const t = g.long ? null : nearTick(g.k, v, SNAP_IN[g.type] || SNAP_IN.touch, g.held);
   if (t !== null) QUICK[g.k].setVal(t); else QUICK[g.k].set(v);   // aimanté au repère proche : valeur exacte du repère
   if (t !== null && t !== g.held && navigator.vibrate) { try { navigator.vibrate(8); } catch { /* */ } }   // petit déclic (Android)
-  g.held = t;
+  g.held = t; g.lastY = e.clientY;
+  showQprev(g);
   g.el.classList.toggle('snap', t !== null);
   $$('.qs-tick', g.el).forEach(x => x.classList.toggle('hit', t !== null && +x.dataset.tick === t));
   updateQuick(g.k);
@@ -497,6 +525,7 @@ function quickUp(e) {
   if (!g || e.pointerId !== g.id) return;
   clearTimeout(g.timer);
   quickDrag = null; g.el.classList.remove('active', 'snap');
+  hideQprev();
   $$('.qs-tick.hit', g.el).forEach(x => x.classList.remove('hit'));
   afterBrushChange();
 }

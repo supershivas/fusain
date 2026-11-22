@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.39.0 — 2026-11-22
+- Régler la taille ou l'opacité avec les curseurs de gauche ouvre un aperçu du trait à côté, à sa vraie taille à l'écran, qui suit le curseur en temps réel (avec la trame, l'opacité et la couleur du pinceau)
+
 ## 1.38.1 — 2026-11-22
 - Réglages du pinceau en une seule fenêtre, sans onglets : aperçu du trait en direct, puis Trait, Trame, Forme et texture, Dynamique et Ce pinceau
 - Changer de trame depuis les réglages ouvre la bibliothèque puis y revient
