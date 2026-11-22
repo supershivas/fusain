@@ -463,3 +463,5 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .tag.ctag { color: var(--accent); border-color: var(--accent); }
 .qs-tick { position: absolute; left: -5px; right: -5px; height: 2px; margin-bottom: -1px; background: var(--text-secondary); border-radius: 1px; pointer-events: none; }
 .qs.snap .qs-thumb { background: var(--accent); }
+.slot.holding, .brush-row.holding { transform: scale(.94); transition: transform .5s; border-color: var(--accent); }
+.slot, .brush-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

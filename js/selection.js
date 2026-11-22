@@ -139,7 +139,7 @@ export function clearSelectionContent(p = panel()) {
   ed.undo.begin('Effacer la sélection');
   for (const l of ls) {
     ed.undo.touch(l, s.x0, s.y0, s.x1, s.y1);
-    const b = l.kind === 'color' ? 4 : 1;
+    const b = (l.kind === 'color' || l.rgba) ? 4 : 1;
     for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) {
       const i = y * W + x;
       if (!s.mask[i]) continue;
@@ -163,7 +163,7 @@ export function beginMove(p, pt) {
   const bw = s.x1 - s.x0, bh = s.y1 - s.y0, W = p.ew, floats = [];
   for (const l of ls) {
     if (!l.data) continue;
-    const b = l.kind === 'color' ? 4 : 1, buf = new Uint8Array(bw * bh * b);
+    const b = (l.kind === 'color' || l.rgba) ? 4 : 1, buf = new Uint8Array(bw * bh * b);
     let any = false;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = (s.y0 + y) * W + s.x0 + x;

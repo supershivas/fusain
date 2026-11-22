@@ -67,6 +67,10 @@ export function updateBrush() {
   const i = ed.customBrushes.findIndex(b => b.id === ed.brushId);
   if (i >= 0) { const c = ed.customBrushes[i]; ed.customBrushes[i] = { ...ed.brushParams, id: c.id, name: c.name, group: c.group || 'Mes pinceaux', custom: true, sizeMm: ed.sizeMm }; }
 }
+export function restoreBrush(b, index) {
+  if (ed.customBrushes.some(x => x.id === b.id)) return;
+  ed.customBrushes.splice(Math.min(index, ed.customBrushes.length), 0, b);
+}
 export function deleteBrush(id) {
   ed.customBrushes = ed.customBrushes.filter(b => b.id !== id);
   if (ed.brushId === id) selectBrush('stylo');
@@ -142,6 +146,11 @@ export function removeSlot(id) {
   markChanged();
   return true;
 }
+export function restoreSlot(slot, index) {
+  const list = brushSlots();
+  if (list.some(s => s.id === slot.id)) return;
+  list.splice(Math.min(index, list.length), 0, slot); markChanged();
+}
 export function renameSlot(id, name) { const s = brushSlots().find(x => x.id === id); if (s && name) { s.name = name; markChanged(); } }
 export function moveSlot(id, dir) {
   const list = brushSlots(), i = list.findIndex(s => s.id === id), j = i + dir;
@@ -174,6 +183,26 @@ export function setColor(hex) {
   if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
   ed.color = hex.toUpperCase(); ed.ink = 3;
   ed.recentColors = [ed.color, ...ed.recentColors.filter(c => c !== ed.color)].slice(0, 8);
+}
+
+// Passe un calque d'encre ou de trame en RVBA (1 → noir ou sa teinte, 2 → blanc), en une étape annulable.
+export function toRGBA(l) {
+  if (!l || bppOf(l) === 4 || l.kind === 'draft') return l;
+  const old = l.data, oldColor = l.color, rgb = /^#[0-9a-f]{6}$/i.test(l.color || '') ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : [0, 0, 0];
+  let next = null;
+  if (old) {
+    next = new Uint8Array(l.w * l.h * 4);
+    for (let i = 0, j = 0; i < old.length; i++, j += 4) {
+      const v = old[i]; if (!v) continue;
+      const c = v === 1 ? rgb : [255, 255, 255];
+      next[j] = c[0]; next[j + 1] = c[1]; next[j + 2] = c[2]; next[j + 3] = 255;
+    }
+  }
+  const p = page().panels.find(q => q.layers.includes(l));
+  const apply = () => { l.rgba = true; l.data = next; delete l.color; l.dirty = true; if (p) invalidate(p); notify('layers'); markChanged(); };
+  const unapply = () => { l.rgba = false; l.data = old; if (oldColor) l.color = oldColor; l.dirty = true; if (p) invalidate(p); notify('layers'); markChanged(); };
+  apply(); ed.undo.pushAction('Calque en couleur', unapply, apply);
+  return l;
 }
 
 export function setAlpha(a) { ed.alpha = Math.max(0.05, Math.min(1, a)); }
@@ -490,7 +519,7 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   if (!dst || dst === src) return false;
   const clone = l => {
     const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color });
-    Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked });
+    Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked, rgba: !!l.rgba });
     if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode, bppOf(l)), dst, bppOf(l));
     nl.dirty = true;
     return nl;
@@ -566,7 +595,7 @@ export function mergePanels(aId, bId) {
   };
   for (const bl of b.layers) {
     let target = na.layers.find(l => l.name === bl.name && l.draft === bl.draft && bppOf(l) === bppOf(bl));
-    if (!target) { target = newLayer(bl.name, na.ew, na.eh, { kind: bl.kind, color: bl.color }); target.visible = bl.visible; na.layers.push(target); }
+    if (!target) { target = newLayer(bl.name, na.ew, na.eh, { kind: bl.kind, color: bl.color }); target.visible = bl.visible; target.rgba = !!bl.rgba; na.layers.push(target); }
     paste(bl, target);
   }
   if (b.mask && b.mask.data) { if (!na.mask) { na.mask = newLayer('Masque', na.ew, na.eh); } paste(b.mask, na.mask); na.mask.dirty = true; }
@@ -711,7 +740,7 @@ export function targetLayer(p, role) {
 export function duplicateLayer() {
   const p = panel(), src = activeLayer(p);
   const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color });
-  Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false });
+  Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false, rgba: !!src.rgba });
   if (src.data) l.data = src.data.slice();
   l.dirty = true;
   const at = p.layers.indexOf(src) + 1, prevActive = p.active;
@@ -724,7 +753,7 @@ export function duplicateLayer() {
 export function setLayerProp(id, key, value) {
   const p = panel(), l = p.layers.find(x => x.id === id);
   if (!l) return;
-  if (key === 'kind' && (value === 'color') !== (l.kind === 'color')) return;   // pixels de nature différente (RVBA / 1 octet)
+  if (key === 'kind' && ((value === 'color') !== (l.kind === 'color') || (value === 'draft' && l.rgba))) return;   // pixels de nature différente (RVBA / 1 octet)
   l[key] = value;
   if (key === 'kind') {
     l.draft = value === 'draft';
@@ -802,7 +831,8 @@ export function mergeDown() {
   const p = panel(), l = activeLayer(p), i = p.layers.indexOf(l);
   if (i < 1) return false;
   const below = p.layers[i - 1];
-  if (bppOf(l) !== bppOf(below)) return 'kind';   // la couleur ne se fusionne qu'avec la couleur
+  if (bppOf(l) === 4 && bppOf(below) === 1 && below.kind !== 'draft') toRGBA(below);
+  if (bppOf(l) !== bppOf(below)) return 'kind';   // un calque en couleur ne se fusionne pas dans un brouillon
   ed.undo.begin('Fusionner vers le bas');
   ed.undo.touch(below, 0, 0, below.w, below.h);
   const src = l.data, dst = ensureData(below);

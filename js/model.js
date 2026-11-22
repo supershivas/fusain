@@ -95,7 +95,7 @@ export function newLayer(name, w, h, opts = {}) {
 // Anciens projets : le type se déduit du brouillon ou du nom du calque.
 const kindOf = l => l.kind ?? (l.draft ? 'draft' : /tram/i.test(l.name || '') ? 'tram' : 'ink');
 
-export const bppOf = l => (l && l.kind === 'color' ? 4 : 1);
+export const bppOf = l => (l && (l.kind === 'color' || l.rgba) ? 4 : 1);
 export function ensureData(layer) {
   if (!layer.data) layer.data = new Uint8Array(layer.w * layer.h * bppOf(layer));
   return layer.data;
@@ -143,7 +143,7 @@ export function newBubble(kind, x, y) {
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rev: l.rev });
+  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, rev: l.rev });
   return {
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
@@ -160,7 +160,7 @@ export function projectMeta(project) {
 
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color,
+  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba,
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,

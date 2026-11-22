@@ -3,7 +3,7 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
@@ -104,6 +104,7 @@ export function mountEditor(el) {
   $('#toolbar', root).onclick = onToolbar;
   $('#zoombar', root).onclick = onZoombar;
   $('#optbar', root).addEventListener('click', onOptbar);
+  attachHold($('#optbar', root)); attachHold($('#pop', root));
   $('#optbar', root).addEventListener('input', onOptInput);
   const quick = $('#quick', root);
   quick.addEventListener('pointerdown', quickDown);
@@ -308,7 +309,7 @@ const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" 
 const inkControl = () => `<span class="row tight nowrap" role="group" aria-label="Encre">
   <button class="ink-btn ${ed.ink === 1 ? 'on' : ''}" data-ink="1" style="background:#000" aria-label="Encre noire" aria-pressed="${ed.ink === 1}"></button>
   <button class="ink-btn ${ed.ink === 2 ? 'on' : ''}" data-ink="2" style="background:#fff" aria-label="Encre blanche" aria-pressed="${ed.ink === 2}"></button>
-  <button class="ink-btn color ${ed.ink === 3 ? 'on' : ''} ${popId === 'color' ? 'open' : ''}" data-ink="3" style="background:${ed.color}" aria-label="Couleur ${ed.color}${ed.ink === 3 ? ' (toucher pour la palette)' : ''}" aria-pressed="${ed.ink === 3}" aria-expanded="${popId === 'color'}" title="Couleur : se pose dans le calque « Couleur » de la case"></button></span>`;
+  <button class="ink-btn color ${ed.ink === 3 ? 'on' : ''} ${popId === 'color' ? 'open' : ''}" data-ink="3" style="background:${ed.color}" aria-label="Couleur ${ed.color}${ed.ink === 3 ? ' (toucher pour la palette)' : ''}" aria-pressed="${ed.ink === 3}" aria-expanded="${popId === 'color'}" title="Couleur : s'applique au crayon, au pinceau trame, au remplissage et aux formes"></button></span>`;
 // La trame se montre sans texte : un toucher ouvre la bibliothèque en liste déroulante.
 function tramaControl() {
   const t = tramaById(ed.project, ed.tramaId);
@@ -533,6 +534,42 @@ function paintSwatches(scope) {
   });
 }
 
+// ── Appui long sur un pinceau : le retirer (palette) ou le supprimer (« Mes pinceaux »), avec « Annuler » ──
+let hold = null, swallowClick = null;   // l'élément dont il faut ignorer le clic qui suit l'appui long
+function holdDown(e) {
+  const el = e.target.closest('.slot[data-slot], .brush-row[data-brush]');
+  if (!el || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (el.dataset.brush && !(allBrushes().find(x => x.id === el.dataset.brush) || {}).custom) return;   // pinceaux livrés : pas de suppression
+  clearTimeout(hold && hold.timer);
+  hold = { el, x: e.clientX, y: e.clientY, id: e.pointerId };
+  el.classList.add('holding');
+  hold.timer = setTimeout(() => { const h = hold; hold = null; h.el.classList.remove('holding'); swallowClick = h.el; setTimeout(() => { swallowClick = null; }, 700); holdFire(h.el); }, 550);
+}
+function holdMove(e) { if (hold && e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) holdCancel(); }
+function holdCancel() { if (hold) { clearTimeout(hold.timer); hold.el.classList.remove('holding'); hold = null; } }
+function holdFire(el) {
+  if (el.dataset.slot) {
+    const list = brushSlots(), i = list.findIndex(s => s.id === el.dataset.slot), slot = list[i];
+    if (!slot) return;
+    if (!removeSlot(slot.id)) { toast('La palette garde au moins un pinceau.'); return; }
+    savePrefs(); renderOptbar(); renderPop();
+    toast(`« ${slot.name} » retiré de la palette.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreSlot(slot, i); applySlot(slot.id); savePrefs(); renderOptbar(); renderPop(); } });
+  } else {
+    const i = ed.customBrushes.findIndex(x => x.id === el.dataset.brush), br = ed.customBrushes[i];
+    if (!br) return;
+    deleteBrush(br.id); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); renderDock(); renderOptbar(); window.dispatchEvent(new Event('fusain:brushes'));
+    toast(`« ${br.name} » supprimé de tes pinceaux.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreBrush(br, i); savePrefs(); const p2 = $('#pop', root); if (p2) p2._html = ''; renderPop(); renderDock(); window.dispatchEvent(new Event('fusain:brushes')); } });
+  }
+}
+function attachHold(el) {
+  el.addEventListener('pointerdown', holdDown);
+  el.addEventListener('pointermove', holdMove);
+  el.addEventListener('pointerup', holdCancel);
+  el.addEventListener('pointercancel', holdCancel);
+  el.addEventListener('contextmenu', e => { if (e.target.closest('.slot, .brush-row')) e.preventDefault(); });
+  el.addEventListener('click', e => { if (swallowClick && e.target.closest('.slot, .brush-row') === swallowClick) { e.stopImmediatePropagation(); e.preventDefault(); swallowClick = null; } }, true);
+}
+
 function onOptbar(e) {
   const b = e.target.closest('button');
   if (!b) return;
@@ -697,7 +734,7 @@ function colorPop() {
     <div class="row tight" style="margin:10px 0 4px;align-items:center">
       <label class="cpick"><input type="color" id="c-pick" value="${ed.color.toLowerCase()}" aria-label="Choisir une autre couleur"><span>Autre couleur…</span></label>
       ${inPal ? `<button class="btn small" data-act="color-del">${icon('trash')} Retirer de la palette</button>` : `<button class="btn small" data-act="color-add">${icon('plus')} Ajouter à la palette</button>`}</div>
-    <small class="note">La couleur se pose dans le calque « Couleur » de la case (créé au besoin, sous les trames et l'encrage) : le remplissage s'arrête aux traits d'encre. La palette suit le projet.</small>`;
+    <small class="note">La couleur s'applique à l'outil choisi (crayon, pinceau trame, remplissage, formes) dans son calque habituel, qui passe en couleur au premier trait. Un calque « Couleur » actif la reçoit aussi, sans faire barrière au remplissage. La palette suit le projet.</small>`;
 }
 function renderPop() {
   const el = $('#pop', root);
@@ -738,6 +775,7 @@ function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page(), role = toolRole();
   const target = role ? peekTarget(p, role) : null;
   const dot = l => /^#[0-9a-f]{6}$/i.test(l.color || '') && l.kind !== 'draft' ? `<i class="ldot" style="background:${l.color}" title="Couleur ${l.color}"></i>${l.kind === 'tram' ? '<span class="tag" title="Calque de trame">trame</span>' : ''}` : l.kind === 'draft' ? `<i class="ldot" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon ${DRAFT_COLORS[l.color || 'blue'].name.toLowerCase()}"></i>` : l.kind === 'tram' ? `<span class="tag" title="Calque de trame">trame</span>` : l.kind === 'color' ? `<span class="tag ctag" title="Calque de couleur">couleur</span>` : '';
+  const dotc = l => (l.rgba ? `<span class="tag ctag" title="Calque ${l.kind === 'tram' ? 'de trame ' : ''}en couleur (RVBA)">${l.kind === 'tram' ? 'trame' : 'couleur'}</span>` : dot(l));
   const BICON = { parole: 'message-circle', pensee: 'cloud', cri: 'bolt', narration: 'square', texte: 'typography' };
   const swipe = (inner, acts) => `<div class="swipe">${inner}<div class="swipe-actions">${acts}</div></div>`;
   linkBubbles(pg);
@@ -751,7 +789,7 @@ function layersTab() {
       <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <button class="name" data-act="select-layer">${esc(l.name)}</button>
-      ${dot(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
+      ${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
     `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`)).join('');
   const acts = `<div class="tools-row">
@@ -771,13 +809,13 @@ function layersTab() {
     : `<div class="seg" role="group" aria-label="Type de calque" style="margin-bottom:8px">${kinds.map(([k, n]) => `<button data-lkind="${k}" class="${cur.kind === k ? 'on' : ''}">${n}</button>`).join('')}</div>`) + `
     ${cur.kind === 'draft' ? `<div class="row tight" style="margin-bottom:8px">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
       `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
-    ${cur.kind !== 'draft' && cur.kind !== 'color' ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
+    ${cur.kind !== 'draft' && cur.kind !== 'color' && !cur.rgba ? `<div class="row tight" style="margin-bottom:8px;align-items:center"><label for="l-tint" style="font-size:.82rem;color:var(--text-secondary)">Couleur</label>
       <input type="color" id="l-tint" value="${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? cur.color : '#000000'}" aria-label="Couleur du calque" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--field-bg)">
       <button class="btn small" data-act="tint-reset" ${/^#[0-9a-f]{6}$/i.test(cur.color || '') ? '' : 'disabled'}>Noir</button></div>` : ''}
     <label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
     <div class="row" style="gap:4px 14px"><label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
       <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label></div>
-    <small class="note">${cur.kind === 'color' ? (cur.opacity < 100 ? 'Imprimé avec cette opacité.' : '') : cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.kind !== 'draft' && cur.kind !== 'color' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
+    <small class="note">${cur.kind === 'color' ? (cur.opacity < 100 ? 'Imprimé avec cette opacité.' : '') : cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : cur.kind === 'tram' ? 'Les trames ne se posent que dans les calques de trame.' : 'L\'encrage ne se pose que dans les calques d\'encre.'}${cur.rgba ? ' En couleur depuis un trait de couleur.' : ''}${cur.kind !== 'draft' && cur.kind !== 'color' && !cur.rgba && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
     + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
@@ -813,7 +851,7 @@ function brushesParts() {
       <button class="btn small primary" data-act="brush-save">${icon('device-floppy')} Enregistrer…</button>
       ${custom ? `<button class="btn small" data-act="brush-update">Mettre à jour</button><button class="btn small danger" data-act="brush-del" aria-label="Supprimer le pinceau">${icon('trash')}</button>` : ''}</div>`;
   const addBtn = `<div class="row tight" style="margin-bottom:6px"><button class="btn small primary" data-act="brush-save">${icon('plus')} Enregistrer ${ed.tool === 'eraser' ? 'cette gomme' : 'ce pinceau'}…</button></div>`;
-  return { pop: buttons + settings, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » servent à tous tes projets, sur tous tes appareils connectés ; la palette, elle, suit le projet.</small>' };
+  return { pop: buttons + settings, list: (popId === 'lib-brush' ? '<small class="note" style="display:block;margin-bottom:6px">Le pinceau choisi entre dans la palette du projet.</small>' : '') + addBtn + lists + '<small class="note">« Mes pinceaux » servent à tous tes projets, sur tous tes appareils connectés ; la palette, elle, suit le projet. Appui long sur un de tes pinceaux, ou sur un pinceau de la palette, pour le retirer.</small>' };
 }
 let brushPopTab = 'brush';
 function brushPop() {
@@ -1551,6 +1589,9 @@ function libraryModal(mode) {
     paintSwatches(body); paintLibrary(body);
   };
   draw();
+  attachHold(m.el);
+  const redraw = () => { if (m.el.isConnected) draw(); else window.removeEventListener('fusain:brushes', redraw); };
+  window.addEventListener('fusain:brushes', redraw);
   m.el.addEventListener('click', async e => {
     const lib = e.target.closest('[data-lib]'), add = e.target.closest('[data-addtpl]'), free = e.target.closest('[data-freebubble]');
     if (lib) { mode = lib.dataset.lib; draw(); return; }

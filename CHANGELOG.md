@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.34.0 — 2026-11-22
+- La couleur s'applique à l'outil choisi dans son calque : encre en couleur dans l'encrage, trame en couleur dans les trames, remplissage et formes aussi (la gomme reste une gomme)
+- Appui long sur un pinceau de la palette : il en est retiré ; sur un de « Mes pinceaux » dans la bibliothèque : il est supprimé ; « Annuler » le remet
+
 ## 1.33.0 — 2026-11-22
 - Curseurs de taille et d'opacité : un appui long pose un repère où le curseur s'aimante (appui long dessus pour le retirer) ; les repères sont gardés avec chaque pinceau de la palette
 - Bulles et textes liés à leur case : le volet ne montre que ceux de la case ouverte, comme les calques ; choisir une bulle ouvre sa case

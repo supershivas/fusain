@@ -506,8 +506,12 @@ const C_MASK = 0x802B39C0;
 export function compositeValues(panel, includeDraft = false) {
   const out = new Uint8Array(panel.ew * panel.eh);
   for (const l of panel.layers) {
-    if (!l.visible || !l.data || (l.draft && !includeDraft) || l.kind === 'color') continue;   // la couleur ne fait pas barrière au remplissage
+    if (!l.visible || !l.data || (l.draft && !includeDraft) || l.kind === 'color') continue;   // le calque « Couleur » ne fait pas barrière au remplissage
     const d = l.data;
+    if (bppOf(l) === 4) {   // encre ou trame en couleur : pixel opaque = trait (blanc pur = blanc)
+      for (let i = 0, j = 0; i < out.length; i++, j += 4) if (d[j + 3] >= 128) out[i] = d[j] > 240 && d[j + 1] > 240 && d[j + 2] > 240 ? PAPER : INK;
+      continue;
+    }
     for (let i = 0; i < d.length; i++) if (d[i]) out[i] = d[i];
   }
   const x0 = panel.x - panel.ex, y0 = panel.y - panel.ey;
@@ -522,7 +526,7 @@ export function compositeValues(panel, includeDraft = false) {
 //  opts.export : l'opacité d'un calque d'encre devient un gris tramé (Bayer 8 × 8), car l'impression est en 1 bit.
 // Couleur libre d'un calque d'encre ou de trame : `color` = « #rrggbb » (les brouillons gardent un nom de la palette).
 const HEX = /^#[0-9a-f]{6}$/i;
-export const tintOf = l => (!l.draft && l.kind !== 'color' && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
+export const tintOf = l => (!l.draft && bppOf(l) === 1 && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
 
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
@@ -532,7 +536,7 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
-    if (l.kind === 'color') { compositeColor(l, px, w, r, alpha); continue; }
+    if (bppOf(l) === 4) { compositeColor(l, px, w, r, alpha); continue; }
     const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : (tintOf(l) || [0, 0, 0]);
     const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {

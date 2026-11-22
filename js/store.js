@@ -72,7 +72,7 @@ export function isBlank(data) {
 
 export async function encodeLayer(layer) {
   if (isBlank(layer.data)) return null;
-  if (layer.kind === 'color') {
+  if (layer.kind === 'color' || layer.rgba) {
     if (canEncodePNG()) return encodePNGRGBA(layer.data, layer.w, layer.h);
     const c = canvasFor(layer.w, layer.h), ctx = c.getContext('2d'), img = ctx.createImageData(layer.w, layer.h);
     img.data.set(layer.data); ctx.putImageData(img, 0, 0);
@@ -114,7 +114,7 @@ const newRev = () => Date.now().toString(36) + Math.random().toString(36).slice(
 export async function loadLayers(project, layers) {
   await Promise.all(layers.filter(l => !l.loaded).map(async l => {
     const rec = await getLayerRec(project.id, l.id);
-    l.data = rec && rec.png ? await decodeLayer(rec.png, l.w, l.h, l.kind) : null;
+    l.data = rec && rec.png ? await decodeLayer(rec.png, l.w, l.h, l.rgba ? 'color' : l.kind) : null;
     l.loaded = true; l.dirty = false;
     if (rec && rec.rev) l.rev = rec.rev;
   }));
