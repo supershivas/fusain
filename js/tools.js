@@ -73,7 +73,7 @@ export function down(pt) {
   const p = panelAt(pt.x, pt.y);
   if (!p) {
     // Départ hors de toute case : le geste est suivi, et il se pose dans la première case où il entre (rogné au cadre).
-    if (['pencil', 'texture', 'eraser', 'mask', 'shape'].includes(ed.tool)) session = { kind: 'pre', pts: [pt] };
+    if (['pencil', 'eraser', 'mask', 'shape'].includes(ed.tool)) session = { kind: 'pre', pts: [pt] };
     return;
   }
   begin(p, pt);
@@ -82,7 +82,7 @@ export function down(pt) {
 function begin(p, pt) {
   selectPanel(p.id);
   // Chaque outil vise le calque de sa sorte : encre → calque d'encre, trame → calque de trame (créé s'il manque).
-  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.ink === 3 && activeLayer(p).kind === 'color' ? 'color' : ed.tool === 'pencil' ? 'ink' : (trame0 ? 'tram' : 'ink');
+  const trame0 = currentTrama(), role = ed.tool === 'mask' ? null : ed.tool === 'eraser' ? 'any' : ed.ink === 3 && activeLayer(p).kind === 'color' ? 'color' : (trame0 ? 'tram' : 'ink');
   let layer;
   if (ed.tool === 'mask') layer = ensureMask();
   else {
@@ -95,14 +95,13 @@ function begin(p, pt) {
   const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey), tool = ed.tool;
   const trame = currentTrama();
 
-  if (tool === 'pencil' || tool === 'texture' || tool === 'eraser' || tool === 'mask') {
+  if (tool === 'pencil' || tool === 'eraser' || tool === 'mask') {
     const alpha = tool === 'mask' ? 1 : ed.alpha;   // opacité tramée du pinceau
     const paint = tool === 'eraser' ? { v: 0, alpha }
       : tool === 'mask' ? { v: ed.maskErase ? 0 : 1 }
-      : tool === 'texture' ? { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha }
-      : { v: inkV(), alpha };
-    ed.undo.begin({ pencil: 'Crayon', texture: 'Pinceau trame', eraser: 'Gomme', mask: 'Masque' }[tool]);
-    const sp = tool === 'pencil' || tool === 'eraser' || tool === 'texture' ? ed.brushParams : null;
+      : { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque, alpha };   // pinceau : encre pleine ou trame
+    ed.undo.begin({ pencil: currentTrama() ? 'Pinceau trame' : 'Pinceau', eraser: 'Gomme', mask: 'Masque' }[tool]);
+    const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };

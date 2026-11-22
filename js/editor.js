@@ -27,8 +27,7 @@ export const notify = what => subs.forEach(fn => fn(what));
 
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
-  pencil: { sizeMm: 0.5, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null },
-  texture: { sizeMm: 3, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'g25', tramaScale: 2, tramaOpaque: false },
+  pencil: { sizeMm: 0.5, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3, alpha: 1, ticks: null, slotId: null, brushId: 'stylo', brushParams: null },
   fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ticks: null, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
@@ -52,10 +51,10 @@ export const currentBrush = () => allBrushes().find(b => b.id === ed.brushId) ||
 
 // Choisir un pinceau reprend la dernière taille réglée pour lui.
 export function selectBrush(id) {
-  const key = i => (ed.tool === 'texture' ? 't:' : '') + i;
+  const key = i => i;
   ed.brushSizes[key(ed.brushId)] = ed.sizeMm;
   ed.brushId = id; ed.brushParams = brushSpec(id, ed.customBrushes);
-  setSizeMm(ed.brushSizes[key(id)] ?? (ed.tool === 'texture' ? Math.max(ed.brushParams.sizeMm, 3) : ed.brushParams.sizeMm));
+  setSizeMm(ed.brushSizes[key(id)] ?? ed.brushParams.sizeMm);
 }
 export function resetBrush() { ed.brushParams = brushSpec(ed.brushId, ed.customBrushes); }
 export function saveBrushAs(name, group = 'Mes pinceaux') {
@@ -78,21 +77,19 @@ export function deleteBrush(id) {
 // ── Palette du projet : 4 à 8 pinceaux par outil (crayon, pinceau trame, gomme), synchronisés avec le projet ──
 // Un emplacement garde le pinceau entier (réglages, taille, opacité, et la trame pour le pinceau trame).
 // Tant qu'un emplacement est actif, ce qu'on règle (taille, opacité, réglages) y est enregistré.
-export const BRUSH_TOOLS = ['pencil', 'texture', 'eraser'];
+export const BRUSH_TOOLS = ['pencil', 'eraser'];
 // Repères des curseurs latéraux (valeurs en mm et en opacité 0–1) : le curseur s'y aimante.
 export const copyTicks = t => ({ size: [...((t && t.size) || [])], alpha: [...((t && t.alpha) || [])] });
 export const ticksOf = () => (ed.ticks || (ed.ticks = copyTicks(null)));
-export const SLOT_MAX = 8;
+export const SLOT_MAX = 10;
 const SLOT_DEFAULTS = {
-  pencil: [['stylo'], ['plumeg'], ['brushpen'], ['hb'], ['fusain']],
-  texture: [['stylo', { name: 'Trame 25 %', tramaId: 'g25' }], ['stylo', { name: 'Trame 50 %', tramaId: 'g50', sizeMm: 6 }], ['fusain', { name: 'Fusain tramé', tramaId: 'g25', sizeMm: 8 }], ['spray', { name: 'Aérographe', tramaId: 'plein', sizeMm: 10 }]],
+  pencil: [['stylo'], ['plumeg'], ['brushpen'], ['hb'], ['fusain'], ['stylo', { name: 'Trame 25 %', tramaId: 'g25', sizeMm: 3 }], ['stylo', { name: 'Trame 50 %', tramaId: 'g50', sizeMm: 6 }], ['fusain', { name: 'Fusain tramé', tramaId: 'g25', sizeMm: 8 }]],
   eraser: [['stylo', { name: 'Gomme fine', sizeMm: 1 }], ['stylo', { name: 'Gomme ronde', sizeMm: 4 }], ['feutre', { name: 'Gomme carrée', sizeMm: 8 }], ['6b', { name: 'Gomme grain', sizeMm: 3 }]],
 };
 const slotId = () => 's' + Math.random().toString(36).slice(2, 8);
 function makeSlot(tool, base, spec, o = {}) {
   const s = { id: slotId(), name: o.name || spec.name || 'Pinceau', base, spec: { ...spec }, sizeMm: o.sizeMm ?? spec.sizeMm, alpha: o.alpha ?? 1 };
-  if (tool === 'texture') Object.assign(s, { tramaId: o.tramaId || 'g25', tramaScale: o.tramaScale ?? 2, tramaOpaque: !!o.tramaOpaque });
-  if (tool === 'texture') s.sizeMm = Math.max(3, s.sizeMm);
+  if (tool === 'pencil') Object.assign(s, { tramaId: o.tramaId || 'plein', tramaScale: o.tramaScale ?? 2, tramaOpaque: !!o.tramaOpaque });
   for (const k of ['id', 'name', 'group', 'custom']) delete s.spec[k];
   return s;
 }
@@ -102,8 +99,13 @@ export function brushSlots(tool = ed.tool) {
   const set = ed.project.brushSet || (ed.project.brushSet = {});
   if (!Array.isArray(set[tool])) {
     set[tool] = SLOT_DEFAULTS[tool].map(([id, o]) => makeSlot(tool, id, brushSpec(id), o));
-    const mine = ed.customBrushes.filter(b => (b.group === 'Mes gommes') === (tool === 'eraser') && tool !== 'texture');
+    const mine = ed.customBrushes.filter(b => (b.group === 'Mes gommes') === (tool === 'eraser'));
     for (const b of mine) if (set[tool].length < SLOT_MAX) set[tool].push(makeSlot(tool, b.id, brushSpec(b.id, ed.customBrushes)));
+  }
+  // anciens projets : la palette du « pinceau trame » rejoint celle du pinceau (ses pinceaux gardent leur trame)
+  if (tool === 'pencil' && Array.isArray(set.texture)) {
+    for (const s of set.texture) if (set.pencil.length < SLOT_MAX && !set.pencil.some(x => x.id === s.id)) set.pencil.push({ ...s, tramaId: s.tramaId || 'g25' });
+    delete set.texture;
   }
   return set[tool];
 }
@@ -114,7 +116,7 @@ export function applySlot(id) {
   ed.slotId = s.id; ed.brushId = s.base; ed.brushParams = { ...BRUSH_DEFAULTS, ...s.spec };
   ed.alpha = s.alpha ?? 1;
   ed.ticks = copyTicks(s.ticks);
-  if (ed.tool === 'texture') Object.assign(ed, { tramaId: s.tramaId, tramaScale: s.tramaScale, tramaOpaque: s.tramaOpaque });
+  if (ed.tool === 'pencil') Object.assign(ed, { tramaId: s.tramaId || 'plein', tramaScale: s.tramaScale ?? 2, tramaOpaque: !!s.tramaOpaque });
   setSizeMm(s.sizeMm);
 }
 // Range l'état courant dans l'emplacement actif (appelé après chaque réglage).
@@ -123,7 +125,7 @@ export function storeSlot() {
   if (!s) return;
   s.spec = { ...ed.brushParams }; for (const k of ['id', 'name', 'group', 'custom']) delete s.spec[k];
   s.sizeMm = ed.sizeMm; s.alpha = ed.alpha; s.ticks = copyTicks(ed.ticks);
-  if (ed.tool === 'texture') Object.assign(s, { tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque });
+  if (ed.tool === 'pencil') Object.assign(s, { tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque });
   markChanged();
 }
 // Un pinceau pris dans la bibliothèque entre dans la palette (s'il n'y est pas) ; palette pleine : il remplace l'emplacement actif.
@@ -210,7 +212,7 @@ export function setAlpha(a) { ed.alpha = Math.max(0.05, Math.min(1, a)); }
 // La taille se règle en millimètres (la même épaisseur à 150 ou 300 dpi) ; `ed.size` en est la valeur en pixels.
 export function syncSize() { ed.size = Math.max(1, Math.round(ed.sizeMm / 25.4 * (ed.project ? ed.project.dpi : 300))); }
 // Plus grosse taille : 50 mm pour les trames (aplats), 30 mm pour le reste.
-export const maxSizeMm = () => ed.tool === 'texture' ? 50 : 30;
+export const maxSizeMm = () => ed.tool === 'pencil' ? 50 : 30;
 export function setSizeMm(mm) { ed.sizeMm = Math.max(0.05, Math.min(maxSizeMm(), mm)); syncSize(); }
 
 export const page = () => ed.project.pages[ed.pageIdx];

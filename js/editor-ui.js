@@ -24,8 +24,7 @@ import { syncSoon } from './sync.js';
 import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection } from './selection.js';
 
 export const TOOLS = [
-  { id: 'pencil', icon: 'pencil', label: 'Crayon et pinceaux (B)', key: 'b' },
-  { id: 'texture', icon: 'texture', label: 'Pinceau trame (T)', key: 't' },
+  { id: 'pencil', icon: 'brush', label: 'Pinceaux et trames (B)', key: 'b' },
   { id: 'eraser', icon: 'eraser', label: 'Gomme (E)', key: 'e' },
   { id: 'fill', icon: 'bucket-droplet', label: 'Remplir (G)', key: 'g' },
   { id: 'shape', icon: 'square', label: 'Formes (S)', key: 's' },
@@ -60,7 +59,7 @@ export function loadPrefs() {
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
     if (Array.isArray(p.bubbleTemplates)) ed.bubbleTemplates = p.bubbleTemplates;
     if (typeof p.bubbleTemplate === 'string') ed.bubbleTemplate = p.bubbleTemplate;
-        if (typeof p.tool === 'string') ed.tool = ['bubble', 'layout', 'select'].includes(p.tool) ? 'pencil' : p.tool;
+        if (typeof p.tool === 'string') ed.tool = ['bubble', 'layout', 'select', 'texture'].includes(p.tool) ? 'pencil' : p.tool;
   } catch { /* préférences locales seulement */ }
 }
 // Préférences de l'appareil : réglages de chaque outil, dernier style de chaque type de bulle, options d'image tramée.
@@ -140,16 +139,23 @@ export function mountEditor(el) {
   keyHandler = onKey;
   window.addEventListener('keydown', keyHandler);
   window.addEventListener('fusain:library', onLibrary);
+  document.addEventListener('pointerdown', closeColorOutside, true);
   fsListener = () => { renderToolbar(); renderDock(); setTimeout(resize, 100); };
   onFullscreenChange(fsListener);
   setTimeout(resize, 0);
 }
 
+function closeColorOutside(e) {
+  if (popId !== 'color' || e.target.closest('#pop, [data-ink="3"], .toast, dialog')) return;
+  popId = null; renderPop(); renderOptbar();
+  if (e.target.id === 'view') { e.stopPropagation(); e.preventDefault(); }   // ce toucher ferme la palette, il ne dessine pas
+}
 // La bibliothèque est arrivée d'un autre appareil : listes et barre à jour.
 function onLibrary() { if (!ed.project) return; const pe = $('#pop', root); if (pe) pe._html = ''; renderOptbar(); renderDock(); renderPop(); }
 
 export function unmountEditor() {
   window.removeEventListener('fusain:library', onLibrary);
+  document.removeEventListener('pointerdown', closeColorOutside, true);
   if (unsub) unsub(); unsub = null;
   if (keyHandler) window.removeEventListener('keydown', keyHandler); keyHandler = null;
 }
@@ -181,9 +187,9 @@ function updateUndo() {
 let penBefore = null;
 function penToggle(fromTap) {
   if (fromTap) { markChanged(); requestRender(); }
-  if (!['pencil', 'eraser'].includes(ed.tool) && !(fromTap && ed.tool === 'texture')) { if (fromTap) return; setTool('pencil'); return; }
+  if (!['pencil', 'eraser'].includes(ed.tool)) { if (fromTap) return; setTool('pencil'); return; }
   const to = ed.tool === 'eraser' ? 'pencil' : 'eraser';
-  setTool(to); toast(to === 'eraser' ? 'Gomme' : 'Crayon', { duration: 900 });
+  setTool(to); toast(to === 'eraser' ? 'Gomme' : 'Pinceau', { duration: 900 });
 }
 function penEraser(on) {
   if (on) { if (ed.tool !== 'eraser') { penBefore = ed.tool; setTool('eraser'); } }
@@ -319,9 +325,8 @@ function tramaControl() {
 export function renderOptbar() {
   const o = $('#optbar', root), t = ed.tool;
   let html = '';
-  if (t === 'pencil') html = paletteControl() + inkControl() + popBtn('brush');
+  if (t === 'pencil') html = paletteControl() + tramaControl() + inkControl() + popBtn('brush');
   else if (t === 'eraser') html = paletteControl() + popBtn('brush');
-  else if (t === 'texture') html = paletteControl() + tramaControl() + inkControl() + popBtn('brush');
   else if (t === 'fill') html = tramaControl() + gapControl() + inkControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
@@ -379,7 +384,7 @@ function paintSlots(scope) {
     if (!s) return;
     const live = s.id === ed.slotId, spec = live ? ed.brushParams : { ...s.spec };
     const mm = live ? ed.sizeMm : s.sizeMm;
-    const tid = ed.tool === 'texture' ? (live ? ed.tramaId : s.tramaId) : null, t = tid ? tramaById(ed.project, tid) : null;
+    const tid = ed.tool === 'pencil' ? (live ? ed.tramaId : s.tramaId) : null, t = tid ? tramaById(ed.project, tid) : null;
     previewBrush(c, spec, Math.max(2, Math.min(mm / 25.4 * dpi, 10)), live ? ed.alpha : s.alpha ?? 1, t && !t.solid ? t : null, 1);
   });
 }
@@ -581,8 +586,7 @@ function onOptbar(e) {
   if (b.dataset.selmode || b.dataset.selop || b.dataset.selact) onSelect(b);
   else if (b.dataset.ink) {
     const v = +b.dataset.ink;
-    if (v === 3 && (ed.ink === 3 || !ed.recentColors.length)) popId = popId === 'color' ? null : 'color';   // la couleur active : un toucher ouvre la palette
-    else if (popId === 'color') popId = null;
+    if (v === 3 && (ed.ink === 3 || !ed.recentColors.length)) popId = popId === 'color' ? null : 'color';   // la couleur active : un toucher ouvre ou ferme la palette
     ed.ink = v; savePrefs(); renderOptbar(); renderPop();
   }
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
@@ -693,8 +697,7 @@ function onSecToggle(e) {
 // Sorte de calque visée par l'outil actuel (pour repérer la cible dans la liste).
 function toolRole() {
   const t = ed.tool;
-  if (t === 'pencil') return 'ink';
-  if (t === 'texture' || t === 'fill' || t === 'shape') return tramaById(ed.project, ed.tramaId).solid ? 'ink' : 'tram';
+  if (t === 'pencil' || t === 'fill' || t === 'shape') return tramaById(ed.project, ed.tramaId).solid ? 'ink' : 'tram';
   return null;
 }
 
@@ -724,8 +727,8 @@ function bubbleTplList() {
 }
 
 // Réglages détaillés de l'outil : fenêtre flottante au-dessus de la barre du bas, jamais dans le volet.
-const TOOL_TRAMA = ['texture', 'fill', 'shape'];
-const TOOL_COLOR = ['pencil', 'texture', 'fill', 'shape'];
+const TOOL_TRAMA = ['pencil', 'fill', 'shape'];
+const TOOL_COLOR = ['pencil', 'fill', 'shape'];
 function colorPop() {
   const list = projectColors(), inPal = list.includes(ed.color);
   const sw = (c, attr) => `<button class="cswatch ${c === ed.color && ed.ink === 3 ? 'on' : ''}" ${attr}="${c}" style="background:${c}" aria-label="Couleur ${c}" title="${c}"></button>`;
@@ -741,7 +744,7 @@ function renderPop() {
   if (!el || !ed.project) return;
   const bubbleOnly = /^b(text|shape|tail)$/.test(popId || '');
   if (popId === 'color' && !TOOL_COLOR.includes(ed.tool)) popId = null;
-  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && !['pencil', 'eraser', 'texture'].includes(ed.tool)) || (popId === 'lib-bubble' && ed.tool !== 'bubble') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
+  if (popId && ((bubbleOnly && (!bubble() || ed.tool !== 'bubble')) || (/brush$/.test(popId) && !['pencil', 'eraser'].includes(ed.tool)) || (popId === 'lib-bubble' && ed.tool !== 'bubble') || (/trama$/.test(popId) && !TOOL_TRAMA.includes(ed.tool)))) popId = null;
   if (!popId) { el.hidden = true; el.innerHTML = ''; el.dataset.id = ''; el._html = ''; return; }
   const a = document.activeElement;
   if (el.dataset.id === popId && el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type === 'text'))) return;   // on ne reconstruit pas sous les doigts qui tapent
@@ -856,10 +859,10 @@ function brushesParts() {
 let brushPopTab = 'brush';
 function brushPop() {
   const sl = activeSlot(), list = brushSlots(), i = sl ? list.indexOf(sl) : -1;
-  const tabs = ed.tool === 'texture' ? `<span class="seg pop-tabs" role="tablist" aria-label="Réglages">
+  const tabs = ed.tool === 'pencil' ? `<span class="seg pop-tabs" role="tablist" aria-label="Réglages">
       <button role="tab" data-act="pop-tab" data-ptab="brush" class="${brushPopTab === 'brush' ? 'on' : ''}" aria-selected="${brushPopTab === 'brush'}">${icon('brush')} Pinceau</button>
       <button role="tab" data-act="pop-tab" data-ptab="trama" class="${brushPopTab === 'trama' ? 'on' : ''}" aria-selected="${brushPopTab === 'trama'}">${icon('texture')} Trame</button></span>` : '';
-  if (ed.tool === 'texture' && brushPopTab === 'trama') return tabs + tramaPop();
+  if (ed.tool === 'pencil' && brushPopTab === 'trama') return tabs + tramaPop();
   const slotRow = sl ? `<div class="row tight" style="margin:2px 0 8px">
       <button class="btn small" data-act="slot-rename">${icon('pencil')} Renommer</button>
       <button class="icon-btn icon-only" data-act="slot-left" aria-label="Déplacer à gauche dans la palette" ${i <= 0 ? 'disabled' : ''}>${icon('arrow-left')}</button>
@@ -999,7 +1002,7 @@ async function onDock(e) {
   if (tab) { dockTabTo(tab.dataset.tab); return; }
   const br = e.target.closest('[data-brush]');
   if (br) {
-    if (!['pencil', 'eraser', 'texture'].includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent un pinceau
+    if (!['pencil', 'eraser'].includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent un pinceau
     const how = brushToPalette(br.dataset.brush); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); renderPop();
     if (how === 'replaced') toast(`Palette pleine (${SLOT_MAX}) : le pinceau actif a été remplacé.`);
     return;
@@ -1012,8 +1015,8 @@ async function onDock(e) {
   if (tp) { applyTramaPreset(tp.dataset.tpreset); return; }
   const tr = e.target.closest('[data-trama]');
   if (tr) {
-    if (!['texture', 'fill', 'shape'].includes(ed.tool)) setTool('texture');   // seuls ces outils utilisent une trame
-    ed.tramaId = tr.dataset.trama; if (ed.tool === 'texture') storeSlot(); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); renderPop(); return;
+    if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil');   // seuls ces outils utilisent une trame
+    ed.tramaId = tr.dataset.trama; if (ed.tool === 'pencil') storeSlot(); savePrefs(); if (/^lib-/.test(popId)) popId = null; renderDock(); renderOptbar(); renderPop(); return;
   }
   const pgb = e.target.closest('[data-page]');
   if (pgb) { goToPage(+pgb.dataset.page); return; }
@@ -1247,7 +1250,7 @@ let bubbleBefore = null;
 function applyTramaPreset(id) {
   const t = ed.tramaPresets.find(x => x.id === id);
   if (!t) return;
-  if (!['texture', 'fill', 'shape'].includes(ed.tool)) setTool('texture');
+  if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil');
   ed.tramaId = allTramas(ed.project).some(x => x.id === t.tramaId) ? t.tramaId : 'plein';
   ed.tramaScale = t.tramaScale; ed.tramaOpaque = t.tramaOpaque; ed.ink = t.ink;
   savePrefs(); renderDock(); renderOptbar();
@@ -1274,8 +1277,8 @@ function onDockInput0(e) {
   if (id === 'o-alpha') { setAlpha(+e.target.value / 100); e.target.previousElementSibling.textContent = `Opacité : ${Math.round(ed.alpha * 100)} %`; updateQuick('alpha'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); return; }
   if (id === 'o-pressure') { ed.pressure = e.target.checked; savePrefs(); return; }
   if (id === 'c-pick') { ed.color = e.target.value.toUpperCase(); ed.ink = 3; const b = $('#optbar [data-ink="3"]', root); if (b) b.style.background = ed.color; return; }
-  if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'texture') storeSlot(); return; }
-  if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'texture') storeSlot(); return; }
+  if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'pencil') storeSlot(); return; }
+  if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'pencil') storeSlot(); return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
@@ -1666,6 +1669,7 @@ function onKey(e) {
   if (t) { setTool(t.id); return; }
   if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; savePrefs(); renderOptbar(); }
   else if (k === 'c') { ed.ink = 3; savePrefs(); renderOptbar(); }
+  else if (k === 't') { if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil'); popId = popId === 'lib-trama' ? null : 'lib-trama'; renderOptbar(); renderPop(); }
   else if (k === '[' || k === ']') { setSizeMm(k === '[' ? ed.sizeMm / 1.2 : ed.sizeMm * 1.2); updateQuick('size'); afterBrushChange(); }
   else if (k === '0') fit();
   else if (k === 'enter' && ed.tool === 'select' && polyCount()) polyFinish();

@@ -169,7 +169,7 @@ function beginDraw(e, el) {
 function hover(e, el) {
   if (e.pointerType === 'touch') return;
   const t = ed.tool, r = ed.size / 2 * view.s;
-  const brush = t === 'pencil' || t === 'texture' || t === 'eraser' || t === 'mask';
+  const brush = t === 'pencil' || t === 'eraser' || t === 'mask';
   const p = point(e, el);
   setOverlay({ cursor: brush && r > 1 ? { x: p.sx, y: p.sy, r } : null });
 }
