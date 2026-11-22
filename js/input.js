@@ -2,12 +2,12 @@
 // Repris de Pixel Studio (touch.js) : le stylet dessine toujours, ses appuis font ignorer les doigts ;
 // deux doigts zooment et déplacent (tape à deux doigts : annuler, à trois : rétablir).
 import { ed, page, selectPanel } from './editor.js';
-import { view, toPage, zoomAt, panBy, setView, setOverlay, canvasEl, pageDims } from './view.js';
+import { view, toPage, zoomAt, panBy, setView, setOverlay, canvasEl, minScale } from './view.js';
 import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
-let penSeen = false, penDown = false, spaceHeld = false;
-let gesture = null, panning = null, pending = null, drawingId = null, lastPen = 0, penInfo = null;
+let penSeen = false, penDown = false, spaceHeld = false;   // lastPen part de -Infinity : au chargement, aucun doigt n'est pris pour une paume
+let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
 
@@ -25,7 +25,7 @@ function point(e, el) {
   return { x: p.x, y: p.y, sx, sy, pressure: e.pointerType === 'pen' ? Math.max(0.02, e.pressure) : 0.5, type: e.pointerType, shift: e.shiftKey };
 }
 
-export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser }) {
+export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser, onDoubleTap }) {
   el.style.touchAction = 'none';
   el.addEventListener('contextmenu', e => e.preventDefault());
   // WebKit (Safari, Firefox et Chrome sur iPad) lance toucher long et menu « Rechercher » sur touchstart, que pointerdown n'annule pas
@@ -114,7 +114,14 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     }
     if (panning && panning.id === e.pointerId) {
       // un simple toucher en mode déplacement (main, ou doigt avec le stylet) change de case sans rien dessiner
-      if (!panning.moved && e.type === 'pointerup') { const q = toPage(e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top); const c = page().panels.find(p => q.x >= p.x && q.y >= p.y && q.x < p.x + p.w && q.y < p.y + p.h); if (c) selectPanel(c.id); }
+      // deux touchers rapprochés au même endroit : ouvrir la case (mode case) ou revenir à la page
+      if (!panning.moved && e.type === 'pointerup') {
+        const q = toPage(e.clientX - el.getBoundingClientRect().left, e.clientY - el.getBoundingClientRect().top);
+        const c = page().panels.find(p => q.x >= p.x && q.y >= p.y && q.x < p.x + p.w && q.y < p.y + p.h);
+        const now = e.timeStamp, dbl = lastTap && now - lastTap.t < 400 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40;
+        if (dbl) { lastTap = null; if (onDoubleTap) onDoubleTap(c ? c.id : null); }
+        else { lastTap = { t: now, x: e.clientX, y: e.clientY }; if (c && (!ed.focus || c.id === ed.panelId)) selectPanel(c.id); }
+      }
       stopPan();
     }
     if (gesture && rec.type === 'touch' && touchCount() === 0) {
@@ -219,7 +226,7 @@ function moveGesture() {
   if (Math.abs(da) > 0.14) g.spin = da - Math.sign(da) * 0.14; else if (!g.spin) g.spin = 0;
   if (!g.moved && (Math.abs(m.dist - g.dist0) > 14 || Math.hypot(m.mx - g.mx0, m.my - g.my0) > 14 || g.spin)) g.moved = true;
   if (!g.moved) return;
-  const { w: pw } = pageDims(), minS = Math.min(view.w / pw, 0.5) * 0.4;
+  const minS = minScale();
   const s = Math.max(minS, Math.min(16, g.s0 * m.dist / g.dist0));   // même borne que setView : le point d'ancrage reste exact
   let r = g.r0 + g.spin;
   // aimant aux angles courants (0, 45, 90…) à moins de 5°

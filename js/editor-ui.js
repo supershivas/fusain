@@ -1,6 +1,6 @@
 // Interface de l'éditeur : barre d'outils, options de l'outil, volet (calques, trames, pages, bulles, case).
 import {
-  ed, page, panel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
+  ed, page, panel, selectPanel, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
@@ -91,7 +91,7 @@ export function mountEditor(el) {
   attach($('#view', root));
   hooks.afterRender = placeBubbleUI;
   initBubbleUI();
-  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser });
+  attachInput($('#view', root), { onUndo: undo, onRedo: redo, onClear: clearActiveLayer, onPenToggle: penToggle, onPenEraser: penEraser, onDoubleTap });
   fit();
   renderAll();
 
@@ -124,7 +124,7 @@ export function mountEditor(el) {
     else if (what === 'sel') renderOptbar();
     else if (what === 'panels') renderAll();
     else if (what === 'project' || what === 'page') { renderAll(); fit(); }
-    else if (what === 'panel') { renderDock(); renderOptbar(); }
+    else if (what === 'panel') { renderDock(); renderOptbar(); renderZoombar(); if (ed.focus) fit(); }
     else if (what === 'layers') renderDock();
     else if (what === 'bubbles') { renderDock(); if (ed.tool === 'bubble') renderOptbar(); }
     else if (what === 'tool') { renderOptbar(); renderDock(); }
@@ -190,6 +190,7 @@ export function redo() { ed.undo.redo(); markChanged(); requestRender(); }
 
 function setTool(id) {
   if (ed.tool === 'select' && id !== 'select') { polyCancel(); clearSelection(false); }
+  if (id === 'layout' && ed.focus) { ed.focus = false; fit(); renderZoombar(); }
   storeToolSettings();   // l'outil quitté garde ses réglages ; celui qu'on prend retrouve les siens
   ed.tool = id;
   applyToolSettings();
@@ -224,13 +225,21 @@ function onDockFoot(e) {
 // ───────────────────────── Zoom et pages ─────────────────────────
 
 function renderZoombar() {
-  const n = ed.project.pages.length;
+  const n = ed.project.pages.length, panels = page().panels, ci = panels.indexOf(panel());
+  // mode case : on passe d'une case à l'autre, et « Page » ramène à la page entière
+  const nav = ed.focus
+    ? `<button class="btn small" data-z="page" title="Revenir à la page entière (double toucher)" aria-label="Revenir à la page entière">${icon('layout-grid')} Page</button>
+    <button class="icon-btn icon-only" data-z="pcase" aria-label="Case précédente" ${ci <= 0 ? 'disabled' : ''}>${icon('chevron-left')}</button>
+    <span class="zb-label">Case ${ci + 1} / ${panels.length}</span>
+    <button class="icon-btn icon-only" data-z="ncase" aria-label="Case suivante" ${ci >= panels.length - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`
+    : `<button class="icon-btn icon-only" data-z="focus" title="Ouvrir la case ${ci + 1} seule (double toucher)" aria-label="Ouvrir la case ${ci + 1} seule">${icon('focus-2')}</button>
+    <button class="icon-btn icon-only" data-z="prev" aria-label="Page précédente" ${ed.pageIdx === 0 ? 'disabled' : ''}>${icon('chevron-left')}</button>
+    <span class="zb-label">${ed.pageIdx + 1} / ${n}</span>
+    <button class="icon-btn icon-only" data-z="next" aria-label="Page suivante" ${ed.pageIdx >= n - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>`;
   $('#zoombar', root).innerHTML = `
     <button class="icon-btn icon-only mob-only" data-act="undo" aria-label="Annuler">${icon('arrow-back-up')}</button>
     <button class="icon-btn icon-only mob-only" data-act="redo" aria-label="Rétablir">${icon('arrow-forward-up')}</button>
-    <button class="icon-btn icon-only" data-z="prev" aria-label="Page précédente" ${ed.pageIdx === 0 ? 'disabled' : ''}>${icon('chevron-left')}</button>
-    <span style="display:flex;align-items:center;font:500 .8rem var(--font-mono);padding:0 2px">${ed.pageIdx + 1} / ${n}</span>
-    <button class="icon-btn icon-only" data-z="next" aria-label="Page suivante" ${ed.pageIdx >= n - 1 ? 'disabled' : ''}>${icon('chevron-right')}</button>
+    ${nav}
     <button class="icon-btn icon-only" data-z="out" aria-label="Zoom arrière">${icon('zoom-out')}</button>
     <button class="icon-btn icon-only" data-z="in" aria-label="Zoom avant">${icon('zoom-in')}</button>
     <button class="icon-btn icon-only" data-z="fit" aria-label="Ajuster à l'écran">${icon('zoom-scan')}</button>`;
@@ -243,7 +252,29 @@ function onZoombar(e) {
   if (!b) return;
   const z = b.dataset.z, cx = view.w / 2, cy = view.h / 2;
   if (z === 'in') zoomAt(cx, cy, 1.5); else if (z === 'out') zoomAt(cx, cy, 1 / 1.5);
-  else if (z === 'fit') fit(); else if (z === 'prev') goToPage(ed.pageIdx - 1); else goToPage(ed.pageIdx + 1);
+  else if (z === 'fit') fit(); else if (z === 'prev') goToPage(ed.pageIdx - 1); else if (z === 'next') goToPage(ed.pageIdx + 1);
+  else if (z === 'focus') setFocus(true); else if (z === 'page') setFocus(false);
+  else if (z === 'pcase' || z === 'ncase') stepCase(z === 'pcase' ? -1 : 1);
+}
+
+// ── Mode case : la case choisie devient le seul canevas (ses calques dans le volet), jusqu'au retour à la page ──
+export function setFocus(on, panelId) {
+  if (panelId) selectPanel(panelId);
+  on = !!on && !!ed.project;
+  if (on && ed.tool === 'layout') setTool('pencil');   // la taille des cases se règle sur la page entière
+  if (ed.focus === on && !panelId) return;
+  ed.focus = on;
+  fit(); renderZoombar(); renderOptbar(); renderDock(); requestRender();
+}
+function stepCase(d) {
+  const list = page().panels, i = list.indexOf(panel()) + d;
+  if (i < 0 || i >= list.length) return;
+  selectPanel(list[i].id); fit(); renderZoombar(); renderDock();
+}
+// Double toucher (doigt qui déplace la vue, main, souris en mode main) : ouvre la case touchée, ou revient à la page.
+function onDoubleTap(panelId) {
+  if (ed.focus) setFocus(false);
+  else if (panelId) setFocus(true, panelId);
 }
 
 // ───────────────────────── Options de l'outil ─────────────────────────
@@ -1481,7 +1512,7 @@ const COMMANDS = {
   undo, redo, 'clear-layer': clearActiveLayer, 'copy-case': copyModal,
   'del-case': () => { if (page().panels.length > 1) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); } else toast('Une page garde au moins une case.'); },
   'del-bubble': () => { const b = bubble(); if (b) deleteBubble(b); else toast('Aucune bulle sélectionnée.'); },
-  fit, 'zoom-in': () => zoomAt(view.w / 2, view.h / 2, 1.5), 'zoom-out': () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5),
+  fit, focus: () => setFocus(!ed.focus), 'zoom-in': () => zoomAt(view.w / 2, view.h / 2, 1.5), 'zoom-out': () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5),
   'tool-layout': () => setTool('layout'),
   'sel-all': () => { if (ed.tool !== 'select') setTool('select'); selectAll(panel()); },
   'sel-none': () => { polyCancel(); clearSelection(); renderOptbar(); },
@@ -1529,6 +1560,7 @@ function onKey(e) {
   if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; renderOptbar(); }
   else if (k === '[' || k === ']') { setSizeMm(k === '[' ? ed.sizeMm / 1.2 : ed.sizeMm * 1.2); updateQuick('size'); afterBrushChange(); }
   else if (k === '0') fit();
-  else if (k === 'enter' && ed.tool === 'select') { if (polyCount()) polyFinish(); }
+  else if (k === 'enter' && ed.tool === 'select' && polyCount()) polyFinish();
+  else if (k === 'enter') setFocus(!ed.focus);
   else if (k === 'delete' || k === 'backspace') { if (ed.tool === 'select') eraseSelection(); else if (bubble()) deleteBubble(); }
 }

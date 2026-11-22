@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.30.0 — 2026-11-22
+- Mode case : un double toucher sur une case (doigt ou main) l'ouvre seule, en plein écran, avec ses calques ; un double toucher ou « Page » ramène à la page
+- En mode case : flèches pour passer à la case voisine, seules les bulles de la case sont montrées, rien ne se dessine ailleurs (aussi : bouton de la barre de zoom, touche Entrée, menu Image)
+- Corrige : juste après l'ouverture de l'app, un doigt n'est plus pris pour une paume
+
 ## 1.29.0 — 2026-11-22
 - Palette de pinceaux du projet dans la barre : un toucher pour changer de pinceau, toucher l'actif ouvre ses réglages, « + » en ajoute un ; elle suit le projet sur tous les appareils
 - Taille et opacité en curseurs verticaux au bord gauche du dessin ; une opacité sous 100 % trace un gris tramé

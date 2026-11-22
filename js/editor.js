@@ -10,7 +10,7 @@ import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES } from './
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
 
 export const ed = {
-  project: null, pageIdx: 0, panelId: null, bubbleId: null,
+  project: null, pageIdx: 0, panelId: null, bubbleId: null, focus: false,
   tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
@@ -172,7 +172,7 @@ const measureCtx = () => ctx2d || (ctx2d = document.createElement('canvas').getC
 // ───────────────────────── Ouverture et enregistrement ─────────────────────────
 
 export async function openInEditor(project, pageIdx = 0) {
-  ed.project = project; ed.pageIdx = Math.min(pageIdx, project.pages.length - 1);
+  ed.project = project; ed.pageIdx = Math.min(pageIdx, project.pages.length - 1); ed.focus = false;
   ed.undo.clear(); ed.bubbleId = null;
   applyToolSettings();
   await loadPage(project, page());
@@ -225,7 +225,7 @@ export async function goToPage(idx) {
   if (idx < 0 || idx >= ed.project.pages.length || idx === ed.pageIdx) return;
   await saveNow();
   const old = page();
-  ed.pageIdx = idx; ed.bubbleId = null; ed.undo.clear();
+  ed.pageIdx = idx; ed.bubbleId = null; ed.focus = false; ed.undo.clear();
   await loadPage(ed.project, page());
   dropCaches(old); unloadPage(old);
   ed.panelId = page().panels[0] ? page().panels[0].id : null;

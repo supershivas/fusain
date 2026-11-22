@@ -31,12 +31,23 @@ export function resize() {
 
 export const pageDims = () => pageSize(ed.project);
 
+// Mode case (ed.focus) : la case ouverte est le seul canevas ; la vue s'ajuste et se borne à son cadre.
+export const focusPanel = () => (ed.focus && ed.project ? page().panels.find(p => p.id === ed.panelId) || null : null);
+export function viewBounds() {
+  const f = focusPanel();
+  if (f) return { x: f.x, y: f.y, w: f.w, h: f.h };
+  const { w, h } = pageDims();
+  return { x: 0, y: 0, w, h };
+}
+const minScale = () => Math.min(view.w / viewBounds().w, 0.5) * 0.4;
+export { minScale };
+
 export function fit() {
   if (!ed.project || !view.w) return;
-  const { w, h } = pageDims(), pad = view.w < 700 ? 8 : 24;
+  const b = viewBounds(), pad = view.w < 700 ? 8 : 24;
   view.moved = false; view.r = 0;
-  view.s = Math.min((view.w - pad * 2) / w, (view.h - pad * 2) / h);
-  view.ox = (view.w - w * view.s) / 2; view.oy = (view.h - h * view.s) / 2;
+  view.s = Math.min((view.w - pad * 2) / b.w, (view.h - pad * 2) / b.h);
+  view.ox = (view.w - b.w * view.s) / 2 - b.x * view.s; view.oy = (view.h - b.h * view.s) / 2 - b.y * view.s;
   requestRender();
 }
 
@@ -53,27 +64,27 @@ export const toScreen = (px, py) => {
 };
 
 export function clampView() {
-  const { w, h } = pageDims(), m = 80;
+  const { x: bx, y: by, w, h } = viewBounds(), m = 80;
   if (view.r) {   // page tournée : comme sans rotation, la page doit rester visible (marge m) ; on ne la déplace que si elle est perdue
     const c = Math.cos(view.r), sn = Math.sin(view.r), pc = toPage(view.w / 2, view.h / 2);
     const hx = Math.max(0, view.w / 2 - m) / view.s, hy = Math.max(0, view.h / 2 - m) / view.s;   // zone visible réduite de m, exprimée dans la page
-    const dx = pc.x - w / 2, dy = pc.y - h / 2, ux = c, uy = -sn, vx = sn, vy = c;   // axes de l'écran dans la page
+    const dx = pc.x - bx - w / 2, dy = pc.y - by - h / 2, ux = c, uy = -sn, vx = sn, vy = c;   // axes de l'écran dans la page
     const apart = Math.abs(dx) > w / 2 + hx * Math.abs(ux) + hy * Math.abs(vx)
       || Math.abs(dy) > h / 2 + hx * Math.abs(uy) + hy * Math.abs(vy)
       || Math.abs(dx * ux + dy * uy) > w / 2 * Math.abs(ux) + h / 2 * Math.abs(uy) + hx
       || Math.abs(dx * vx + dy * vy) > w / 2 * Math.abs(vx) + h / 2 * Math.abs(vy) + hy;
     if (apart) {   // page perdue : on ramène le centre de la zone sur la page
-      const a = toScreen(Math.min(w, Math.max(0, pc.x)), Math.min(h, Math.max(0, pc.y)));
+      const a = toScreen(Math.min(bx + w, Math.max(bx, pc.x)), Math.min(by + h, Math.max(by, pc.y)));
       view.ox += view.w / 2 - a.x; view.oy += view.h / 2 - a.y;
     }
     return;
   }
-  view.ox = Math.min(view.w - m, Math.max(m - w * view.s, view.ox));
-  view.oy = Math.min(view.h - m, Math.max(m - h * view.s, view.oy));
+  view.ox = Math.min(view.w - m - bx * view.s, Math.max(m - (bx + w) * view.s, view.ox));
+  view.oy = Math.min(view.h - m - by * view.s, Math.max(m - (by + h) * view.s, view.oy));
 }
 
 export function zoomAt(sx, sy, factor) {
-  const { w } = pageDims(), minS = Math.min(view.w / w, 0.5) * 0.4, maxS = 16;
+  const minS = minScale(), maxS = 16;
   const s = Math.max(minS, Math.min(maxS, view.s * factor)), k = s / view.s;
   view.ox = sx - (sx - view.ox) * k; view.oy = sy - (sy - view.oy) * k; view.s = s;
   view.moved = true;
@@ -92,7 +103,7 @@ export function rotateView(rad) {
 
 export function panBy(dx, dy) { view.ox += dx; view.oy += dy; view.moved = true; clampView(); requestRender(); }
 export function setView(s, ox, oy, r = view.r) {
-  const { w } = pageDims(), minS = Math.min(view.w / w, 0.5) * 0.4;
+  const minS = minScale();
   view.r = r;
   view.s = Math.max(minS, Math.min(16, s)); view.ox = ox; view.oy = oy; view.moved = true; clampView(); requestRender();
 }
@@ -183,13 +194,14 @@ function renderFrame() {
   const cr = Math.cos(view.r), sr = Math.sin(view.r);
   ctx.setTransform(dpr * s * cr, dpr * s * sr, -dpr * s * sr, dpr * s * cr, dpr * view.ox, dpr * view.oy);
 
+  const fp = focusPanel(), bounds = viewBounds();
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14 * dpr / s; ctx.shadowOffsetY = 3 * dpr / s;
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#fff'; ctx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
   ctx.restore();
 
   ctx.imageSmoothingEnabled = s < 1;
-  for (const p of pg.panels) {
+  for (const p of fp ? [fp] : pg.panels) {
     const c = refresh(p);
     ctx.drawImage(c.canvas, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);
     if (p.mask && ed.maskMode !== 'off' || (p.mask && ed.tool === 'mask')) {
@@ -199,13 +211,22 @@ function renderFrame() {
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
-  if (!pg.bubblesHidden) for (const b of pg.bubbles) if (!b.hidden) drawPageBubble(ctx, b, ed.project.dpi, pg.panels);
+  if (!pg.bubblesHidden) {
+    // mode case : seules les bulles qui touchent la case, rognées à son cadre
+    if (fp) { ctx.save(); ctx.beginPath(); ctx.rect(fp.x, fp.y, fp.w, fp.h); ctx.clip(); }
+    for (const b of pg.bubbles) if (!b.hidden && (!fp || overlaps(b, fp))) drawPageBubble(ctx, b, ed.project.dpi, pg.panels);
+    if (fp) {
+      ctx.restore();
+      const bw = mmToPx(panelStroke(fp), ed.project.dpi);
+      if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(fp.x, fp.y, fp.w, fp.h); }
+    }
+  }
 
   // aides, en pixels d'écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const accent = css('--accent') || '#C0392B';
   const active = pg.panels.find(p => p.id === ed.panelId);
-  if (active && ed.tool !== 'bubble') {
+  if (active && ed.tool !== 'bubble' && !fp) {
     const m = toScreen(active.x + active.w / 2, active.y + active.h / 2);
     ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([]);
     ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(view.r);
@@ -216,7 +237,7 @@ function renderFrame() {
     const a = toScreen(selPanel.ex + ed.sel.x0 + ed.sel.dx, selPanel.ey + ed.sel.y0 + ed.sel.dy), b = toScreen(selPanel.ex + ed.sel.x1 + ed.sel.dx, selPanel.ey + ed.sel.y1 + ed.sel.dy);
     ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.setLineDash([]);
   }
-  if (ed.showNotes) drawNotes(pg);
+  if (ed.showNotes) drawNotes(pg, fp);
   drawBubbleSelection(pg, accent);
   drawShapePreview(accent);
   if (ed.tool === 'layout') drawGutters(pg, accent);
@@ -234,6 +255,13 @@ function renderFrame() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 0.5, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 0.5, 0, Math.PI * 2); ctx.stroke();
   }
+}
+
+// Une bulle (ou sa queue) touche-t-elle la case ?
+function overlaps(b, p) {
+  const m = 4, xs = [b.x, b.x + b.w], ys = [b.y, b.y + b.h];
+  if (b.tail) { xs.push(b.tail.x); ys.push(b.tail.y); }
+  return Math.max(...xs) >= p.x - m && Math.min(...xs) <= p.x + p.w + m && Math.max(...ys) >= p.y - m && Math.min(...ys) <= p.y + p.h + m;
 }
 
 // Sélection : voile et contour (octets 0/1 → pixels), mis en cache sur l'objet sélection ; le contenu soulevé se montre par-dessus.
@@ -263,9 +291,9 @@ function drawSelection(p, sel) {
 }
 
 // Plan et description de la case (aide au dessin, jamais exportés).
-function drawNotes(pg) {
+function drawNotes(pg, fp) {
   ctx.font = "500 12px 'Inter', sans-serif"; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  for (const p of pg.panels) {
+  for (const p of fp ? [fp] : pg.panels) {
     const label = [p.note.plan, p.note.description].filter(Boolean).join(' — ');
     if (!label) continue;
     const a = toScreen(p.x, p.y), maxW = Math.max(40, p.w * view.s - 16);

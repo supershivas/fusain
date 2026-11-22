@@ -16,7 +16,8 @@ import { selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beg
 let session = null, hinted = null;   // hinted : dernier calque signalé par un toast de redirection
 export const busy = () => !!session;
 
-const panelAt = (x, y) => page().panels.find(p => x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) || null;
+// En mode case, seule la case ouverte reçoit les gestes.
+const panelAt = (x, y) => page().panels.find(p => (!ed.focus || p.id === ed.panelId) && x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) || null;
 
 // Motif courant : null = encre pleine, sinon la tuile de trame.
 const currentTrama = () => { const t = tramaById(ed.project, ed.tramaId); return t.solid ? null : t; };
