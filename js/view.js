@@ -257,6 +257,28 @@ function renderFrame() {
   }
 }
 
+// Pipette : couleur composée de la case sous le point d'écran (sx, sy), sur fond blanc ; null hors des cases.
+export function colorAt(sx, sy) {
+  if (!ed.project) return null;
+  const q = toPage(sx, sy), fp = focusPanel();
+  const p = (fp ? [fp] : page().panels).find(c => q.x >= c.x && q.y >= c.y && q.x < c.x + c.w && q.y < c.y + c.h);
+  if (!p) return null;
+  // un doigt vise mal un trait fin : on regarde un petit voisinage (3 px d'écran) et on prend le pixel le plus couvert
+  const r = Math.max(1, Math.round(3 / view.s)), cx = Math.floor(q.x - p.ex), cy = Math.floor(q.y - p.ey);
+  const x0 = Math.max(0, cx - r), y0 = Math.max(0, cy - r), w = Math.min(p.ew, cx + r + 1) - x0, h = Math.min(p.eh, cy + r + 1) - y0;
+  if (w <= 0 || h <= 0) return null;
+  const d = refresh(p).cx.getImageData(x0, y0, w, h).data;
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const px = (i / 4) % w + x0 - cx, py = Math.floor(i / 4 / w) + y0 - cy, score = (255 - d[i + 3]) * 4 + px * px + py * py;   // le plus opaque, puis le plus proche
+    if (score < bd) { bd = score; best = i; }
+  }
+  if (best < 0) return '#FFFFFF';
+  const a = d[best + 3] / 255, ch = k => Math.round(d[best + k] * a + 255 * (1 - a)).toString(16).padStart(2, '0');
+  return ('#' + ch(0) + ch(1) + ch(2)).toUpperCase();
+}
+
 // Sélection : voile et contour (octets 0/1 → pixels), mis en cache sur l'objet sélection ; le contenu soulevé se montre par-dessus.
 function selTint(sel) {
   if (sel.tint) return sel.tint;

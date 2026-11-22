@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.36.0 — 2026-11-22
+- Couleurs entre les deux curseurs de gauche : deux couleurs, une flèche pour passer de l'une à l'autre (touche X), un mini noir et blanc pour y revenir (touche D) ; noir et blanc ne sont plus à part dans la barre
+- Nouvelle palette : sélecteur de nuances (teinte, saturation, luminosité), code de couleur, nuances plus sombres et plus claires en un toucher, palette du projet (+ pour ajouter, appui long pour retirer), couleurs récentes et pipette pour prendre une couleur du dessin
+
 ## 1.35.2 — 2026-11-22
 - Trames : plus de trame « Plein » ; l'encre pleine est un cercle noir en tête de la bibliothèque, suivi des trames (et dans la barre quand aucune trame n'est choisie)
 

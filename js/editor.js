@@ -11,7 +11,7 @@ import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.j
 
 export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null, focus: false,
-  tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, color: '#2E86DE', recentColors: [], brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
+  tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, color: '#000000', color2: '#FFFFFF', recentColors: [], picking: false, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
   shapeKind: 'rect', shapeFilled: false, fillGap: 100,
   maskMode: 'off', maskErase: false, bubbleDraw: false,
@@ -27,10 +27,10 @@ export const notify = what => subs.forEach(fn => fn(what));
 
 // Chaque outil garde ses propres réglages (taille, encre, trame, forme…) : on les range en quittant l'outil et on les reprend en y revenant.
 export const TOOL_DEFAULTS = {
-  pencil: { sizeMm: 0.5, alpha: 1, ticks: null, slotId: null, ink: 1, brushId: 'stylo', brushParams: null, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  pencil: { sizeMm: 0.5, alpha: 1, ticks: null, slotId: null, brushId: 'stylo', brushParams: null, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   eraser: { sizeMm: 3, alpha: 1, ticks: null, slotId: null, brushId: 'stylo', brushParams: null },
-  fill: { ink: 1, fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
-  shape: { sizeMm: 0.5, ticks: null, ink: 1, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  fill: { fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
+  shape: { sizeMm: 0.5, ticks: null, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, ticks: null, maskErase: false },
 };
 export function storeToolSettings() {
@@ -43,6 +43,7 @@ export function applyToolSettings() {
   ed.brushParams = { ...BRUSH_DEFAULTS, ...(ed.brushParams || brushSpec(ed.brushId, ed.customBrushes)) };
   syncSize();
   syncSlot();
+  ed.ink = inkOf(ed.color);   // la couleur est commune à tous les outils
 }
 
 // ── Pinceaux : livrés ou enregistrés par l'utilisateur ──
@@ -166,7 +167,7 @@ export function syncSlot() {
   if (list.some(s => s.id === ed.slotId)) applySlot(ed.slotId); else if (list[0]) applySlot(list[0].id);
 }
 // ── Couleurs du projet : une palette partagée par toutes ses pages (créée à la première ouverture) ──
-export const DEFAULT_COLORS = ['#F2D3B3', '#D9A57A', '#8D5524', '#C0392B', '#E67E22', '#F4D03F', '#27AE60', '#1ABC9C', '#2E86DE', '#1F3A93', '#8E44AD', '#E84393', '#7F8C8D', '#2C3E50', '#FDFEFE'];
+export const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#F2D3B3', '#D9A57A', '#8D5524', '#C0392B', '#E67E22', '#F4D03F', '#27AE60', '#1ABC9C', '#2E86DE', '#1F3A93', '#8E44AD', '#E84393', '#7F8C8D', '#2C3E50'];
 export function projectColors() {
   if (!ed.project) return DEFAULT_COLORS;
   return ed.project.colors || DEFAULT_COLORS;
@@ -181,11 +182,20 @@ export function removeProjectColor(hex) {
   if (list.length === projectColors().length) return false;
   ed.project.colors = list; markChanged(); return true;
 }
-export function setColor(hex) {
-  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
-  ed.color = hex.toUpperCase(); ed.ink = 3;
-  ed.recentColors = [ed.color, ...ed.recentColors.filter(c => c !== ed.color)].slice(0, 8);
+export function restoreProjectColor(hex, index) {
+  const list = projectColors().slice();
+  if (list.includes(hex)) return;
+  list.splice(Math.min(index, list.length), 0, hex); ed.project.colors = list; markChanged();
 }
+// Noir pur et blanc pur restent dans les calques 1 bit (encre 1 et 2) ; toute autre couleur passe le calque en RVBA.
+export const inkOf = hex => (hex === '#000000' ? 1 : hex === '#FFFFFF' ? 2 : 3);
+export function setColor(hex, recent = true) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return;
+  ed.color = hex.toUpperCase(); ed.ink = inkOf(ed.color);
+  if (recent) ed.recentColors = [ed.color, ...ed.recentColors.filter(c => c !== ed.color)].slice(0, 10);
+}
+export function swapColors() { [ed.color, ed.color2] = [ed.color2, ed.color]; ed.ink = inkOf(ed.color); }
+export function resetColors() { ed.color = '#000000'; ed.color2 = '#FFFFFF'; ed.ink = 1; }
 
 // Passe un calque d'encre ou de trame en RVBA (1 → noir ou sa teinte, 2 → blanc), en une étape annulable.
 export function toRGBA(l) {

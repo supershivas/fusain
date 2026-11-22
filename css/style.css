@@ -454,8 +454,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .pop .field.inline .row.nowrap { flex-wrap: nowrap; align-items: center; }
 .zoombar .zb-label { display: flex; align-items: center; font: 500 .8rem var(--font-mono); padding: 0 2px; white-space: nowrap; }
 
-/* Couleur : pastille de la barre et palette du projet */
-.ink-btn.color.on { box-shadow: 0 0 0 2px var(--accent-soft), inset 0 0 0 2px #fff; }
+/* Couleur : palette du projet */
 .cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 6px; }
 .cswatch { height: 36px; min-width: 36px; border-radius: var(--radius-md); border: 1px solid var(--border); }
 .cswatch.on { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -469,3 +468,29 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .qs.snap .qs-thumb { background: var(--accent); }
 .slot.holding, .brush-row.holding { transform: scale(.94); transition: transform .5s; border-color: var(--accent); }
 .slot, .brush-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* Deux couleurs, entre les curseurs de gauche : principale devant, secondaire derrière, échange et noir / blanc */
+.cw { position: relative; width: 52px; height: 58px; align-self: center; }
+.cw button { position: absolute; padding: 0; border-radius: 6px; }
+.cw-pri, .cw-sec { width: 32px; height: 32px; border: 2px solid var(--card-bg); box-shadow: 0 0 0 1px var(--border), var(--card-shadow); }
+.cw-pri { left: 2px; top: 2px; z-index: 2; }
+.cw-pri.open { box-shadow: 0 0 0 2px var(--accent), var(--card-shadow); }
+.cw-sec { left: 18px; top: 18px; z-index: 1; }
+.cw-swap { right: -6px; top: -6px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--text-secondary); font-size: 15px; }
+.cw-reset { left: -4px; bottom: -6px; width: 26px; height: 24px; background: none; border: none; }
+.cw-reset i { position: absolute; width: 10px; height: 10px; border: 1px solid var(--text-secondary); }
+.cw-reset i:first-child { left: 5px; top: 5px; background: #000; z-index: 1; }
+.cw-reset i:last-child { left: 10px; top: 10px; background: #fff; }
+/* Sélecteur de nuances */
+.cpk { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.cpk canvas { width: 100%; border-radius: var(--radius-md); touch-action: none; display: block; cursor: crosshair; }
+.cpk-sv { aspect-ratio: 240 / 140; }
+.cpk-h { height: 22px; }
+.cpk-row { align-items: center; flex-wrap: nowrap; }
+.cpk-now { width: 36px; height: 36px; border-radius: var(--radius-md); border: 1px solid var(--border); flex: none; }
+.cpk-hex { width: 96px; font-family: var(--font-mono); text-transform: uppercase; height: 36px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--field-bg); color: var(--text-primary); }
+.cshades { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cshades .cswatch { min-width: 0; height: 30px; }
+.cswatch.add { display: flex; align-items: center; justify-content: center; border-style: dashed; background: var(--card-bg); color: var(--text-secondary); }
+/* la fenêtre des couleurs s'ouvre à droite de la colonne de gauche, pour laisser voir les deux couleurs */
+.pop[data-id="color"] { left: 68px; width: min(340px, calc(100% - 76px)); }

@@ -3,11 +3,11 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, setColor, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, peekTarget, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush } from './raster.js';
-import { attach, fit, view, zoomAt, requestRender, resize, invalidate, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
+import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, bubbleRotHandle } from './view.js';
 import { attachInput, typing } from './input.js';
 import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
@@ -53,8 +53,10 @@ export function loadPrefs() {
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
     if (p.ditherOpts && typeof p.ditherOpts === 'object') ed.ditherOpts = p.ditherOpts;
     if (Array.isArray(p.customBrushes)) ed.customBrushes = p.customBrushes;
-    if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) ed.color = p.color;
-    if (Array.isArray(p.recentColors)) ed.recentColors = p.recentColors.filter(c => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 8);
+    if (typeof p.color === 'string' && /^#[0-9a-f]{6}$/i.test(p.color)) ed.color = p.color.toUpperCase();
+    if (typeof p.color2 === 'string' && /^#[0-9a-f]{6}$/i.test(p.color2)) ed.color2 = p.color2.toUpperCase();
+    else if (ed.color !== '#000000') { p.recentColors = [ed.color, ...(p.recentColors || [])]; ed.color = '#000000'; }   // ancien format : la couleur part dans les récentes
+    if (Array.isArray(p.recentColors)) ed.recentColors = p.recentColors.filter(c => /^#[0-9a-f]{6}$/i.test(c)).map(c => c.toUpperCase()).slice(0, 10);
     if (p.brushSizes && typeof p.brushSizes === 'object') ed.brushSizes = p.brushSizes;
     if (Array.isArray(p.tramaPresets)) ed.tramaPresets = p.tramaPresets;
     if (Array.isArray(p.bubbleTemplates)) ed.bubbleTemplates = p.bubbleTemplates;
@@ -69,7 +71,7 @@ export function savePrefs() {
   try {
     localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
-      color: ed.color, recentColors: ed.recentColors,
+      color: ed.color, color2: ed.color2, recentColors: ed.recentColors,
       customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets, bubbleTemplates: ed.bubbleTemplates, bubbleTemplate: ed.bubbleTemplate }));
   } catch { /* */ }
 }
@@ -105,12 +107,16 @@ export function mountEditor(el) {
   $('#optbar', root).addEventListener('click', onOptbar);
   attachHold($('#optbar', root)); attachHold($('#pop', root));
   $('#optbar', root).addEventListener('input', onOptInput);
+  const pop = $('#pop', root);
   const quick = $('#quick', root);
   quick.addEventListener('pointerdown', quickDown);
   quick.addEventListener('pointermove', quickMove);
   quick.addEventListener('pointerup', quickUp);
   quick.addEventListener('pointercancel', quickUp);
   quick.addEventListener('keydown', quickKey);
+  quick.addEventListener('click', onQuickClick);
+  pop.addEventListener('pointerdown', pickerDown); pop.addEventListener('pointermove', pickerMove);
+  pop.addEventListener('pointerup', pickerUp); pop.addEventListener('pointercancel', pickerUp);
   $('#dock', root).addEventListener('pointerdown', e => { if (!gripDown(e)) swipeDown(e); });
   $('#dock', root).addEventListener('pointermove', e => { gripMove(e); swipeMove(e); });
   $('#dock', root).addEventListener('pointerup', e => { gripUp(e); swipeUp(e); });
@@ -121,7 +127,6 @@ export function mountEditor(el) {
   $('#dock', root).addEventListener('input', onDockInput);
   $('#dock', root).addEventListener('change', onDockChange);
   $('#dock', root).addEventListener('focusin', onDockFocus);
-  const pop = $('#pop', root);
   pop.addEventListener('click', onDock); pop.addEventListener('input', onDockInput); pop.addEventListener('change', onDockChange); pop.addEventListener('focusin', onDockFocus);
 
   unsub = subscribe(what => {
@@ -146,8 +151,9 @@ export function mountEditor(el) {
 }
 
 function closeColorOutside(e) {
-  if (popId !== 'color' || e.target.closest('#pop, [data-ink="3"], .toast, dialog')) return;
-  popId = null; renderPop(); renderOptbar();
+  if (pickFromCanvas(e)) return;
+  if (popId !== 'color' || e.target.closest('#pop, [data-cw="open"], .toast, dialog')) return;
+  popId = null; renderPop(); renderOptbar(); updateColorWidget();
   if (e.target.id === 'view') { e.stopPropagation(); e.preventDefault(); }   // ce toucher ferme la palette, il ne dessine pas
 }
 // La bibliothèque est arrivée d'un autre appareil : listes et barre à jour.
@@ -312,10 +318,6 @@ const vToSize = v => {
 };
 // Remplissage : tolérance aux contours ouverts (0 = fermés seulement).
 const gapControl = () => `<span class="opt size"><input type="range" id="o-gap" min="0" max="100" value="${ed.fillGap}" aria-label="Tolérance aux trous du contour"><span class="unit" id="o-gap-v">${ed.fillGap} %</span></span>`;
-const inkControl = () => `<span class="row tight nowrap" role="group" aria-label="Encre">
-  <button class="ink-btn ${ed.ink === 1 ? 'on' : ''}" data-ink="1" style="background:#000" aria-label="Encre noire" aria-pressed="${ed.ink === 1}"></button>
-  <button class="ink-btn ${ed.ink === 2 ? 'on' : ''}" data-ink="2" style="background:#fff" aria-label="Encre blanche" aria-pressed="${ed.ink === 2}"></button>
-  <button class="ink-btn color ${ed.ink === 3 ? 'on' : ''} ${popId === 'color' ? 'open' : ''}" data-ink="3" style="background:${ed.color}" aria-label="Couleur ${ed.color}${ed.ink === 3 ? ' (toucher pour la palette)' : ''}" aria-pressed="${ed.ink === 3}" aria-expanded="${popId === 'color'}" title="Couleur : s'applique au crayon, au pinceau trame, au remplissage et aux formes"></button></span>`;
 // La trame se montre sans texte : un toucher ouvre la bibliothèque en liste déroulante.
 function tramaControl() {
   const t = tramaById(ed.project, ed.tramaId);
@@ -326,13 +328,13 @@ function tramaControl() {
 export function renderOptbar() {
   const o = $('#optbar', root), t = ed.tool;
   let html = '';
-  if (t === 'pencil') html = paletteControl() + tramaControl() + inkControl() + popBtn('brush');
+  if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush');
   else if (t === 'eraser') html = paletteControl() + popBtn('brush');
-  else if (t === 'fill') html = tramaControl() + gapControl() + inkControl() + popBtn('trama');
+  else if (t === 'fill') html = tramaControl() + gapControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
-      + tramaControl() + inkControl() + popBtn('trama');
+      + tramaControl() + popBtn('trama');
   } else if (t === 'mask') {
     html = `<span class="seg" role="group" aria-label="Effet du masque">
         <button data-mask="off" class="${ed.maskMode === 'off' ? 'on' : ''}">Sans effet</button>
@@ -425,11 +427,11 @@ function toggleTick(k) {
 function renderQuick() {
   const q = $('#quick', root);
   if (!q) return;
-  const on = BRUSH_TOOLS.includes(ed.tool) || ed.tool === 'mask' || ed.tool === 'shape';
-  q.hidden = !on;
-  if (!on) { q.innerHTML = ''; return; }
-  const keys = BRUSH_TOOLS.includes(ed.tool) ? ['size', 'alpha'] : ['size'];
-  q.innerHTML = keys.map(k => `<div class="qs" data-quick="${k}" role="slider" tabindex="0" aria-label="${QUICK[k].label}" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(QUICK[k].get() * 100)}" aria-valuetext="${QUICK[k].fmt()}">
+  const sized = BRUSH_TOOLS.includes(ed.tool) || ed.tool === 'mask' || ed.tool === 'shape', colored = TOOL_COLOR.includes(ed.tool);
+  q.hidden = !sized && !colored;
+  if (q.hidden) { q.innerHTML = ''; return; }
+  const keys = [sized ? 'size' : null, colored ? 'color' : null, BRUSH_TOOLS.includes(ed.tool) ? 'alpha' : null].filter(Boolean);
+  q.innerHTML = keys.map(k => k === 'color' ? colorWidget() : `<div class="qs" data-quick="${k}" role="slider" tabindex="0" aria-label="${QUICK[k].label}" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(QUICK[k].get() * 100)}" aria-valuetext="${QUICK[k].fmt()}">
       <div class="qs-track"><div class="qs-fill" style="height:${QUICK[k].get() * 100}%"></div>${tickHtml(k)}<div class="qs-thumb" style="bottom:${QUICK[k].get() * 100}%"></div></div>
       <span class="qs-val">${QUICK[k].fmt()}</span></div>`).join('');
 }
@@ -556,7 +558,7 @@ function paintSwatches(scope) {
 // ── Appui long sur un pinceau : le retirer (palette) ou le supprimer (« Mes pinceaux »), avec « Annuler » ──
 let hold = null, swallowClick = null;   // l'élément dont il faut ignorer le clic qui suit l'appui long
 function holdDown(e) {
-  const el = e.target.closest('.slot[data-slot], .brush-row[data-brush]');
+  const el = e.target.closest('.slot[data-slot], .brush-row[data-brush], .cswatch[data-pal]');
   if (!el || (e.pointerType === 'mouse' && e.button !== 0)) return;
   if (el.dataset.brush && !(allBrushes().find(x => x.id === el.dataset.brush) || {}).custom) return;   // pinceaux livrés : pas de suppression
   clearTimeout(hold && hold.timer);
@@ -567,6 +569,13 @@ function holdDown(e) {
 function holdMove(e) { if (hold && e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) holdCancel(); }
 function holdCancel() { if (hold) { clearTimeout(hold.timer); hold.el.classList.remove('holding'); hold = null; } }
 function holdFire(el) {
+  if (el.dataset.pal) {
+    const hex = el.dataset.pcolor, i = projectColors().indexOf(hex);
+    if (!removeProjectColor(hex)) return;
+    const pe = $('#pop', root); if (pe) pe._html = ''; renderPop();
+    toast(`${hex} retiré de la palette.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreProjectColor(hex, i); const p2 = $('#pop', root); if (p2) p2._html = ''; renderPop(); } });
+    return;
+  }
   if (el.dataset.slot) {
     const list = brushSlots(), i = list.findIndex(s => s.id === el.dataset.slot), slot = list[i];
     if (!slot) return;
@@ -585,8 +594,8 @@ function attachHold(el) {
   el.addEventListener('pointermove', holdMove);
   el.addEventListener('pointerup', holdCancel);
   el.addEventListener('pointercancel', holdCancel);
-  el.addEventListener('contextmenu', e => { if (e.target.closest('.slot, .brush-row')) e.preventDefault(); });
-  el.addEventListener('click', e => { if (swallowClick && e.target.closest('.slot, .brush-row') === swallowClick) { e.stopImmediatePropagation(); e.preventDefault(); swallowClick = null; } }, true);
+  el.addEventListener('contextmenu', e => { if (e.target.closest('.slot, .brush-row, .cswatch')) e.preventDefault(); });
+  el.addEventListener('click', e => { if (swallowClick && e.target.closest('.slot, .brush-row, .cswatch') === swallowClick) { e.stopImmediatePropagation(); e.preventDefault(); swallowClick = null; } }, true);
 }
 
 function onOptbar(e) {
@@ -598,11 +607,6 @@ function onOptbar(e) {
     renderOptbar(); renderPop(); return;
   }
   if (b.dataset.selmode || b.dataset.selop || b.dataset.selact) onSelect(b);
-  else if (b.dataset.ink) {
-    const v = +b.dataset.ink;
-    if (v === 3 && (ed.ink === 3 || !ed.recentColors.length)) popId = popId === 'color' ? null : 'color';   // la couleur active : un toucher ouvre ou ferme la palette
-    ed.ink = v; savePrefs(); renderOptbar(); renderPop();
-  }
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -743,16 +747,130 @@ function bubbleTplList() {
 // Réglages détaillés de l'outil : fenêtre flottante au-dessus de la barre du bas, jamais dans le volet.
 const TOOL_TRAMA = ['pencil', 'fill', 'shape'];
 const TOOL_COLOR = ['pencil', 'fill', 'shape'];
+
+// ── Couleurs : deux couleurs (principale, secondaire) dans le widget entre les deux curseurs de gauche ──
+const HEXRE = /^#[0-9a-f]{6}$/i;
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const rgb2hex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+function rgb2hsv([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: ((h * 60) + 360) % 360, s: mx ? d / mx : 0, v: mx };
+}
+function hsv2rgb({ h, s, v }) {
+  const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return [f(5) * 255, f(3) * 255, f(1) * 255];
+}
+// Teinte gardée à part : un gris (saturation nulle) ne doit pas faire perdre la teinte choisie dans le sélecteur.
+let pick = null;
+const pickState = () => {
+  const cur = rgb2hsv(hex2rgb(ed.color));
+  if (!pick || rgb2hex(hsv2rgb(pick)) !== ed.color) pick = cur.s === 0 && pick ? { ...cur, h: pick.h } : cur;
+  return pick;
+};
+// Nuances immédiates de la couleur : trois plus sombres, elle, trois plus claires.
+const shadesOf = hex => { const c = hex2rgb(hex); return [-0.6, -0.4, -0.2, 0, 0.25, 0.5, 0.75].map(t => rgb2hex(c.map(v => (t < 0 ? v * (1 + t) : v + (255 - v) * t)))); };
+
+function colorWidget() {
+  return `<div class="cw" role="group" aria-label="Couleurs">
+      <button class="cw-sec" data-cw="swap" style="background:${ed.color2}" title="Couleur secondaire ${ed.color2} : toucher pour l'échanger" aria-label="Couleur secondaire ${ed.color2}, toucher pour l'échanger"></button>
+      <button class="cw-pri ${popId === 'color' ? 'open' : ''}" data-cw="open" style="background:${ed.color}" title="Couleur ${ed.color} : toucher pour la palette" aria-label="Couleur ${ed.color}, toucher pour la palette" aria-expanded="${popId === 'color'}"></button>
+      <button class="cw-swap" data-cw="swap" title="Échanger les deux couleurs (X)" aria-label="Échanger les deux couleurs">${icon('arrows-exchange')}</button>
+      <button class="cw-reset" data-cw="reset" title="Noir et blanc (D)" aria-label="Revenir au noir et au blanc"><i></i><i></i></button></div>`;
+}
+function updateColorWidget() {
+  const q = $('#quick', root);
+  if (!q) return;
+  const p = $('[data-cw="open"]', q), s = $('.cw-sec', q);
+  if (p) { p.style.background = ed.color; p.setAttribute('aria-label', `Couleur ${ed.color}, toucher pour la palette`); p.classList.toggle('open', popId === 'color'); p.setAttribute('aria-expanded', popId === 'color'); }
+  if (s) s.style.background = ed.color2;
+}
+function onQuickClick(e) {
+  const b = e.target.closest('[data-cw]');
+  if (!b) return;
+  const a = b.dataset.cw;
+  if (a === 'open') popId = popId === 'color' ? null : 'color';
+  else if (a === 'swap') swapColors();
+  else if (a === 'reset') resetColors();
+  savePrefs(); updateColorWidget(); renderOptbar(); renderPop();
+}
+
 function colorPop() {
   const list = projectColors(), inPal = list.includes(ed.color);
-  const sw = (c, attr) => `<button class="cswatch ${c === ed.color && ed.ink === 3 ? 'on' : ''}" ${attr}="${c}" style="background:${c}" aria-label="Couleur ${c}" title="${c}"></button>`;
-  return `<div class="cgrid" role="group" aria-label="Couleurs du projet">${list.map(c => sw(c, 'data-pcolor')).join('')}</div>
-    ${ed.recentColors.length ? `<div class="clabel">Récentes</div><div class="cgrid">${ed.recentColors.map(c => sw(c, 'data-pcolor')).join('')}</div>` : ''}
-    <div class="row tight" style="margin:10px 0 4px;align-items:center">
-      <label class="cpick"><input type="color" id="c-pick" value="${ed.color.toLowerCase()}" aria-label="Choisir une autre couleur"><span>Autre couleur…</span></label>
-      ${inPal ? `<button class="btn small" data-act="color-del">${icon('trash')} Retirer de la palette</button>` : `<button class="btn small" data-act="color-add">${icon('plus')} Ajouter à la palette</button>`}</div>
-    <small class="note">La couleur s'applique à l'outil choisi (crayon, pinceau trame, remplissage, formes) dans son calque habituel, qui passe en couleur au premier trait. Un calque « Couleur » actif la reçoit aussi, sans faire barrière au remplissage. La palette suit le projet.</small>`;
+  const sw = (c, pal) => `<button class="cswatch ${c === ed.color ? 'on' : ''}" data-pcolor="${c}" ${pal ? 'data-pal="1"' : ''} style="background:${c}" aria-label="Couleur ${c}${pal ? ' (appui long : retirer de la palette)' : ''}" title="${c}"></button>`;
+  return `<div class="cpk">
+      <canvas class="cpk-sv" data-hsv="sv" width="240" height="140" aria-label="Saturation et luminosité"></canvas>
+      <canvas class="cpk-h" data-hsv="h" width="240" height="18" aria-label="Teinte"></canvas></div>
+    <div class="row tight cpk-row">
+      <span class="cpk-now" style="background:${ed.color}"></span>
+      <input type="text" id="c-hex" class="cpk-hex" value="${ed.color}" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Code de la couleur">
+      <button class="icon-btn icon-only" data-act="pick-color" title="Pipette : prendre une couleur du dessin" aria-label="Pipette : prendre une couleur du dessin">${icon('color-picker')}</button>
+      ${inPal ? '' : `<button class="btn small" data-act="color-add" title="Ajouter à la palette du projet">${icon('plus')} Palette</button>`}</div>
+    <div class="clabel">Nuances</div><div class="cshades">${shadesOf(ed.color).map(c => `<button class="cswatch ${c === ed.color ? 'on' : ''}" data-pcolor="${c}" style="background:${c}" aria-label="Nuance ${c}" title="${c}"></button>`).join('')}</div>
+    <div class="clabel">Palette du projet</div><div class="cgrid" role="group" aria-label="Couleurs du projet">${list.map(c => sw(c, true)).join('')}<button class="cswatch add" data-act="color-add" aria-label="Ajouter la couleur actuelle à la palette" title="Ajouter la couleur actuelle">${icon('plus')}</button></div>
+    ${ed.recentColors.length ? `<div class="clabel">Récentes</div><div class="cgrid">${ed.recentColors.map(c => sw(c, false)).join('')}</div>` : ''}
+    <small class="note">Appui long sur une couleur de la palette pour la retirer. La couleur s'applique au pinceau, au remplissage et aux formes, dans leur calque.</small>`;
 }
+// Dessin du sélecteur : carré saturation × luminosité, bande des teintes, repères.
+function paintPicker(scope) {
+  const sv = $('canvas[data-hsv="sv"]', scope), hb = $('canvas[data-hsv="h"]', scope);
+  if (!sv || !hb) return;
+  const st = pickState();
+  let c = sv.getContext('2d'), w = sv.width, h = sv.height;
+  c.fillStyle = rgb2hex(hsv2rgb({ h: st.h, s: 1, v: 1 })); c.fillRect(0, 0, w, h);
+  let g = c.createLinearGradient(0, 0, w, 0); g.addColorStop(0, '#fff'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  const mx = st.s * w, my = (1 - st.v) * h;
+  c.lineWidth = 2; c.strokeStyle = '#fff'; c.beginPath(); c.arc(mx, my, 7, 0, Math.PI * 2); c.stroke();
+  c.strokeStyle = '#000'; c.beginPath(); c.arc(mx, my, 9, 0, Math.PI * 2); c.stroke();
+  c = hb.getContext('2d'); w = hb.width; h = hb.height;
+  g = c.createLinearGradient(0, 0, w, 0);
+  for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, rgb2hex(hsv2rgb({ h: i * 60, s: 1, v: 1 })));
+  c.fillStyle = g; c.fillRect(0, 0, w, h);
+  const hx = st.h / 360 * w;
+  c.lineWidth = 3; c.strokeStyle = '#fff'; c.strokeRect(hx - 3, 1, 6, h - 2); c.lineWidth = 1; c.strokeStyle = '#000'; c.strokeRect(hx - 4.5, 0.5, 9, h - 1);
+}
+let pickDrag = null;
+function pickerDown(e) {
+  const cv = e.target.closest('canvas[data-hsv]');
+  if (!cv) return;
+  e.preventDefault();
+  try { cv.setPointerCapture(e.pointerId); } catch { /* */ }
+  pickDrag = { cv, id: e.pointerId };
+  pickerMove(e);
+}
+function pickerMove(e) {
+  const g = pickDrag;
+  if (!g || e.pointerId !== g.id) return;
+  const r = g.cv.getBoundingClientRect(), x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+  const st = pickState();
+  if (g.cv.dataset.hsv === 'sv') { st.s = x; st.v = 1 - y; } else st.h = Math.min(359.9, x * 360);
+  setColor(rgb2hex(hsv2rgb(st)), false);
+  const pe = $('#pop', root);
+  paintPicker(pe); updateColorWidget();
+  const now = $('.cpk-now', pe), hx = $('#c-hex', pe);
+  if (now) now.style.background = ed.color;
+  if (hx && document.activeElement !== hx) hx.value = ed.color;
+}
+function pickerUp(e) {
+  if (!pickDrag || e.pointerId !== pickDrag.id) return;
+  pickDrag = null;
+  setColor(ed.color); savePrefs();
+  const pe = $('#pop', root); if (pe) pe._html = '';
+  renderPop();
+}
+// Pipette : le prochain toucher sur le dessin prend sa couleur.
+function pickFromCanvas(e) {
+  if (!ed.picking || e.target.id !== 'view') return false;
+  e.stopPropagation(); e.preventDefault();
+  ed.picking = false;
+  const r = e.target.getBoundingClientRect(), hex = colorAt(e.clientX - r.left, e.clientY - r.top);
+  if (hex) { setColor(hex); savePrefs(); updateColorWidget(); toast(`Couleur prise : ${hex}`, { duration: 1400 }); }
+  return true;
+}
+
 function renderPop() {
   const el = $('#pop', root);
   if (!el || !ed.project) return;
@@ -768,7 +886,7 @@ function renderPop() {
   el.dataset.id = popId; el.hidden = false; el._html = html;
   el.innerHTML = html;
   $('.pop-body', el).scrollTop = keep;
-  paintSwatches(el); paintLibrary(el);
+  paintSwatches(el); paintLibrary(el); paintPicker(el);
   $$('canvas[data-bprev]', el).forEach(c => previewBrush(c, ed.brushParams, Math.min(ed.size, 8)));
 }
 function paintLibrary(scope) {
@@ -1039,7 +1157,7 @@ async function onDock(e) {
   const pgb = e.target.closest('[data-page]');
   if (pgb) { goToPage(+pgb.dataset.page); return; }
   const pc = e.target.closest('[data-pcolor]');
-  if (pc) { setColor(pc.dataset.pcolor); savePrefs(); renderOptbar(); renderPop(); return; }
+  if (pc) { setColor(pc.dataset.pcolor); savePrefs(); updateColorWidget(); renderPop(); return; }
   const lk = e.target.closest('[data-lkind]'), lc = e.target.closest('[data-lcolor]');
   if (lk) { setLayerProp(activeLayer().id, 'kind', lk.dataset.lkind); return; }
   if (lc) { setLayerProp(activeLayer().id, 'color', lc.dataset.lcolor); return; }
@@ -1113,8 +1231,8 @@ async function onDock(e) {
     if (name) { saveBubbleTemplate(name, b); savePrefs(); renderOptbar(); renderPop(); toast('Modèle enregistré.'); }
   }
   else if (a === 'brush-reset') { resetBrush(); storeSlot(); renderDock(); renderOptbar(); renderPop(); }
-  else if (a === 'color-add') { addProjectColor(ed.color); renderPop(); toast('Couleur ajoutée à la palette du projet.', { duration: 1600 }); }
-  else if (a === 'color-del') { removeProjectColor(ed.color); renderPop(); }
+  else if (a === 'color-add') { if (addProjectColor(ed.color)) toast('Couleur ajoutée à la palette du projet.', { duration: 1600 }); renderPop(); }
+  else if (a === 'pick-color') { ed.picking = true; popId = null; renderPop(); updateColorWidget(); toast('Touche le dessin pour y prendre une couleur.', { duration: 2200 }); }
   else if (a === 'pop-tab') { brushPopTab = e.target.closest("[data-ptab]").dataset.ptab; renderPop(); }
   else if (a === 'slot-rename') {
     const sl = activeSlot(); if (!sl) return;
@@ -1137,7 +1255,7 @@ async function onDock(e) {
   }
   else if (a === 'tpreset-save') {
     const name = await promptModal({ title: 'Enregistrer le réglage de trame', label: 'Nom', value: tramaById(ed.project, ed.tramaId).name + ' ×' + ed.tramaScale });
-    if (name) { ed.tramaPresets.push({ id: 'tp' + Math.random().toString(36).slice(2, 8), name, tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque, ink: ed.ink }); savePrefs(); renderDock(); toast('Réglage enregistré.'); }
+    if (name) { ed.tramaPresets.push({ id: 'tp' + Math.random().toString(36).slice(2, 8), name, tramaId: ed.tramaId, tramaScale: ed.tramaScale, tramaOpaque: ed.tramaOpaque, color: ed.color }); savePrefs(); renderDock(); toast('Réglage enregistré.'); }
   }
   else if (a === 'stroke-all') { setPanelStroke(panelStroke(panel()), true); toast('Trait appliqué à toutes les cases.'); }
   else if (a === 'export-pdf') exportPdf();
@@ -1270,7 +1388,8 @@ function applyTramaPreset(id) {
   if (!t) return;
   if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil');
   ed.tramaId = allTramas(ed.project).some(x => x.id === t.tramaId) ? t.tramaId : 'plein';
-  ed.tramaScale = t.tramaScale; ed.tramaOpaque = t.tramaOpaque; ed.ink = t.ink;
+  ed.tramaScale = t.tramaScale; ed.tramaOpaque = t.tramaOpaque;
+  setColor(t.color || (t.ink === 2 ? '#FFFFFF' : t.ink === 3 ? ed.color : '#000000'), false); updateColorWidget();
   savePrefs(); renderDock(); renderOptbar();
 }
 
@@ -1294,7 +1413,7 @@ function onDockInput0(e) {
   if (id === 'o-mm') { const mm = parseFloat(String(e.target.value).replace(',', '.')); if (mm > 0) { setSizeMm(mm); updateQuick('size'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); } return; }
   if (id === 'o-alpha') { setAlpha(+e.target.value / 100); e.target.previousElementSibling.textContent = `Opacité : ${Math.round(ed.alpha * 100)} %`; updateQuick('alpha'); storeSlot(); savePrefs(); paintSlots($('#optbar', root)); return; }
   if (id === 'o-pressure') { ed.pressure = e.target.checked; savePrefs(); return; }
-  if (id === 'c-pick') { ed.color = e.target.value.toUpperCase(); ed.ink = 3; const b = $('#optbar [data-ink="3"]', root); if (b) b.style.background = ed.color; return; }
+  if (id === 'c-hex') { const v = e.target.value.trim(); const h = v[0] === '#' ? v : '#' + v; if (/^#[0-9a-f]{6}$/i.test(h)) { setColor(h, false); updateColorWidget(); const pe = $('#pop', root); paintPicker(pe); const now = $('.cpk-now', pe); if (now) now.style.background = ed.color; } return; }
   if (id === 'd-scale') { ed.tramaScale = +e.target.value; e.target.previousElementSibling.textContent = 'Échelle : ×' + ed.tramaScale; paintSwatches(root); if (ed.tool === 'pencil') storeSlot(); return; }
   if (id === 'd-opaque') { ed.tramaOpaque = e.target.checked; if (ed.tool === 'pencil') storeSlot(); return; }
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
@@ -1342,7 +1461,7 @@ function onDockInput0(e) {
 }
 
 function onDockChange(e) {
-  if (e.target.id === 'c-pick') { setColor(e.target.value); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderOptbar(); renderPop(); return; }
+  if (e.target.id === 'c-hex') { setColor(ed.color); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); return; }
   if (/^p-(shape|grainType|follow)$/.test(e.target.id || '')) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); renderOptbar(); return; }
   if (/^p-/.test(e.target.id || '')) { paintBrushPreviews($('#pop', root)); return; }
   const b = bubble();
@@ -1685,8 +1804,9 @@ function onKey(e) {
   if (mod) return;
   const t = TOOLS.find(x => x.key === k);
   if (t) { setTool(t.id); return; }
-  if (k === 'x') { ed.ink = ed.ink === 1 ? 2 : 1; savePrefs(); renderOptbar(); }
-  else if (k === 'c') { ed.ink = 3; savePrefs(); renderOptbar(); }
+  if (k === 'x') { swapColors(); savePrefs(); updateColorWidget(); }
+  else if (k === 'd') { resetColors(); savePrefs(); updateColorWidget(); }
+  else if (k === 'c') { if (TOOL_COLOR.includes(ed.tool)) { popId = popId === 'color' ? null : 'color'; renderPop(); updateColorWidget(); } }
   else if (k === 't') { if (!TOOL_TRAMA.includes(ed.tool)) setTool('pencil'); popId = popId === 'lib-trama' ? null : 'lib-trama'; renderOptbar(); renderPop(); }
   else if (k === '[' || k === ']') { setSizeMm(k === '[' ? ed.sizeMm / 1.2 : ed.sizeMm * 1.2); updateQuick('size'); afterBrushChange(); }
   else if (k === '0') fit();
