@@ -544,6 +544,31 @@ export function compositeValues(panel, includeDraft = false) {
 const HEX = /^#[0-9a-f]{6}$/i;
 export const tintOf = l => (!l.draft && bppOf(l) === 1 && typeof l.color === 'string' && HEX.test(l.color) ? [1, 3, 5].map(i => parseInt(l.color.slice(i, i + 2), 16)) : null);
 
+// Modes de fusion d'un calque (`l.blend`) : la couleur du calque se combine à ce qu'il recouvre (calques du dessous
+// posés sur le papier blanc), puis se pose avec son opacité.
+export const BLEND_MODES = [['normal', 'Normal'], ['multiply', 'Produit'], ['screen', 'Écran'], ['overlay', 'Incrustation'], ['darken', 'Obscurcir'], ['lighten', 'Éclaircir'], ['difference', 'Différence']];
+function blendCh(m, s, b) {
+  switch (m) {
+    case 'multiply': return s * b / 255;
+    case 'screen': return 255 - (255 - s) * (255 - b) / 255;
+    case 'overlay': return b < 128 ? 2 * s * b / 255 : 255 - 2 * (255 - s) * (255 - b) / 255;
+    case 'darken': return Math.min(s, b);
+    case 'lighten': return Math.max(s, b);
+    case 'difference': return Math.abs(s - b);
+    default: return s;
+  }
+}
+function paintOver(px, i, cr, cg, cb, a, mode) {
+  if (mode && mode !== 'normal') {
+    const da = px[i + 3] / 255;   // fond = calques du dessous sur le papier blanc
+    cr = blendCh(mode, cr, px[i] * da + 255 * (1 - da)); cg = blendCh(mode, cg, px[i + 1] * da + 255 * (1 - da)); cb = blendCh(mode, cb, px[i + 2] * da + 255 * (1 - da));
+  }
+  if (a >= 1) { px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255; return; }
+  const da = px[i + 3] / 255, oa = a + da * (1 - a);
+  px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
+  px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
+}
+
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
   for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, y * w + r.x, y * w + r.x + r.w);
@@ -564,11 +589,7 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
         if (ditherOut) { if (alpha * 64 <= BAYER8[(y + panel.ey) & 7][(x + panel.ex) & 7]) continue; a = 1; }
         const i = (row + x) * 4;
         if (v !== INK && l.draft) { if (a >= 1) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; } continue; }   // le blanc d'un brouillon gomme ce qu'il recouvre
-        const cr = v === INK ? rgb[0] : 255, cg = v === INK ? rgb[1] : 255, cb = v === INK ? rgb[2] : 255;
-        if (a >= 1) { px[i] = cr; px[i + 1] = cg; px[i + 2] = cb; px[i + 3] = 255; continue; }
-        const da = px[i + 3] / 255, oa = a + da * (1 - a);
-        px[i] = (cr * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (cg * a + px[i + 1] * da * (1 - a)) / oa;
-        px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
+        paintOver(px, i, v === INK ? rgb[0] : 255, v === INK ? rgb[1] : 255, v === INK ? rgb[2] : 255, a, l.blend);
       }
     }
   }
@@ -581,11 +602,7 @@ function compositeColor(l, px, w, r, alpha) {
     for (let x = r.x; x < r.x + r.w; x++) {
       const i = (y * w + x) * 4, sa = d[i + 3];
       if (!sa) continue;
-      const a = sa / 255 * alpha;
-      if (a >= 1) { px[i] = d[i]; px[i + 1] = d[i + 1]; px[i + 2] = d[i + 2]; px[i + 3] = 255; continue; }
-      const da = px[i + 3] / 255, oa = a + da * (1 - a);
-      px[i] = (d[i] * a + px[i] * da * (1 - a)) / oa; px[i + 1] = (d[i + 1] * a + px[i + 1] * da * (1 - a)) / oa;
-      px[i + 2] = (d[i + 2] * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
+      paintOver(px, i, d[i], d[i + 1], d[i + 2], sa / 255 * alpha, l.blend);
     }
   }
 }

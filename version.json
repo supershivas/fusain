@@ -1,8 +1,9 @@
 {
-  "version": "1.44.0",
+  "version": "1.45.0",
   "date": "2026-11-22",
   "changes": [
-    "Volet de droite à trois états : complet, réduit (une colonne de vignettes des calques : toucher pour choisir, œil pour masquer, + pour ajouter ; numéros des pages sur la planche) ou masqué (un bouton au coin du dessin le rouvre)",
-    "L'état choisi est gardé sur l'appareil ; menu Affichage → Panneau de droite pour passer de l'un à l'autre"
+    "Calques : toucher le calque actif déplie ses options juste dessous (renommer, dupliquer, fusionner, vider, supprimer, opacité, mode de fusion, référence, alpha verrouillé, brouillon, verrou, afficher seul) ; plus de cases à cocher sous la liste",
+    "Modes de fusion des calques : Normal, Produit, Écran, Incrustation, Obscurcir, Éclaircir, Différence (aussi à l'export) ; chaque action de calque est confirmée par un message, avec Annuler",
+    "Outil Bulle sur iPad : toucher à côté termine la saisie sans poser de nouvelle bulle, et un bouton ✓ la termine sans clavier ; la bulle se déplace de nouveau au stylet et au doigt"
   ]
 }

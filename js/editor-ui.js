@@ -6,7 +6,7 @@ import {
   copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
-import { BRUSH_GROUPS, previewBrush } from './raster.js';
+import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
 import { colorDrop } from './tools.js';
 import { attachInput, typing } from './input.js';
@@ -47,6 +47,7 @@ let popBack = null;   // fenêtre à rouvrir après un choix dans la bibliothèq
 let root, dockTab = 'layers', popId = null, dockOpen = true, unsub = null, keyHandler = null;
 // Volet de droite : complet (dockOpen), réduit à une colonne de vignettes (dockMini), ou masqué (ni l'un ni l'autre).
 let dockMini = false;
+let layerOpts = null;   // calque dont les options sont dépliées (toucher le calque actif)
 const narrow = () => window.matchMedia('(max-width: 768px)').matches;
 const DOCK_KEY = 'fusain:dock';
 
@@ -100,6 +101,7 @@ export function mountEditor(el) {
         <canvas id="view" aria-label="Page de BD"></canvas>
         <div class="bfloat" id="bfloat" hidden></div>
         <textarea class="bedit" id="bedit" hidden aria-label="Texte de la bulle"></textarea>
+        <button class="bedit-ok" id="beditok" hidden title="Terminer la saisie" aria-label="Terminer la saisie">${icon('check')}</button>
         <div class="zoombar" id="zoombar"></div>
         <div class="quick" id="quick" hidden></div>
         <div class="qprev" id="qprev" hidden aria-hidden="true"><canvas></canvas><span></span></div>
@@ -224,6 +226,13 @@ function penEraser(on) {
 }
 
 // Trois doigts qui frottent : vide le calque actif, avec « Annuler » pendant quelques secondes.
+function dupWithToast() { const n = activeLayer().name; duplicateLayer(); toast(`« ${n} » dupliqué.`, { actionLabel: 'Annuler', duration: 5000, onAction: undo }); }
+function mergeWithToast() {
+  const p = panel(), l = activeLayer(), below = p.layers[p.layers.indexOf(l) - 1], r = mergeDown();
+  if (!r) toast('Pas de calque en dessous.');
+  else if (r === 'kind') toast('Un calque en couleur ne se fusionne pas dans un brouillon.');
+  else toast(`« ${l.name} » fusionné dans « ${below.name} ».`, { actionLabel: 'Annuler', duration: 7000, onAction: () => { undo(); undo(); } });
+}
 function clearActiveLayer() {
   const name = activeLayer().name, r = clearLayer();
   if (r === 'ok') toast(`Calque « ${name} » vidé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo });
@@ -1095,42 +1104,46 @@ function layersTab() {
       <button class="name" data-act="bub-select">${icon(BICON[b.kind] || 'message-circle')} ${esc(b.text || '(vide)')}</button>
       <button class="icon-btn icon-only" data-act="bub-lock" aria-label="${b.locked ? 'Déverrouiller' : 'Verrouiller'} la bulle">${icon(b.locked ? 'lock' : 'lock-open')}</button>
       <button class="icon-btn icon-only" data-act="bub-del" aria-label="Supprimer la bulle">${icon('x')}</button></div>`, `<button data-act="swipe-bub-dup" data-for="${b.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-bub-del" data-for="${b.id}">${icon('trash')} Supprimer</button>`)).join('');
-  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${l.alphaLock ? 'alpha-locked' : ''}" data-layer="${l.id}">
+  if (layerOpts && !p.layers.some(l => l.id === layerOpts && l.id === p.active)) layerOpts = null;
+  const rows = [...p.layers].reverse().map(l => swipe(`<div class="layer ${l.id === p.active ? 'on' : ''} ${l.alphaLock ? 'alpha-locked' : ''} ${layerOpts === l.id ? 'open' : ''}" data-layer="${l.id}">
       <span class="grip" data-grip="${l.id}" role="button" aria-label="Déplacer le calque ${esc(l.name)} (glisser-déposer)" title="Glisser pour changer l'ordre">${icon('grip-vertical')}</span>
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
-      <button class="name" data-act="select-layer">${esc(l.name)}</button>
+      <button class="name" data-act="select-layer" aria-expanded="${layerOpts === l.id}" title="${l.id === p.active ? 'Toucher pour les options du calque' : 'Toucher pour choisir ce calque'}">${esc(l.name)}${l.blend && l.blend !== 'normal' ? ` <small class="lblend">${(BLEND_MODES.find(m => m[0] === l.blend) || ['', ''])[1]}</small>` : ''}</button>
       ${l.reference ? `<span class="tag ref" title="Calque de référence">${icon('target')} réf.</span>` : ''}${l.alphaLock ? `<span class="tag alpha" title="Alpha verrouillé">α</span>` : ''}${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
-    `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`)).join('');
+    `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`) + (layerOpts === l.id ? layerOptions(l) : '')).join('');
   const acts = `<div class="tools-row">
       <button class="btn small" data-act="add-layer">${icon('plus')} Calque</button>
       <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button></div>
-    <div class="tools-row">
-      <button class="icon-btn icon-only" data-act="rename" title="Renommer" aria-label="Renommer le calque">${icon('pencil')}</button>
-      <button class="icon-btn icon-only" data-act="dup-layer" title="Dupliquer le calque" aria-label="Dupliquer le calque">${icon('copy')}</button>
-      <button class="icon-btn icon-only" data-act="merge" title="Fusionner vers le bas" aria-label="Fusionner vers le bas">${icon('stack-pop')}</button>
-      <button class="icon-btn icon-only" data-act="clear" title="Vider le calque" aria-label="Vider le calque">${icon('eraser')}</button>
-      <button class="icon-btn icon-only" data-act="del-layer" title="Supprimer le calque" aria-label="Supprimer le calque">${icon('trash')}</button></div>`;
-  const oneBit = bppOf(cur) === 1, tinted = oneBit && cur.kind !== 'draft' && /^#[0-9a-f]{6}$/i.test(cur.color || '');
-  const about = cur.kind === 'draft' ? 'Brouillon : visible à l\'écran, jamais imprimé.' : '';
-  const props = `<label class="field inline"><span>Opacité : ${cur.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${cur.opacity}"></label>
-    <div class="row" style="gap:4px 14px">
-      <label class="check compact"><input type="checkbox" id="l-lock" ${cur.locked ? 'checked' : ''}> Verrouillé</label>
-      <label class="check compact"><input type="checkbox" id="l-solo" ${ed.solo === cur.id ? 'checked' : ''}> Afficher seul</label>
-      ${oneBit && cur.kind !== 'color' ? `<label class="check compact"><input type="checkbox" id="l-draft" ${cur.kind === 'draft' ? 'checked' : ''}> Brouillon</label>` : ''}</div>
-    <div class="row" style="gap:4px 14px">
-      <label class="check compact" title="Le remplissage et la couleur glissée suivent les traits de ce calque, et se posent dans un autre calque"><input type="checkbox" id="l-ref" ${cur.reference ? 'checked' : ''}> Référence</label>
-      <label class="check compact" title="On ne peint que sur les pixels déjà présents, sans en déborder"><input type="checkbox" id="l-alpha" ${cur.alphaLock ? 'checked' : ''}> Verrouiller l'alpha</label></div>
-    ${cur.kind === 'draft' ? `<div class="row tight" style="margin:6px 0">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
-      `<button class="ink-btn ${(cur.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(cur.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
-    ${tinted ? `<div class="row tight" style="margin:6px 0;align-items:center"><i class="ldot" style="background:${cur.color}"></i><small class="note" style="margin:0">Teinte d'un ancien réglage</small><button class="btn small" data-act="tint-reset">Retirer</button></div>` : ''}
-    ${cur.reference ? '<small class="note" style="display:block">Référence : le remplissage et la couleur glissée depuis les deux couleurs suivent ses traits et se posent dans un autre calque.</small>' : ''}
-    ${cur.alphaLock ? '<small class="note" style="display:block">Alpha verrouillé : on ne peint que sur ce qui est déjà dessiné ; la gomme n\'agit pas.</small>' : ''}
-    <small class="note">${about}${oneBit && cur.kind !== 'draft' && cur.opacity < 100 ? ' Imprimé en gris tramé.' : ''}</small>`;
+    <small class="note">Touche le calque actif pour ses options.</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
-    + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true)
-    + sec('layp', `Calque « ${esc(cur.name)} »`, props, true);
+    + sec('lays', `Case ${idx + 1} · calques`, rows + acts, true);
+}
+
+// Options du calque, dépliées sous sa ligne : actions, opacité, mode de fusion, et bascules (référence, alpha, brouillon, verrou, seul).
+function layerOptions(l) {
+  const oneBit = bppOf(l) === 1, tinted = oneBit && l.kind !== 'draft' && /^#[0-9a-f]{6}$/i.test(l.color || '');
+  const tog = (prop, ic, label, on, title) => `<button class="lopt-tog ${on ? 'on' : ''}" data-act="ltoggle" data-prop="${prop}" aria-pressed="${!!on}" title="${title}">${icon(ic)}<span>${label}</span></button>`;
+  return `<div class="lopts" role="group" aria-label="Options du calque ${esc(l.name)}">
+    <div class="lopt-acts">
+      <button data-act="rename" title="Renommer">${icon('pencil')}<span>Renommer</span></button>
+      <button data-act="dup-layer" title="Dupliquer">${icon('copy')}<span>Dupliquer</span></button>
+      <button data-act="merge" title="Fusionner avec le calque du dessous">${icon('stack-pop')}<span>Fusionner</span></button>
+      <button data-act="clear" title="Vider le calque">${icon('eraser')}<span>Vider</span></button>
+      <button data-act="del-layer" class="danger" title="Supprimer le calque">${icon('trash')}<span>Supprimer</span></button></div>
+    <label class="field inline"><span>Opacité : ${l.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${l.opacity}"></label>
+    <label class="field inline"><span>Mode de fusion</span><select id="l-blend">${BLEND_MODES.map(([v, n]) => `<option value="${v}" ${(l.blend || 'normal') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <div class="lopt-togs">
+      ${tog('reference', 'target', 'Référence', l.reference, 'Le remplissage et la couleur glissée suivent ses traits et se posent dans un autre calque')}
+      ${tog('alphaLock', 'lock-square', 'Alpha verrouillé', l.alphaLock, 'On ne peint que sur ce qui est déjà dessiné, sans déborder')}
+      ${oneBit ? tog('draft', 'pencil-minus', 'Brouillon', l.kind === 'draft', 'Visible à l\'écran, jamais imprimé') : ''}
+      ${tog('locked', 'lock', 'Verrouillé', l.locked, 'Plus rien ne se dessine dans ce calque')}
+      ${tog('solo', 'eye', 'Afficher seul', ed.solo === l.id, 'Masque les autres calques le temps de travailler')}</div>
+    ${l.kind === 'draft' ? `<div class="row tight" style="margin:6px 0">${Object.entries(DRAFT_COLORS).map(([id, c]) =>
+      `<button class="ink-btn ${(l.color || 'blue') === id ? 'on' : ''}" data-lcolor="${id}" style="background:rgb(${c.rgb.join(',')});width:32px;height:32px" aria-label="${c.name}" aria-pressed="${(l.color || 'blue') === id}"></button>`).join('')}</div>` : ''}
+    ${tinted ? `<div class="row tight" style="margin:6px 0;align-items:center"><i class="ldot" style="background:${l.color}"></i><small class="note" style="margin:0">Teinte d'un ancien réglage</small><button class="btn small" data-act="tint-reset">Retirer</button></div>` : ''}
+    ${oneBit && l.kind !== 'draft' && l.opacity < 100 ? '<small class="note">Imprimé en gris tramé.</small>' : ''}</div>`;
 }
 
 // Réglages d'un pinceau : [clé, libellé, min, max, pas, format]
@@ -1376,8 +1389,26 @@ async function onDock(e) {
   if (!act) return;
   const a = act.dataset.act;
   if (a === 'vis') toggleLayer(lay.dataset.layer, 'visible');
-  else if (a === 'select-layer') selectLayer(lay.dataset.layer);
-  else if (a === 'add-layer') addLayer('ink');
+  else if (a === 'select-layer') {
+    const id = lay.dataset.layer;
+    if (id === panel().active && !e.target.closest('.dock-mini')) { layerOpts = layerOpts === id ? null : id; renderDock(); }
+    else { layerOpts = null; selectLayer(id); }
+  }
+  else if (a === 'ltoggle') {
+    const l = activeLayer(), prop = act.dataset.prop;
+    if (prop === 'solo') { setSolo(l.id); toast(ed.solo ? `Seul « ${l.name} » est affiché.` : 'Tous les calques sont affichés.', { duration: 1600 }); }
+    else if (prop === 'draft') {
+      const on = l.kind !== 'draft';
+      if (on) { l.prevKind = l.kind; setLayerProp(l.id, 'kind', 'draft'); } else setLayerProp(l.id, 'kind', l.prevKind || 'ink');
+      toast(on ? `« ${l.name} » est un brouillon : jamais imprimé.` : `« ${l.name} » n'est plus un brouillon.`, { duration: 2000 });
+    } else {
+      setLayerProp(l.id, prop, !l[prop]);
+      const said = { reference: ['est une référence : le remplissage suit ses traits.', 'n\'est plus une référence.'], alphaLock: ['a son alpha verrouillé : on ne peint que sur l\'existant.', 'n\'a plus l\'alpha verrouillé.'], locked: ['est verrouillé.', 'est déverrouillé.'] }[prop];
+      toast(`« ${l.name} » ${l[prop] ? said[0] : said[1]}`, { duration: 2000 });
+    }
+    renderDock();
+  }
+  else if (a === 'add-layer') { addLayer('ink'); toast(`Calque « ${activeLayer().name} » ajouté.`, { actionLabel: 'Annuler', duration: 4000, onAction: undo }); }
   else if (a === 'add-color') addLayer('color');
   else if (a === 'bub-vis') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'hidden', !bb.hidden); }
   else if (a === 'bub-lock') { const bb = page().bubbles.find(x => x.id === e.target.closest('[data-bub]').dataset.bub); setBubbleProp(bb, 'locked', !bb.locked); }
@@ -1387,23 +1418,23 @@ async function onDock(e) {
     const l = panel().layers.find(x => x.id === act.dataset.for);
     if (l) { selectLayer(l.id); if (deleteLayer()) toast(`Calque « ${l.name} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   }
-  else if (a === 'swipe-dup') { selectLayer(act.dataset.for); duplicateLayer(); }
+  else if (a === 'swipe-dup') { selectLayer(act.dataset.for); dupWithToast(); }
   else if (a === 'tint-reset') { setLayerProp(activeLayer().id, 'color', undefined); }
   else if (a === 'bubble-lines-all') { const n = applyBubbleLines(bubble()); if (n) toast(`Traits appliqués à ${n} bulle${n > 1 ? 's' : ''}.`); }
   else if (a === 'swipe-bub-dup') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) duplicateBubble(bb); }
   else if (a === 'swipe-bub-del') { const bb = page().bubbles.find(x => x.id === act.dataset.for); if (bb) { deleteBubble(bb); toast('Bulle supprimée.', { actionLabel: 'Annuler', duration: 7000, onAction: undo }); } }
   else if (a === 'bubs-vis') { e.preventDefault(); togglePageBubbles(); }
-  else if (a === 'del-layer') { if (!deleteLayer()) toast('Une case garde au moins un calque.'); }
+  else if (a === 'del-layer') { const n = activeLayer().name; layerOpts = null; if (deleteLayer()) toast(`Calque « ${n} » supprimé.`, { actionLabel: 'Annuler', duration: 7000, onAction: undo }); else toast('Une case garde au moins un calque.'); }
   else if (a === 'up') moveLayer(1);
   else if (a === 'down') moveLayer(-1);
-  else if (a === 'lock') setLayerProp(lay.dataset.layer, 'locked', !panel().layers.find(l => l.id === lay.dataset.layer).locked);
-  else if (a === 'add-draft') addLayer('draft');
-  else if (a === 'dup-layer') duplicateLayer();
-  else if (a === 'merge') { { const r = mergeDown(); if (!r) toast('Pas de calque en dessous.'); else if (r === 'kind') toast('Un calque de couleur ne se fusionne qu\'avec un calque de couleur.'); } }
+  else if (a === 'lock') { const l = panel().layers.find(x => x.id === lay.dataset.layer); setLayerProp(l.id, 'locked', !l.locked); toast(`« ${l.name} » ${l.locked ? 'est verrouillé' : 'est déverrouillé'}.`, { duration: 1600 }); }
+  else if (a === 'add-draft') { addLayer('draft'); toast(`Brouillon « ${activeLayer().name} » ajouté.`, { actionLabel: 'Annuler', duration: 4000, onAction: undo }); }
+  else if (a === 'dup-layer') dupWithToast();
+  else if (a === 'merge') mergeWithToast();
   else if (a === 'clear') clearActiveLayer();
   else if (a === 'rename') {
-    const l = activeLayer(), name = await promptModal({ title: 'Renommer le calque', label: 'Nom', value: l.name });
-    if (name) renameLayer(l.id, name);
+    const l = activeLayer(), old = l.name, name = await promptModal({ title: 'Renommer le calque', label: 'Nom', value: l.name });
+    if (name && name.trim() !== old) { renameLayer(l.id, name); toast(`« ${old} » renommé en « ${l.name} ».`, { actionLabel: 'Annuler', duration: 5000, onAction: () => renameLayer(l.id, old) }); }
   } else if (a === 'new-trame') tramaEditor();
   else if (a === 'edit-trame') tramaEditor(tramaById(ed.project, ed.tramaId));
   else if (a === 'del-trame') {
@@ -1544,6 +1575,9 @@ function initBubbleUI() {
     editBefore = null; renderDock(); placeBubbleUI();
   });
   ta.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); ta.blur(); } });
+  const ok = $('#beditok', root);
+  ok.addEventListener('pointerdown', e => e.preventDefault());   // garde le focus jusqu'au clic
+  ok.addEventListener('click', () => { ta.blur(); ok.hidden = true; requestRender(); });
 }
 
 function openBubbleEdit() {
@@ -1558,13 +1592,16 @@ function placeBubbleUI() {
   const fl = $('#bfloat', root), ta = $('#bedit', root);
   if (!fl || !ta) return;
   const b = ed.tool === 'bubble' && !ed.bubbleDraw ? bubble() : null;
-  if (!b || b.hidden) { fl.hidden = true; bfTab = null; if (!ta.hidden) ta.hidden = true; return; }
+  if (!b || b.hidden) { fl.hidden = true; bfTab = null; if (!ta.hidden) ta.hidden = true; const ok = $('#beditok', root); if (ok) ok.hidden = true; return; }
   const k = view.s, c = toScreen(b.x + b.w / 2, b.y + b.h / 2);
+  const ok = $('#beditok', root);
   if (!ta.hidden) {
     const tw = Math.max(b.w * k, 170), th = Math.max(b.h * k, 76);   // champ assez grand pour taper même si la bulle est petite
     ta.style.width = tw + 'px'; ta.style.height = th + 'px'; ta.style.left = c.x - tw / 2 + 'px'; ta.style.top = c.y - th / 2 + 'px';
     ta.style.transform = `rotate(${(b.rot || 0) * Math.PI / 180 + view.r}rad)`;
-  }
+    const R = Math.hypot(tw, th) / 2;   // en haut à droite du champ, même tourné
+    if (ok) { ok.hidden = false; ok.style.left = Math.min(view.w - 50, c.x + tw / 2 - 8) + 'px'; ok.style.top = Math.max(4, c.y - Math.min(R, th / 2 + 30) - 22) + 'px'; }
+  } else if (ok) ok.hidden = true;
   const cur = props(b).shape, sh = SHAPE_ORDER.find(s => s[0] === cur) || SHAPE_ORDER[0];
   const tab = (id, ico, label) => `<button data-bf="tab-${id}" class="tab ${bfTab === id ? 'on' : ''}" aria-expanded="${bfTab === id}" title="Réglages : ${label}">${icon(ico)}<span>${label}</span>${icon('chevron-down')}</button>`;
   const drop = bfTab === 'text' ? bubbleText(b) : bfTab === 'shape' ? bubbleShape(b) : bfTab === 'tail' ? bubbleTail(b) : '';
@@ -1641,6 +1678,7 @@ function onDockInput0(e) {
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
+  if (id === 'l-blend') { const l = activeLayer(); setLayerProp(l.id, 'blend', e.target.value); toast(`Mode de fusion de « ${l.name} » : ${(BLEND_MODES.find(m => m[0] === e.target.value) || ['', 'Normal'])[1]}.`, { duration: 1800 }); return; }
   if (id === 'l-ref') { setLayerProp(activeLayer().id, 'reference', e.target.checked); return; }
   if (id === 'l-alpha') { setLayerProp(activeLayer().id, 'alphaLock', e.target.checked); return; }
   if (id === 'l-draft') {   // brouillon ↔ son ancien type (encre par défaut)
@@ -1996,7 +2034,7 @@ const COMMANDS = {
   dither: ditherModal,
   'add-color': () => addLayer('color'), 'add-ink': () => addLayer('ink'), 'add-draft': () => addLayer('draft'),
   'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
-  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': duplicateLayer, 'merge-layer': () => { { const r = mergeDown(); if (!r) toast('Pas de calque en dessous.'); else if (r === 'kind') toast('Un calque de couleur ne se fusionne qu\'avec un calque de couleur.'); } }, 'del-layer': needLayer,
+  'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': dupWithToast, 'merge-layer': mergeWithToast, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
   'solo-layer': () => setSolo(activeLayer().id),
   'add-page': async () => { const id = await pickLayout('Nouvelle page'); if (id) await addPage(id); },

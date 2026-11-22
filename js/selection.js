@@ -193,7 +193,7 @@ export function beginMove(p, pt) {
     }
   }
   // aperçu flottant : les tampons composés comme des calques d'une case de la taille de la sélection
-  const fake = { ew: bw, eh: bh, ex: 0, ey: 0, layers: floats.map(f => ({ data: f.buf, visible: true, kind: f.layer.kind, opacity: f.layer.opacity, draft: f.layer.draft, color: f.layer.color })) };
+  const fake = { ew: bw, eh: bh, ex: 0, ey: 0, layers: floats.map(f => ({ data: f.buf, visible: true, kind: f.layer.kind, rgba: f.layer.rgba, blend: f.layer.blend, opacity: f.layer.opacity, draft: f.layer.draft, color: f.layer.color })) };
   const cv = document.createElement('canvas'); cv.width = bw; cv.height = bh;
   const cx = cv.getContext('2d'), img = cx.createImageData(bw, bh);
   compositeRect(fake, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: bw, h: bh }, true, {});

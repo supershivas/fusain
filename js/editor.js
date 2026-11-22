@@ -565,7 +565,7 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   if (!dst || dst === src) return false;
   const clone = l => {
     const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color });
-    Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked, rgba: !!l.rgba });
+    Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked, rgba: !!l.rgba, blend: l.blend, reference: l.reference, alphaLock: l.alphaLock });
     if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode, bppOf(l)), dst, bppOf(l));
     nl.dirty = true;
     return nl;
@@ -812,7 +812,7 @@ export function moveStrokeBelow(p, layer, entry) {
 export function duplicateLayer() {
   const p = panel(), src = activeLayer(p);
   const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color });
-  Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false, rgba: !!src.rgba });
+  Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false, rgba: !!src.rgba, blend: src.blend, alphaLock: src.alphaLock });
   if (src.data) l.data = src.data.slice();
   l.dirty = true;
   const at = p.layers.indexOf(src) + 1, prevActive = p.active;

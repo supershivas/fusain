@@ -54,7 +54,9 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     const palm = e.pointerType === 'touch' && (penDown || (penRecent() && alone));
     if (e.pointerType === 'touch' && !palm) for (const r of pointers.values()) if (r.type === 'touch') r.palm = false;
     e.preventDefault();
-    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    const ae = document.activeElement;
+    if (ae && ae.id === 'bedit' && !ae.hidden) { ae.blur(); return; }   // saisie de bulle en cours : ce toucher la termine, sans rien dessiner
+    if (ae && ae !== document.body) ae.blur();
     el.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType, palm });
     if (palm) return;

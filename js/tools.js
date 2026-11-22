@@ -147,8 +147,8 @@ export function colorDrop(pt) {
 const INK_NAME = /dessin|encrage|encre|line|trait|ink/i;
 const inkHinted = new Set();   // une fois par calque et par séance
 const looksLikeInk = l => !!l && !l.draft && !l.noInkHint && (l.reference || INK_NAME.test(l.name || ''));
-// geste de mise en couleur : remplissage, couleur glissée, ou pinceau en couleur, tramé, large ou transparent
-const coloring = tool => tool === 'fill' || tool === 'drop' || (tool === 'pencil' && (ed.ink === 3 || !!currentTrama() || ed.sizeMm >= 3 || ed.alpha < 1));
+// geste de mise en couleur : remplissage, couleur glissée, ou pinceau en couleur, tramé ou transparent (un aplat noir reste de l'encrage)
+const coloring = tool => tool === 'fill' || tool === 'drop' || (tool === 'pencil' && (ed.ink === 3 || !!currentTrama() || ed.alpha < 1));
 function inkHint(p, layer, entry, tool) {
   if (!entry || !entry.ops || !looksLikeInk(layer) || inkHinted.has(layer.id) || !coloring(tool)) return;
   inkHinted.add(layer.id);
