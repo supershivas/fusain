@@ -76,5 +76,6 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - Écrire l'enregistrement projet avec `updateRecord` (une transaction) : l'éditeur et la synchronisation y écrivent tous deux.
 - Une page A4 à 300 dpi fait 2480 × 3508 px (8,7 Mpx) : sous la limite de 16 Mpx des canevas de Safari. Ne pas dépasser 300 dpi.
 - L'encodage PNG par `canvas.toBlob` est très lent sur grand format : `png.js` écrit le PNG indexé lui-même (`CompressionStream`, repli sur le canevas).
+- Points groupés du stylet (`getCoalescedEvents`) : Safari iPad peut en livrer en retard ou déjà traités, ce qui donnait des traits hachés et dédoublés ; `input.js` ne trace que ceux plus récents que `lastMoveT`, triés par `timeStamp`.
 - Pas de `hover` hors `@media (hover: hover)` (iOS prend le premier toucher pour un survol).
 - Tests faits avec Playwright hors dépôt (aucun `package.json`) : dessin souris/stylet/tactile, undo, sync contre un faux Supabase, PDF vérifié avec `pdftoppm`.

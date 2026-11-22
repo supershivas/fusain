@@ -7,6 +7,7 @@ import * as tools from './tools.js';
 
 const pointers = new Map();          // id → { x, y, type }
 let penSeen = false, penDown = false, spaceHeld = false;   // lastPen part de -Infinity : au chargement, aucun doigt n'est pris pour une paume
+let lastMoveT = -Infinity;   // instant du dernier point tracé
 let gesture = null, panning = null, pending = null, drawingId = null, lastPen = -Infinity, penInfo = null, lastTap = null, longPress = null, tapStart = null;
 
 try { penSeen = localStorage.getItem('fusain:pen') === '1'; } catch { /* préférence locale seulement */ }
@@ -130,8 +131,10 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     }
     if (drawingId === e.pointerId) {
       e.preventDefault();
-      const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-      for (const ce of list.length ? list : [e]) tools.move(point(ce, el));
+      // Safari sur iPad livre parfois des points groupés en retard ou déjà traités : le trait ferait des allers-retours
+      // (traits parallèles hachés). On ne garde que les points plus récents que le dernier tracé, dans l'ordre.
+      const list = (e.getCoalescedEvents ? e.getCoalescedEvents() : []).filter(ce => ce.timeStamp > lastMoveT).sort((a, b) => a.timeStamp - b.timeStamp);
+      for (const ce of list.length ? list : (e.timeStamp > lastMoveT ? [e] : [])) { tools.move(point(ce, el)); lastMoveT = ce.timeStamp; }
       hover(e, el);
     } else if (pending && pending.e.pointerId === e.pointerId) pending.e = e;
   });
@@ -206,7 +209,7 @@ function flushPending(el) {
 }
 
 function beginDraw(e, el) {
-  drawingId = e.pointerId;
+  drawingId = e.pointerId; lastMoveT = e.timeStamp;
   tools.down(point(e, el));
   hover(e, el);
 }

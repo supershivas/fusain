@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.50.1 — 2026-11-22
+- Corrige des traits hachés et dédoublés qui apparaissaient parfois en traçant vite au stylet sur iPad : les points du stylet arrivés en retard sont ignorés
+
 ## 1.50.0 — 2026-11-22
 - Info-bulles : un appui long sur un bouton, un outil, une option ou une section affiche son nom, son raccourci et ce qu'il fait (sans déclencher l'action)
 - Navigation page / case (case ouverte, précédente, suivante, retour à la planche) en tête du volet de droite ; le zoom reste en bas du dessin
