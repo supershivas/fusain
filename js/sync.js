@@ -70,8 +70,23 @@ function keepSession(s) {
   emit();
 }
 
-export async function verifyCode(email, token) {
-  keepSession(await authCall('verify', { type: 'email', email, token: token.trim() }));
+// Accepte le code à 6 chiffres, ou le lien de l'email collé tel quel (utile quand le modèle d'email
+// n'affiche pas le code : sur iPad, appui long sur le lien → Copier). Le lien porte `token` (le jeton haché)
+// et `type` ; il peut être enveloppé par la messagerie (« …?q=<lien encodé> »), d'où le décodage.
+export async function verifyCode(email, input) {
+  const text = String(input || '').trim();
+  let link = text;
+  try { link = decodeURIComponent(text); } catch { /* lien déjà décodé */ }
+  const hash = link.match(/[?&]token=([^&#\s]+)/);
+  if (hash) {
+    const type = (link.match(/[?&]type=([a-z_]+)/) || [])[1] || 'magiclink';
+    keepSession(await authCall('verify', { type, token_hash: hash[1] }));
+    return;
+  }
+  const code = text.replace(/\s+/g, '');
+  if (!/^\d{6,10}$/.test(code)) throw new Error('Saisis le code à 6 chiffres, ou colle le lien reçu par email.');
+  if (!email) throw new Error('Saisis ton adresse email.');
+  keepSession(await authCall('verify', { type: 'email', email, token: code }));
 }
 
 // Au retour du lien magique, les jetons arrivent dans le fragment de l'adresse.

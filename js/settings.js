@@ -94,9 +94,9 @@ export async function openSettings({ onImported } = {}) {
     } else {
       a.innerHTML = `<label class="field"><span>Email</span><input type="email" id="s-mail" autocomplete="email" placeholder="toi@exemple.fr"></label>
         <button class="btn small primary" id="s-link">${icon('mail')} Envoyer le lien de connexion</button>
-        <label class="field" style="margin-top:14px"><span>Code reçu par email (6 chiffres)</span><input type="text" id="s-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456">
-          <small>Sur iPad, ouvre le lien dans le même navigateur que l'app, ou saisis ici le code si ton modèle d'email le contient.</small></label>
-        <button class="btn small" id="s-verify">Valider le code</button>`;
+        <label class="field" style="margin-top:14px"><span>Code ou lien reçu par email</span><input type="text" id="s-code" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" placeholder="123456 ou https://…">
+          <small>Sur iPad avec l'app installée, n'ouvre pas le lien : appuie longuement dessus dans l'email, choisis « Copier », puis colle-le ici. Le code à 6 chiffres marche aussi, si l'email en contient un.</small></label>
+        <button class="btn small" id="s-verify">Se connecter</button>`;
     }
   }
   renderStatus();

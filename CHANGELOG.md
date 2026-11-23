@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.52.2 — 2026-11-23
+- Connexion : on peut coller dans les Réglages le lien reçu par email au lieu du code (pratique sur iPad avec l'app installée)
+
 ## 1.52.1 — 2026-11-23
 - Synchronisation : l'adresse Supabase collée avec « /rest/v1/ » ou depuis le tableau de bord est corrigée toute seule (erreur « Invalid path specified in request URL »)
 

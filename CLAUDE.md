@@ -26,7 +26,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
   - Storage, bucket privé `fusain` : un PNG par calque, `<uid>/<projet>/<calque>.png`.
   - `fusain_library` : une ligne par utilisateur, bibliothèque personnelle (`customBrushes`, `tramaPresets`, `bubbleTemplates`) ; `js/library.js` date chaque élément (`at`) et garde les suppressions (`deleted`, 180 jours), `syncLibrary` (`sync.js`) fusionne élément par élément. Table absente : rien ne casse, les Réglages le signalent.
 - Authentification : lien magique par email (Supabase Auth). L'URL du site doit figurer dans les « Redirect URLs » du projet
-  Supabase. Pour saisir le code à 6 chiffres (iPad en PWA), le modèle d'email doit contenir `{{ .Token }}`.
+  Supabase. Sur iPad en PWA, le lien s'ouvrirait dans Safari : on **colle le lien** de l'email dans le champ « Code ou lien » des Réglages (`verifyCode` lit `token` = jeton haché et `type`, puis `verify` avec `token_hash`), ou le code à 6 chiffres si le modèle d'email contient `{{ .Token }}`. Le service d'emails intégré de Supabase est limité à ~2 emails par heure : un SMTP personnel (Gmail, mot de passe d'application) est configuré.
 - URL et clé anon du projet Supabase : saisies dans Réglages, gardées en `localStorage` (paramètre d'appareil), **jamais commitées**.
 
 ## Structure
