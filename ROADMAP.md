@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-22 (v1.52.3).
+Dernière mise à jour : 2026-11-23 (v1.52.3).
 
-## Fait (v1.29.0 → v1.50.2, 22 novembre 2026)
+## Fait (v1.29.0 → v1.52.3, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -67,6 +67,12 @@ Dernière mise à jour : 2026-11-22 (v1.52.3).
 - [x] Rendu bleu non photo pour encrer sur papier (v1.51)
 - [x] Mise en page : planches en regard, livret à plier, 4 pages par feuille (v1.52)
 
+### Synchronisation entre appareils
+- [x] Mise en service : Supabase (tables, SMTP Gmail, modèles d'email avec code), connexion sur ordinateur et iPad — vérifiée le 23 novembre
+- [x] Adresse Supabase collée avec un chemin corrigée toute seule (v1.52.1)
+- [x] Connexion par le lien de l'email collé, ou par le code à 6 chiffres (v1.52.2)
+- [x] Aperçu des projets synchronisé : visible sur l'accueil de tous les appareils (v1.52.3)
+
 ## Reste à faire
 
 ### À vérifier sur iPad
@@ -76,11 +82,10 @@ Dernière mise à jour : 2026-11-22 (v1.52.3).
 - [ ] Sélection : transformations, couper / copier / coller, remplir
 
 ### À faire par toi
-- [x] Supabase : exécuter `supabase/fusain.sql` (tables et bibliothèque partagée)
-- [ ] Fusain : saisir l'URL et la clé anon du projet Supabase dans les Réglages de chaque appareil, puis se connecter
+- Rien en attente. Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
 
 ### À vérifier de bout en bout
-- [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil → PDF imprimé
+- [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé
 
 ### Outils de dessin
 - [ ] Règle droite (traits droits guidés)
