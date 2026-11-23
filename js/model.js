@@ -132,6 +132,18 @@ export function gradientLut(stops) {
   }
   return lut;
 }
+// Nom du dégradé : le modèle qu'il reproduit (éventuellement inversé), sinon « Personnalisé ».
+const sameStops = (a, b) => a.length === b.length && a.every(([t, c], i) => Math.abs(t - b[i][0]) < 0.006 && c.toUpperCase() === b[i][1].toUpperCase());
+const sortStops = st => [...st].sort((a, b) => a[0] - b[0]);
+export function gradientPreset(stops) {
+  const st = sortStops(stops);
+  for (const pr of GRADIENT_PRESETS) {
+    if (sameStops(st, sortStops(pr.stops))) return { preset: pr, reversed: false };
+    if (sameStops(st, sortStops(pr.stops.map(([t, c]) => [1 - t, c])))) return { preset: pr, reversed: true };
+  }
+  return null;
+}
+export const gradientName = stops => { const m = gradientPreset(stops); return m ? m.preset.name + (m.reversed ? ' inversé' : '') : 'Personnalisé'; };
 export const cssGradient = stops => `linear-gradient(90deg, ${[...stops].sort((a, b) => a[0] - b[0]).map(([t, c]) => `${c} ${Math.round(t * 100)}%`).join(', ')})`;
 
 // opacity : 0 à 100 ; locked : on ne peut plus y dessiner ; color : couleur d'un brouillon.

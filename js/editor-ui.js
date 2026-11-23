@@ -10,7 +10,7 @@ import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
 import { colorDrop, fillSelection } from './tools.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx, FOLIO_POSITIONS, GRADIENT_PRESETS, cloneStops, cssGradient } from './model.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx, FOLIO_POSITIONS, GRADIENT_PRESETS, cloneStops, cssGradient, gradientPreset, gradientName } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -1251,7 +1251,7 @@ function layersTab() {
       <button class="icon-btn icon-only" data-act="vis" aria-label="${l.visible ? 'Masquer' : 'Afficher'} le calque ${esc(l.name)}">${icon(l.visible ? 'eye' : 'eye-off')}</button>
       <span class="lthumb ${l.visible ? '' : 'off'}" data-act="select-layer" aria-hidden="true"><canvas width="72" height="72" data-mthumb="${l.id}"></canvas></span>
       <button class="name" data-act="select-layer" aria-expanded="${layerOpts === l.id}" title="${l.id === p.active ? 'Toucher pour les options du calque' : 'Toucher pour choisir ce calque'}">${esc(l.name)}${l.blend && l.blend !== 'normal' ? ` <small class="lblend">${(BLEND_MODES.find(m => m[0] === l.blend) || ['', ''])[1]}</small>` : ''}</button>
-      ${l.reference ? `<span class="tag ref" title="Calque de référence">${icon('target')} réf.</span>` : ''}${l.alphaLock ? `<span class="tag alpha" title="Alpha verrouillé">α</span>` : ''}${dotc(l)}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
+      ${l.reference ? `<span class="tag ref" title="Calque de référence">${icon('target')} réf.</span>` : ''}${l.alphaLock ? `<span class="tag alpha" title="Alpha verrouillé">α</span>` : ''}${dotc(l)}${l.kind === 'gradmap' ? `<span class="tag grad" title="Dégradé appliqué">${esc(gradientName(l.gradient.stops))}</span>` : ''}${l.opacity < 100 ? `<span class="tag" style="color:var(--text-muted)">${l.opacity} %</span>` : ''}
       <button class="icon-btn icon-only" data-act="lock" aria-label="${l.locked ? 'Déverrouiller' : 'Verrouiller'} le calque ${esc(l.name)}">${icon(l.locked ? 'lock' : 'lock-open')}</button></div>`,
     `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`) + (layerOpts === l.id ? layerOptions(l) : '')).join('');
   const acts = `<div class="tools-row">
@@ -1271,11 +1271,13 @@ function setGradient(stops) {
   l.gradient = { stops }; invalidate(panel()); markChanged(); renderDock(); refreshMiniSoon();
 }
 function gradientOptions(l) {
-  const st = l.gradient.stops;
-  return `<div class="grad-bar" style="background:${cssGradient(st)}" aria-hidden="true"></div>
-    <div class="grad-presets">${GRADIENT_PRESETS.map(pr => `<button data-act="grad-preset" data-preset="${pr.id}" title="${pr.name}" aria-label="Dégradé ${pr.name}"><i style="background:${cssGradient(pr.stops)}"></i><span>${pr.name}</span></button>`).join('')}</div>
+  const st = l.gradient.stops, cur = gradientPreset(st);
+  return `<div class="grad-head"><span>Dégradé : <b class="grad-name">${esc(gradientName(st))}</b></span></div>
+    <div class="grad-bar" style="background:${cssGradient(st)}" aria-hidden="true"></div>
+    <div class="grad-presets">${GRADIENT_PRESETS.map(pr => { const on = cur && cur.preset.id === pr.id;
+      return `<button class="${on ? 'on' : ''}" aria-pressed="${!!on}" data-act="grad-preset" data-preset="${pr.id}" aria-label="Dégradé ${pr.name}${on ? ' (appliqué)' : ''}"><i style="background:${cssGradient(pr.stops)}"></i><span>${pr.name}${on && cur.reversed ? ' ↔' : ''}</span></button>`; }).join('')}</div>
     ${st.map(([t, c], k) => `<div class="grad-stop"><input type="color" id="g-col-${k}" value="${c.toLowerCase()}" aria-label="Couleur de l'arrêt ${k + 1}">
-      <label class="field inline" style="flex:1;margin:0"><span>${k === 0 ? 'Ombres' : k === st.length - 1 ? 'Lumières' : 'Arrêt ' + (k + 1)} : ${Math.round(t * 100)} %</span><input type="range" id="g-pos-${k}" min="0" max="100" value="${Math.round(t * 100)}"></label>
+      <label class="grad-pos"><span>${k === 0 ? 'Ombres' : k === st.length - 1 ? 'Lumières' : 'Arrêt ' + (k + 1)} : ${Math.round(t * 100)} %</span><input type="range" id="g-pos-${k}" min="0" max="100" value="${Math.round(t * 100)}"></label>
       ${st.length > 2 ? `<button class="icon-btn icon-only" data-act="grad-del" data-stop="${k}" aria-label="Retirer l'arrêt ${k + 1}">${icon('x')}</button>` : ''}</div>`).join('')}
     <div class="row tight" style="margin:4px 0 8px"><button class="btn small" data-act="grad-add">${icon('plus')} Arrêt</button><button class="btn small" data-act="grad-reverse">${icon('arrows-exchange')} Inverser</button></div>`;
 }
@@ -1925,7 +1927,11 @@ function onDockInput0(e) {
     if (id.startsWith('g-col')) st[k][1] = e.target.value.toUpperCase();
     else { st[k][0] = +e.target.value / 100; e.target.previousElementSibling.textContent = e.target.previousElementSibling.textContent.replace(/\d+ %$/, e.target.value + ' %'); }
     l.gradient = { stops: st }; invalidate(panel()); markChanged();
-    const bar = e.target.closest('.lopts') && e.target.closest('.lopts').querySelector('.grad-bar'); if (bar) bar.style.background = cssGradient(st);
+    const box = e.target.closest('.lopts'), bar = box && box.querySelector('.grad-bar'), nm = box && box.querySelector('.grad-name');
+    if (bar) bar.style.background = cssGradient(st);
+    if (nm) nm.textContent = gradientName(st);
+    const tg = root && root.querySelector(`.layer[data-layer="${l.id}"] .tag.grad`); if (tg) tg.textContent = gradientName(st);
+    if (box) { const m = gradientPreset(st); box.querySelectorAll('[data-act="grad-preset"]').forEach(bt => { const on = !!m && m.preset.id === bt.dataset.preset; bt.classList.toggle('on', on); bt.setAttribute('aria-pressed', on); }); }
     refreshMiniSoon(); return;
   }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }

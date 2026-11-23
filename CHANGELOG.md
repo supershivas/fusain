@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.61.1 — 2026-11-23
+- Carte de dégradé : le nom du dégradé appliqué s'affiche (modèle en surbrillance, « inversé » ou « Personnalisé »), aussi dans la liste des calques
+- Carte de dégradé : les curseurs des arrêts restent dans leur colonne
+- Info-bulle d'une liste déroulante : elle ne reprend plus toutes les valeurs de la liste
+
 ## 1.61.0 — 2026-11-23
 - Nouveau type de calque « Carte de dégradé », comme dans Photoshop : la luminosité des calques du dessous devient une couleur du dégradé
 - Sept modèles (sépia, nuit, bleu et orange, feu, menthe, noir et blanc, négatif), arrêts réglables (couleur, position), inverser, opacité et mode de fusion

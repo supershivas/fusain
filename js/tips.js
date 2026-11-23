@@ -210,6 +210,14 @@ const TARGET = 'button, [role=button], [role=slider], [role=menuitem], summary, 
 let tip = null, timer = null, start = null, swallow = false, shownFor = null;
 
 const clean = s => (s || '').replace(/\s+/g, ' ').trim();
+// Texte d'un libellé sans le contenu de ses listes et champs (sinon toutes les options d'un <select> s'y ajoutent).
+function labelText(node) {
+  if (!node) return '';
+  if (!node.querySelector('select, option, input, textarea')) return node.textContent;
+  const c = node.cloneNode(true);
+  c.querySelectorAll('select, option, input, textarea').forEach(x => x.remove());
+  return c.textContent;
+}
 // « Annuler (Ctrl+Z) » → titre « Annuler », raccourci « Ctrl+Z »
 function splitKey(s) {
   const m = /\s*\(((?:Ctrl|Maj|Alt|⌘)[^)]*|[A-Z0-9]|Entrée|Échap|Suppr)\)\s*$/.exec(s);
@@ -230,7 +238,7 @@ export function tipFor(el) {
     t = SECS[id] || (id.startsWith('bg-') ? ['Groupe de pinceaux', 'Touche un pinceau pour le prendre ; il entre dans la palette du projet.'] : id.startsWith('tg-') ? ['Groupe de trames', 'Touche une trame pour l\'appliquer au pinceau.'] : null);
     if (t) t = [clean(el.textContent) || t[0], t[1]];
   }
-  const raw = clean(el.getAttribute('title') || el.getAttribute('aria-label') || (el.tagName === 'INPUT' || el.tagName === 'SELECT' ? el.closest('label, .field, .row')?.textContent : el.textContent));
+  const raw = clean(el.getAttribute('title') || el.getAttribute('aria-label') || (el.tagName === 'INPUT' || el.tagName === 'SELECT' ? labelText(el.closest('label, .field, .row')) : labelText(el)));
   let [title, key] = splitKey(raw);
   let desc = '';
   const cut = title.indexOf(' : ');

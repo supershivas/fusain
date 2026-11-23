@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.61.0).
+Dernière mise à jour : 2026-11-23 (v1.61.1).
 
-## Fait (v1.29.0 → v1.61.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.61.1, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -93,7 +93,7 @@ Dernière mise à jour : 2026-11-23 (v1.61.0).
 
 ### Carte de dégradé (v1.61)
 - [x] Calque de réglage « Carte de dégradé » (bouton « + Dégradé », menu Calque) : luminosité du dessous → couleur du dégradé, à l'écran, en PNG, PDF et impression
-- [x] Modèles, arrêts réglables (couleur, position, ajouter, retirer), inverser, opacité, mode de fusion ; vignette = le dégradé ; pas de dessin ni de fusion dans ce calque
+- [x] Modèles, arrêts réglables (couleur, position, ajouter, retirer), inverser, opacité, mode de fusion ; vignette = le dégradé ; nom du dégradé appliqué (`gradientName` : modèle, inversé, personnalisé) dans les options et la liste (v1.61.1) ; pas de dessin ni de fusion dans ce calque
 
 ### Sélection (v1.58)
 - [x] Tracé de sélection commencé hors de la case (rogné au cadre ; automatique : un toucher hors cadre désélectionne)
