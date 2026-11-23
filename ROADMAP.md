@@ -126,7 +126,8 @@ Dernière mise à jour : 2026-11-23 (v1.61.5).
 - [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 
 ### À faire par toi
-- Rien en attente : `supabase/fusain.sql` n'a pas changé depuis la mise en service (v1.32 ; les nouveautés vivent dans la colonne `data`). Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
+- [ ] Exécuter `supabase/fusain.sql` dans l'éditeur SQL de Supabase (crée la table `fusain_library`, absente : partage de la bibliothèque de pinceaux, trames et modèles de bulles entre appareils). Le fichier est ré-exécutable sans erreur.
+- Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
 
 ### À vérifier de bout en bout
 - [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé
