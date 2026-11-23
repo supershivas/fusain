@@ -240,8 +240,17 @@ function renderFrame() {
   }
   const selPanel = ed.sel && pg.panels.find(q => q.id === ed.sel.panelId);
   if (selPanel && ed.tool === 'select') {   // cadre pointillé autour de la sélection
-    const a = toScreen(selPanel.ex + ed.sel.x0 + ed.sel.dx, selPanel.ey + ed.sel.y0 + ed.sel.dy), b = toScreen(selPanel.ex + ed.sel.x1 + ed.sel.dx, selPanel.ey + ed.sel.y1 + ed.sel.dy);
-    ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.setLineDash([]);
+    const S = ed.sel, sc = S.scale, bx0 = selPanel.ex + (sc ? sc.x : S.x0 + S.dx), by0 = selPanel.ey + (sc ? sc.y : S.y0 + S.dy);
+    const bx1 = bx0 + (sc ? sc.w : S.x1 - S.x0), by1 = by0 + (sc ? sc.h : S.y1 - S.y0);
+    const corners = [toScreen(bx0, by0), toScreen(bx1, by0), toScreen(bx1, by1), toScreen(bx0, by1)];   // la page peut être tournée
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.beginPath();
+    corners.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    if (!S.dx && !S.dy) {   // poignées : coins et milieux des côtés
+      const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      const hs = [...corners, mid(corners[0], corners[1]), mid(corners[1], corners[2]), mid(corners[2], corners[3]), mid(corners[3], corners[0])];
+      ctx.fillStyle = '#fff'; ctx.lineWidth = 2;
+      for (const q of hs) { ctx.beginPath(); ctx.rect(q.x - 6, q.y - 6, 12, 12); ctx.fill(); ctx.stroke(); }
+    }
   }
   if (ed.showNotes) drawNotes(pg, fp);
   drawBubbleSelection(pg, accent);
@@ -355,8 +364,11 @@ function drawSelection(p, sel) {
   ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip();
   ctx.imageSmoothingEnabled = false;
   const f = ed.selFloat;
-  if (f) ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
-  if (ed.tool === 'select') ctx.drawImage(selTint(sel), p.ex + sel.x0 + sel.dx, p.ey + sel.y0 + sel.dy);
+  const sc = sel.scale;   // redimensionnement en cours : le contenu soulevé et la teinte remplissent le nouveau rectangle
+  if (f && sc) ctx.drawImage(f.canvas, p.ex + sc.x, p.ey + sc.y, sc.w, sc.h);
+  else if (f) ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
+  if (ed.tool === 'select' && sc) ctx.drawImage(selTint(sel), p.ex + sc.x, p.ey + sc.y, sc.w, sc.h);
+  else if (ed.tool === 'select') ctx.drawImage(selTint(sel), p.ex + sel.x0 + sel.dx, p.ey + sel.y0 + sel.dy);
   ctx.restore();
 }
 

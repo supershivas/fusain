@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.58.0 — 2026-11-23
+- Sélection : on peut commencer le tracé hors de la case, la sélection est rognée à son cadre
+- Sélection : huit poignées pour agrandir ou réduire le contenu, proportions gardées ; Maj ou un second doigt posé pour déformer librement (remplacent les boutons Agrandir / Réduire)
+
 ## 1.57.0 — 2026-11-23
 - Guides : perspective à 3 points, grille isométrique, et la ligne de l'outil Forme suit aussi les guides
 - Copier / coller partagé entre onglets et projets ; la copie part aussi dans le presse-papiers du système ; le collage est sélectionné en rectangle

@@ -23,8 +23,11 @@ const touchCount = () => [...pointers.values()].filter(p => p.type === 'touch' &
 
 function point(e, el) {
   const r = el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top, p = toPage(sx, sy);
-  return { x: p.x, y: p.y, sx, sy, pressure: e.pointerType === 'pen' ? Math.max(0.02, e.pressure) : 0.5, type: e.pointerType, shift: e.shiftKey };
+  return { x: p.x, y: p.y, sx, sy, pressure: e.pointerType === 'pen' ? Math.max(0.02, e.pressure) : 0.5, type: e.pointerType, shift: e.shiftKey, held: heldFingers() };
 }
+// Doigts posés en plus de celui (ou du stylet) qui trace : touche de modification (redimensionner sans garder les proportions).
+// Seuls comptent les doigts posés pendant le geste (une paume déjà posée avant ne déforme rien).
+const heldFingers = () => { let n = 0; for (const r of pointers.values()) if (r.modifier) n++; return n; };
 
 export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEraser, onDoubleTap, onLongPress }) {
   el.style.touchAction = 'none';
@@ -60,6 +63,10 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     if (ae && ae !== document.body) ae.blur();
     el.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType, palm });
+    // un doigt posé pendant qu'on tire une poignée de la sélection : touche de modification, pas un zoom
+    if (e.pointerType === 'touch' && drawingId !== null && drawingId !== e.pointerId && tools.wantsModifier()) {
+      Object.assign(pointers.get(e.pointerId), { palm: true, modifier: true }); tools.remodify(heldFingers()); return;
+    }
     if (palm) return;
     tapStart = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, pan: false } : null;
 
@@ -157,6 +164,7 @@ export function attachInput(el, { onUndo, onRedo, onClear, onPenToggle, onPenEra
     if (pending && pending.e.pointerId === e.pointerId) { flushPending(el); }
     pointers.delete(e.pointerId);
     if (drawingId === e.pointerId) { tools.up(); drawingId = null; }
+    else if (rec.modifier && drawingId !== null) tools.remodify(heldFingers());
     if (e.pointerType === 'pen' && e.type === 'pointerup' && penInfo) {
       const info = penInfo; penInfo = null;
       if (info.erase && onPenEraser) onPenEraser(false);

@@ -250,26 +250,87 @@ export function cancelMove(m) {
   if (m.implicit) applySel(null); else requestRender();
 }
 
+// ── Poignées de la sélection (comme la transformation de Photoshop) ──
+// Huit poignées autour du rectangle de la sélection. Par défaut le contenu garde ses proportions (homothétie) ; Maj, ou un
+// second doigt posé pendant le geste, le déforme librement. Pendant le geste, le contenu est soulevé et montré à sa nouvelle
+// taille (`sel.scale`) ; au lâcher, il est redimensionné pour de bon, en une entrée d'historique.
+export const SEL_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+export function selHandlePoints(p, s) {
+  const x0 = p.ex + s.x0, y0 = p.ey + s.y0, x1 = p.ex + s.x1, y1 = p.ey + s.y1, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  return { nw: [x0, y0], n: [mx, y0], ne: [x1, y0], e: [x1, my], se: [x1, y1], s: [mx, y1], sw: [x0, y1], w: [x0, my] };
+}
+export function hitSelHandle(p, s, pt, radius) {
+  let best = null, bd = radius;
+  const pts = selHandlePoints(p, s);
+  for (const h of ['nw', 'ne', 'se', 'sw', 'n', 'e', 's', 'w']) {   // les coins d'abord : sur une petite sélection, ils l'emportent
+    const d = Math.hypot(pts[h][0] - pt.x, pts[h][1] - pt.y);
+    if (d < bd) { bd = d; best = h; }
+  }
+  return best;
+}
+export function beginScale(p, handle, pt) {
+  const s = currentSelection(p);
+  if (!s) return null;
+  const copy = ed.selCopy; ed.selCopy = false;   // le contenu quitte sa place pendant le geste (il revient s'il est annulé)
+  const m = beginMove(p, pt);
+  ed.selCopy = copy;
+  if (!m || m.implicit) { if (m) cancelMove(m); return null; }
+  return { kind: 'selscale', p, s, m, handle, x0: pt.x, y0: pt.y, box: { x: s.x0, y: s.y0, w: s.x1 - s.x0, h: s.y1 - s.y0 } };
+}
+export function scaleMove(g, pt, free) {
+  const { s, handle: h } = g, B = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }, W0 = B.x1 - B.x0, H0 = B.y1 - B.y0;
+  const dx = pt.x - g.x0, dy = pt.y - g.y0;
+  let x0 = B.x0, y0 = B.y0, x1 = B.x1, y1 = B.y1;
+  if (h.includes('w')) x0 += dx; if (h.includes('e')) x1 += dx;
+  if (h.includes('n')) y0 += dy; if (h.includes('s')) y1 += dy;
+  const minW = Math.min(4, W0), minH = Math.min(4, H0);
+  if (free) {   // déformation libre : chaque bord suit la poignée
+    if (x1 - x0 < minW) { if (h.includes('w')) x0 = x1 - minW; else x1 = x0 + minW; }
+    if (y1 - y0 < minH) { if (h.includes('n')) y0 = y1 - minH; else y1 = y0 + minH; }
+    g.box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  } else {      // homothétie : un seul facteur, ancré au coin (ou au bord) opposé
+    const kx = (x1 - x0) / W0, ky = (y1 - y0) / H0;
+    let k = h.length === 2 ? (Math.abs(kx - 1) > Math.abs(ky - 1) ? kx : ky) : h === 'e' || h === 'w' ? kx : ky;
+    k = Math.max(k, minW / W0, minH / H0);
+    const w = W0 * k, hh = H0 * k;
+    const ax = h.includes('w') ? B.x1 - w : h.includes('e') ? B.x0 : (B.x0 + B.x1) / 2 - w / 2;
+    const ay = h.includes('n') ? B.y1 - hh : h.includes('s') ? B.y0 : (B.y0 + B.y1) / 2 - hh / 2;
+    g.box = { x: ax, y: ay, w, h: hh };
+  }
+  s.scale = g.box;
+  requestRender();
+}
+export function endScale(g) {
+  const { p, s, m, box } = g;
+  s.scale = null;
+  ed.undo.rollback(); ed.selFloat = null;   // le contenu soulevé revient, puis il est redimensionné en une seule action
+  invalidate(p, { x: m.s.x0, y: m.s.y0, w: m.bw, h: m.bh });
+  if (Math.round(box.w) === s.x1 - s.x0 && Math.round(box.h) === s.y1 - s.y0 && Math.round(box.x) === s.x0 && Math.round(box.y) === s.y0) { requestRender(); return; }
+  transformSelection('scale', p, box);
+}
+export function cancelScale(g) { g.s.scale = null; cancelMove(g.m); }
+
 // ───────────────────────── Transformer, copier / couper / coller, agrandir / rétrécir ─────────────────────────
 
 const bppL = l => (l.kind === 'color' || l.rgba ? 4 : 1);
 const hasPx = (buf, i, b) => (b === 4 ? buf[i * 4 + 3] : buf[i]);
 
-// Miroir, quart de tour, agrandir / réduire le contenu sélectionné (sans sélection : tout le contenu de la case),
-// autour du centre de la sélection, au plus proche voisin (le trait 1 bit reste net). Pixels et sélection : une entrée d'historique.
-export const TRANSFORMS = { flipH: 'Miroir horizontal', flipV: 'Miroir vertical', rotCW: 'Quart de tour à droite', rotCCW: 'Quart de tour à gauche', scaleUp: 'Agrandir', scaleDown: 'Réduire' };
-export function transformSelection(kind, p = panel()) {
+// Miroir, quart de tour du contenu sélectionné (sans sélection : tout le contenu de la case), autour du centre de la sélection ;
+// 'scale' : le contenu remplit le rectangle `to` { x, y, w, h } (coordonnées de calque, poignées de la sélection).
+// Au plus proche voisin (le trait 1 bit reste net). Pixels et sélection : une entrée d'historique.
+export const TRANSFORMS = { flipH: 'Miroir horizontal', flipV: 'Miroir vertical', rotCW: 'Quart de tour à droite', rotCCW: 'Quart de tour à gauche', scale: 'Redimensionner' };
+export function transformSelection(kind, p = panel(), to = null) {
   let s = currentSelection(p), implicit = false;
   if (!s) { s = selectAll(p, false); implicit = true; }
   const ls = targets(p).filter(l => l.data);
   if (!s || !ls.length) { if (implicit) applySel(null); return 'locked'; }
-  const W = p.ew, H = p.eh, bw = s.x1 - s.x0, bh = s.y1 - s.y0, k = kind === 'scaleUp' ? 1.25 : kind === 'scaleDown' ? 0.8 : 1;
+  const W = p.ew, H = p.eh, bw = s.x1 - s.x0, bh = s.y1 - s.y0, scale = kind === 'scale' && to;
   const rot = kind === 'rotCW' || kind === 'rotCCW';
-  const nw = rot ? bh : Math.max(1, Math.round(bw * k)), nh = rot ? bw : Math.max(1, Math.round(bh * k));
-  const nx0 = Math.round((s.x0 + s.x1) / 2 - nw / 2), ny0 = Math.round((s.y0 + s.y1) / 2 - nh / 2);
+  const nw = rot ? bh : scale ? Math.max(1, Math.round(to.w)) : bw, nh = rot ? bw : scale ? Math.max(1, Math.round(to.h)) : bh;
+  const nx0 = scale ? Math.round(to.x) : Math.round((s.x0 + s.x1) / 2 - nw / 2), ny0 = scale ? Math.round(to.y) : Math.round((s.y0 + s.y1) / 2 - nh / 2);
   // case d'origine (x, y) dans l'ancienne boîte, pour la case (u, v) de la nouvelle
   const src = (u, v) => kind === 'flipH' ? [bw - 1 - u, v] : kind === 'flipV' ? [u, bh - 1 - v] : kind === 'rotCW' ? [v, bh - 1 - u]
-    : kind === 'rotCCW' ? [bw - 1 - v, u] : [Math.min(bw - 1, Math.floor(u / k)), Math.min(bh - 1, Math.floor(v / k))];
+    : kind === 'rotCCW' ? [bw - 1 - v, u] : [Math.min(bw - 1, Math.floor(u * bw / nw)), Math.min(bh - 1, Math.floor(v * bh / nh))];
   const box = { x0: Math.max(0, Math.min(s.x0, nx0)), y0: Math.max(0, Math.min(s.y0, ny0)), x1: Math.min(W, Math.max(s.x1, nx0 + nw)), y1: Math.min(H, Math.max(s.y1, ny0 + nh)) };
   ed.undo.begin(TRANSFORMS[kind]);
   for (const l of ls) {

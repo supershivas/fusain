@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.57.0).
+Dernière mise à jour : 2026-11-23 (v1.58.0).
 
-## Fait (v1.29.0 → v1.57.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.58.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -91,6 +91,10 @@ Dernière mise à jour : 2026-11-23 (v1.57.0).
 - [x] Presse-papiers partagé entre onglets et projets de l'appareil ; copie envoyée aussi au presse-papiers du système (PNG)
 - [x] Coller : sélection en rectangle, copie rognée au dessin
 
+### Sélection (v1.58)
+- [x] Tracé de sélection commencé hors de la case (rogné au cadre ; automatique : un toucher hors cadre désélectionne)
+- [x] Poignées de redimensionnement (coins et côtés) : homothétie par défaut, Maj ou second doigt posé = déformation libre ; aperçu en direct, une entrée d'historique
+
 ### Impression pour l'imprimeur (v1.55)
 - [x] Couleur au choix : automatique, noir et blanc 1 bit (gris et couleurs tramés), niveaux de gris 8 bits, RVB, CMJN (gris et noir en K seul)
 - [x] Alerte sur les trames trop fines (points isolés d'un pixel à plus de 254 dpi), avec les pages concernées
@@ -108,7 +112,7 @@ Dernière mise à jour : 2026-11-23 (v1.57.0).
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet
-- [ ] Sélection : transformations, couper / copier / coller, remplir
+- [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 
 ### À faire par toi
 - Rien en attente. Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
@@ -128,5 +132,5 @@ Dernière mise à jour : 2026-11-23 (v1.57.0).
 ### Améliorations possibles
 - [ ] Guides : ellipses en perspective ; rectangles de l'outil Forme en perspective
 - [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet
-- [ ] Sélection : coller une image venue du presse-papiers du système (autre app, autre appareil)
+- [ ] Sélection : coller une image venue du presse-papiers du système (autre app, autre appareil) ; rotation libre à la poignée
 - [ ] Info-bulles : couvrir les curseurs de taille et d'opacité (leur appui long pose déjà un repère) et compléter les explications des éléments qui n'ont que leur libellé

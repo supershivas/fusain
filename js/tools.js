@@ -12,10 +12,13 @@ import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 import { guideMode, hitHandle, dragHandle, snapStart, guidedPoint } from './guides.js';
-import { currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
+import { hitSelHandle, beginScale, scaleMove, endScale, cancelScale, currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
 let session = null, hinted = null;   // hinted : dernier calque d'aplat signalé (référence active)
 export const busy = () => !!session;
+// Redimensionner la sélection : un doigt posé en plus pendant le geste (ou Maj) déforme librement au lieu de garder les proportions.
+export const wantsModifier = () => !!session && session.kind === 'selscale';
+export function remodify(held) { if (wantsModifier() && session.last) scaleMove(session, session.last, !!session.last.shift || held > 0); }
 
 // En mode case, seule la case ouverte reçoit les gestes.
 const panelAt = (x, y) => page().panels.find(p => (!ed.focus || p.id === ed.panelId) && x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) || null;
@@ -256,6 +259,7 @@ export function move(pt) {
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
   } else if (session.kind === 'bubble') bubbleMove(pt);
   else if (session.kind === 'selmove') moveMove(session, pt);
+  else if (session.kind === 'selscale') { session.last = pt; scaleMove(session, pt, !!pt.shift || pt.held > 0); }
   else if (session.kind === 'selfree') {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
@@ -305,6 +309,7 @@ export function up() {
   } else if (s.kind === 'bubble') {
     commitBubbleEdit(s.b, s.before);
   } else if (s.kind === 'selmove') endMove(s);
+  else if (s.kind === 'selscale') endScale(s);
   else if (s.kind === 'selfree') {
     setOverlay({ free: null });
     if (!(s.pts.length >= 3 && selectShape(s.p, 'poly', s.pts, ed.selOp)) && ed.selOp === 'new') clearSelection();
@@ -325,6 +330,7 @@ export function cancel() {
   else if (s.kind === 'free') setOverlay({ free: null });
   else if (s.kind === 'gutter') setOverlay({ guide: null });
   else if (s.kind === 'selmove') cancelMove(s);
+  else if (s.kind === 'selscale') cancelScale(s);
   else if (s.kind === 'selfree') setOverlay({ free: null });
   else if (s.kind === 'selshape') setOverlay({ shape: null });
   else if (s.kind === 'bubble') { Object.keys(s.b).forEach(k => delete s.b[k]); Object.assign(s.b, s.before); selectBubble(s.b.id); }
@@ -333,18 +339,28 @@ export function cancel() {
 // ───────────────────────── Sélection ─────────────────────────
 
 function selectDown(pt) {
+  // poignées de la sélection : redimensionner le contenu (homothétie ; Maj ou un second doigt : déformation libre)
+  const sp = ed.sel && page().panels.find(q => q.id === ed.sel.panelId);
+  if (sp && !polyCount()) {
+    const h = hitSelHandle(sp, ed.sel, pt, (pt.type === 'touch' ? 26 : 16) / view.s);
+    if (h) { session = beginScale(sp, h, pt); if (session) { session.last = pt; return; } }
+  }
   if (ed.selMove) {   // déplacer : la sélection, ou à défaut tout le contenu de la case touchée
-    const p = (ed.sel && page().panels.find(q => q.id === ed.sel.panelId)) || panelAt(pt.x, pt.y);
+    const p = (ed.sel && page().panels.find(q => q.id === ed.sel.panelId)) || panelAt(pt.x, pt.y) || page().panels.find(q => q.id === ed.panelId);
     if (!p) return;
     selectPanel(p.id);
     session = beginMove(p, pt);
     return;
   }
-  const p = panelAt(pt.x, pt.y);
+  // un geste commencé hors de la case vise la case ouverte (ou la case active) : la sélection est rognée à son cadre
+  const p = panelAt(pt.x, pt.y) || page().panels.find(q => q.id === ed.panelId);
   if (!p) return;
   selectPanel(p.id);
   const mode = ed.selMode;
-  if (mode === 'auto') { if (!selectAuto(p, Math.floor(pt.x - p.ex), Math.floor(pt.y - p.ey), ed.selOp) && ed.selOp === 'new') clearSelection(); }
+  if (mode === 'auto') {
+    const inside = pt.x >= p.x && pt.y >= p.y && pt.x < p.x + p.w && pt.y < p.y + p.h;
+    if (!inside) { if (ed.selOp === 'new') clearSelection(); return; }
+    if (!selectAuto(p, Math.floor(pt.x - p.ex), Math.floor(pt.y - p.ey), ed.selOp) && ed.selOp === 'new') clearSelection(); }
   else if (mode === 'poly') {
     const f = polyFirst();
     if (f && polyCount() >= 3 && near(toScreen(pt.x, pt.y), toScreen(f.x, f.y), pt.type === 'touch' ? 26 : 14)) polyFinish();

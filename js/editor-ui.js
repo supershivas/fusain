@@ -611,7 +611,7 @@ function selectBar() {
   const tog = (act, ic, label, on) => `<button class="icon-btn icon-only ${on ? 'on' : ''}" data-selact="${act}" title="${label}" aria-label="${label}" aria-pressed="${!!on}">${icon(ic)}</button>`;
   const hint = ed.selMove ? `Fais glisser pour déplacer ${has ? 'la sélection' : 'tout le contenu de la case'}.`
     : ed.selMode === 'poly' ? (polyCount() ? `${polyCount()} point${polyCount() > 1 ? 's' : ''} : touche le premier point pour fermer.` : 'Touche les sommets du polygone.')
-    : has ? '' : 'Touche une zone ou trace-la.';
+    : has ? 'Tire une poignée pour redimensionner (Maj ou un second doigt posé : déformer).' : 'Touche une zone ou trace-la, même en partant hors de la case.';
   return seg('Forme', SEL_MODES, ed.selMode) + seg('Opération', SEL_OPS, ed.selOp)
     + (ed.selMode === 'poly' && polyCount() ? `<button class="btn small" data-selact="polyok" ${polyCount() < 3 ? 'disabled' : ''}>${icon('check')} Fermer</button><button class="btn small" data-selact="polycancel">${icon('x')} Annuler</button>` : '')
     + `<span class="sep-v"></span>`
@@ -626,7 +626,7 @@ function selectBar() {
     + `<button class="icon-btn icon-only" data-selact="grow" title="Agrandir la sélection de 0,5 mm" aria-label="Agrandir la sélection" ${has ? '' : 'disabled'}>${icon('square-plus')}</button>`
     + `<button class="icon-btn icon-only" data-selact="shrink" title="Rétrécir la sélection de 0,5 mm" aria-label="Rétrécir la sélection" ${has ? '' : 'disabled'}>${icon('square-minus')}</button>`
     + `<span class="sep-v"></span>`
-    + [['flipH', 'flip-vertical'], ['flipV', 'flip-horizontal'], ['rotCCW', 'rotate-2'], ['rotCW', 'rotate-clockwise-2'], ['scaleUp', 'arrows-maximize'], ['scaleDown', 'arrows-minimize']].map(([k, ic]) =>
+    + [['flipH', 'flip-vertical'], ['flipV', 'flip-horizontal'], ['rotCCW', 'rotate-2'], ['rotCW', 'rotate-clockwise-2']].map(([k, ic]) =>
       `<button class="icon-btn icon-only" data-seltf="${k}" title="${TRANSFORMS[k]}${has ? '' : ' (tout le contenu de la case)'}" aria-label="${TRANSFORMS[k]}">${icon(ic)}</button>`).join('')
     + `<span class="sep-v"></span>`
     + `<button class="icon-btn icon-only" data-selact="cut" title="Couper (Ctrl+X) : calque actif" aria-label="Couper">${icon('scissors')}</button>`

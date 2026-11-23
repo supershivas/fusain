@@ -107,8 +107,6 @@ const TIPS = {
   'seltf:flipV': ['Miroir vertical', 'Retourne le contenu sélectionné de haut en bas (sans sélection : toute la case).'],
   'seltf:rotCW': ['Quart de tour à droite', 'Tourne le contenu sélectionné de 90° autour de son centre.'],
   'seltf:rotCCW': ['Quart de tour à gauche', 'Tourne le contenu sélectionné de 90° dans l\'autre sens.'],
-  'seltf:scaleUp': ['Agrandir', 'Agrandit le contenu sélectionné d\'un quart, autour de son centre.'],
-  'seltf:scaleDown': ['Réduire', 'Réduit le contenu sélectionné d\'un cinquième, autour de son centre.'],
   // ── Bulles ──
   'freebubble:0': ['Bulle du modèle', 'Un toucher dans la case pose une bulle du modèle choisi.'],
   'freebubble:1': ['Bulle à main levée', 'Dessine toi-même le contour de la bulle.'],
