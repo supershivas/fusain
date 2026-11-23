@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.61.1).
+Dernière mise à jour : 2026-11-23 (v1.61.2).
 
-## Fait (v1.29.0 → v1.61.1, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.61.2, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)

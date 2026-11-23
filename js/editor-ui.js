@@ -893,6 +893,7 @@ function swipeUp(e) {
   swipeGest = null;
   if (!g.on) return;
   g.wrap.classList.remove('dragging'); g.row.style.transform = '';
+  g.wrap.style.setProperty('--sw', g.width + 'px');   // les actions ont la largeur de leurs libellés : la ligne s'écarte d'autant
   g.wrap.classList.toggle('open', g.dx < -g.width * 0.45);
   swipeJustDone = true; setTimeout(() => { swipeJustDone = false; }, 80);   // le relâchement ne doit pas compter comme un toucher
 }

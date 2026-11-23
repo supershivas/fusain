@@ -798,7 +798,7 @@ export function addLayer(kind = 'ink') {
   if (kind === true) kind = 'draft';
   if (kind === 'gradmap') {   // carte de dégradé : au-dessus du calque actif, elle colore tout ce qui est dessous
     const p = panel(), n = p.layers.filter(x => x.kind === 'gradmap').length;
-    const l = newLayer(n ? `Carte de dégradé ${n + 1}` : 'Carte de dégradé', p.ew, p.eh, { kind: 'gradmap' });
+    const l = newLayer(n ? `Dégradé ${n + 1}` : 'Dégradé', p.ew, p.eh, { kind: 'gradmap' });
     const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
     const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
     const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };

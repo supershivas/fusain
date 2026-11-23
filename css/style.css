@@ -232,7 +232,8 @@ input[type=range]:disabled { opacity: .45; }
 .tools-row { display: flex; gap: 2px; flex-wrap: wrap; margin: 8px 0 12px; }
 .layer { display: flex; align-items: center; gap: 2px; min-height: 48px; border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 6px; padding: 0 4px; background: var(--card-bg); }
 .layer.on { border-color: var(--accent); background: var(--accent-soft); }
-.layer .name { flex: 1; min-width: 0; min-height: 46px; text-align: left; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.layer .name { flex: 1; min-width: 0; min-height: 46px; text-align: left; padding: 0 6px; overflow: hidden; font-weight: 500;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; line-height: 1.2; }   /* nom long : deux lignes plutôt que coupé */
 .layer .tag { font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; color: #4a78c4; border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; margin-right: 2px; }
 .layer .icon-btn { min-width: 40px; height: 44px; font-size: 1.1rem; }
 .tgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -351,7 +352,7 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .swipe-actions { visibility: hidden; }
 .swipe.open .swipe-actions, .swipe.dragging .swipe-actions { visibility: visible; }
 .swipe.dragging > .layer { transition: none; }
-.swipe.open > .layer { transform: translateX(-132px); }
+.swipe.open > .layer { transform: translateX(calc(-1 * var(--sw, 132px))); }   /* --sw : largeur réelle des actions */
 .swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
 .swipe-actions button { flex: 0 0 auto; width: max-content; min-width: 76px; padding: 0 12px; white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .7rem; font-weight: 600; color: #fff; background: #5a6472; }
 .swipe-actions button.danger { background: var(--accent); }
@@ -645,5 +646,5 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .grad-stop { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-width: 0; }
 .grad-pos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: .78rem; color: var(--text-secondary); }
 .grad-pos input[type=range] { width: 100%; min-width: 0; }
-.tag.grad { color: var(--text-muted); max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag.grad { color: var(--text-muted); max-width: 6.5em; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grad-stop input[type=color] { width: 44px; height: 44px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card-bg); flex: none; }

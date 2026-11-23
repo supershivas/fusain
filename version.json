@@ -1,9 +1,8 @@
 {
-  "version": "1.61.1",
+  "version": "1.61.2",
   "date": "2026-11-23",
   "changes": [
-    "Carte de dégradé : le nom du dégradé appliqué s'affiche (modèle en surbrillance, « inversé » ou « Personnalisé »), aussi dans la liste des calques",
-    "Carte de dégradé : les curseurs des arrêts restent dans leur colonne",
-    "Info-bulle d'une liste déroulante : elle ne reprend plus toutes les valeurs de la liste"
+    "Calques : en glissant une ligne, « Dupliquer » et « Supprimer » sont découverts en entier",
+    "Calques : un nom long passe sur deux lignes au lieu d'être coupé ; une nouvelle carte de dégradé s'appelle « Dégradé »"
   ]
 }

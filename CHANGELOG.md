@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.61.2 — 2026-11-23
+- Calques : en glissant une ligne, « Dupliquer » et « Supprimer » sont découverts en entier
+- Calques : un nom long passe sur deux lignes au lieu d'être coupé ; une nouvelle carte de dégradé s'appelle « Dégradé »
+
 ## 1.61.1 — 2026-11-23
 - Carte de dégradé : le nom du dégradé appliqué s'affiche (modèle en surbrillance, « inversé » ou « Personnalisé »), aussi dans la liste des calques
 - Carte de dégradé : les curseurs des arrêts restent dans leur colonne
