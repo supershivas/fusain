@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.54.0 — 2026-11-23
+- Guides de tracé : règle et perspective à 1 ou 2 points de fuite ; les traits se calent sur la direction la plus proche (bouton dans la barre du haut, menu Outils)
+- Couverture : une page en tête, à fond perdu, avec le titre du projet, jamais numérotée (menu Page)
+- Chemin de fer : toutes les pages en vignettes, à réordonner à la poignée (menu Page ou onglet Page)
+
 ## 1.53.0 — 2026-11-23
 - Symétrie : dessine en miroir autour du centre de la case (axe vertical, horizontal ou les deux), bouton dans la barre du haut et menu Outils
 - Numéros de page : position, premier numéro, sans numéro sur la couverture (onglet Page ou menu Page)

@@ -5,6 +5,7 @@ import {
 import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.js';
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
 import { pageThumb } from './export.js';
+import { loadFont } from './fonts.js';
 import { syncSoon } from './sync.js';
 import { autoSize, pathBounds, props as bubbleProps, BUBBLE_TEMPLATES, bubblePanelOf, wrapForWidth } from './bubbles.js';
 import { invalidate, invalidateLayer, dropCaches, requestRender } from './view.js';
@@ -341,7 +342,7 @@ export async function addPage(layoutId, count) {
 }
 
 export async function duplicatePage() {
-  const src = page(), pg = { id: uid(), panels: [], bubbles: JSON.parse(JSON.stringify(src.bubbles)).map(b => ({ ...b, id: uid() })) };
+  const src = page(), pg = { id: uid(), guide: src.guide ? JSON.parse(JSON.stringify(src.guide)) : undefined, panels: [], bubbles: JSON.parse(JSON.stringify(src.bubbles)).map(b => ({ ...b, id: uid() })) };
   linkBubbles(src);
   const ids = new Map();
   for (const p of src.panels) {
@@ -383,6 +384,36 @@ export async function deletePage() {
     ed.pageIdx = project.pages.indexOf(cur);
     markChanged(); notify('page');
   };
+}
+
+// Couverture : une page en tête, une seule case à fond perdu sans cadre, le titre du projet en texte. Jamais numérotée.
+export async function addCover() {
+  const project = ed.project, at = project.pages.findIndex(p => p.cover);
+  if (at >= 0) { await goToPage(at); return false; }
+  const { w, h } = pageSize(project), panel = newPanel({ x: 0, y: 0, w, h });
+  panel.stroke = 0;
+  await loadFont('londrina');
+  const title = newBubble('texte', 0, 0);
+  Object.assign(title, { text: project.title, pt: 36, font: 'londrina', panel: panel.id });
+  autoSize(measureCtx(), title, project.dpi);
+  title.x = Math.round((w - title.w) / 2); title.y = Math.round(h * 0.12);
+  project.pages.unshift({ id: uid(), cover: true, panels: [panel], bubbles: [title] });
+  ed.pageIdx++;   // la page ouverte a glissé d'un cran
+  markChanged();
+  await goToPage(0);
+  return true;
+}
+
+// Nouvel ordre des pages (chemin de fer) : `ids` dans l'ordre voulu. La page ouverte reste ouverte.
+export function reorderPages(ids) {
+  const pages = ed.project.pages, cur = page(), byId = new Map(pages.map(p => [p.id, p]));
+  if (ids.length !== pages.length || ids.some(id => !byId.has(id))) return false;
+  const before = pages.map(p => p.id).join();
+  if (before === ids.join()) return false;
+  pages.splice(0, pages.length, ...ids.map(id => byId.get(id)));
+  ed.pageIdx = pages.indexOf(cur);
+  markChanged(); notify('page');
+  return true;
 }
 
 export function movePage(dir) {

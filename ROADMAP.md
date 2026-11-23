@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.53.0).
+Dernière mise à jour : 2026-11-23 (v1.54.0).
 
-## Fait (v1.29.0 → v1.53.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.54.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -79,10 +79,17 @@ Dernière mise à jour : 2026-11-23 (v1.53.0).
 - [x] Écran de chargement (règle du 14 novembre) ; échec de chargement affiché avec « Recharger »
 - [x] `schemaVersion` : projets (2) et sauvegardes JSON (2), anciens formats migrés, sauvegarde plus récente refusée
 
+### Guides et album (v1.54)
+- [x] Règle : traits parallèles à la règle, collés à son bord quand on part tout près ; poignées aux bouts et au milieu
+- [x] Perspective à 1 point (vers le point de fuite, horizontales, verticales) et à 2 points (vers l'un des deux, verticales), ligne d'horizon
+- [x] Couverture : page en tête à fond perdu, titre du projet, jamais numérotée
+- [x] Chemin de fer : vignettes de toutes les pages, ouverture au toucher, ordre changé à la poignée (annulable)
+
 ## Reste à faire
 
 ### À vérifier sur iPad
 - [ ] Symétrie au stylet (pinceaux à grain, gomme) et numéros de page à l'impression
+- [ ] Règle et perspective au stylet : poignées faciles à attraper, trait qui part dans la bonne direction ; chemin de fer : glisser à la poignée au doigt
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet
@@ -93,14 +100,6 @@ Dernière mise à jour : 2026-11-23 (v1.53.0).
 
 ### À vérifier de bout en bout
 - [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé
-
-### Outils de dessin
-- [ ] Règle droite (traits droits guidés)
-- [ ] Perspective à 1 et 2 points de fuite
-
-### Album
-- [ ] Page de couverture
-- [ ] Chemin de fer : toutes les pages en vignettes, réordonnables
 
 ### Impression (suite)
 - [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF
@@ -113,6 +112,7 @@ Dernière mise à jour : 2026-11-23 (v1.53.0).
 - [ ] Livret : sens de retournement recto verso (bord court) sur une vraie imprimante
 
 ### Améliorations possibles
+- [ ] Guides : ellipses en perspective, perspective à 3 points, grille isométrique ; guides appliqués à l'outil Forme
 - [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet
 - [ ] Sélection : presse-papiers partagé entre onglets ou appareils (aujourd'hui interne à l'app) ; coller en rectangle plutôt qu'en forme du dessin
 - [ ] Info-bulles : couvrir les curseurs de taille et d'opacité (leur appui long pose déjà un repère) et compléter les explications des éléments qui n'ont que leur libellé

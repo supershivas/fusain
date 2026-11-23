@@ -69,7 +69,7 @@ export function layoutRects(layout, W, H, marginPx, gutterPx) {
 // Les anciens formats se migrent à la lecture (`projectFromMeta`), jamais refusés.
 export const PROJECT_SCHEMA = 2;
 
-// Numéros de page (folio) : project.folio = { on, pos, start, skipFirst }. Absent : pas de numéro.
+// Numéros de page (folio) : project.folio = { on, pos, start, skipFirst }. Absent : pas de numéro. Une couverture (page.cover) n'en a jamais.
 export const FOLIO_POSITIONS = [
   { id: 'bottom-center', name: 'En bas, au centre' },
   { id: 'bottom-outer', name: 'En bas, à l\'extérieur' },
@@ -78,7 +78,7 @@ export const FOLIO_POSITIONS = [
 // Numéro imprimé sur la page d'indice idx, ou null. Les pages impaires sont à droite, comme dans un album ouvert.
 export function folioOf(project, idx) {
   const f = project.folio;
-  if (!f || !f.on || (f.skipFirst && idx === 0)) return null;
+  if (!f || !f.on || (f.skipFirst && idx === 0) || (project.pages[idx] && project.pages[idx].cover)) return null;
   return { n: (Number.isFinite(f.start) ? f.start : 1) + idx, pos: f.pos || 'bottom-center', right: idx % 2 === 0 };
 }
 
@@ -167,7 +167,7 @@ export function projectMeta(project) {
     deleted: project.deleted, format: project.format, dpi: project.dpi,
     margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, palettes: project.palettes, paletteId: project.paletteId, folio: project.folio,
     pages: project.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
+      id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden, guide: p.guide, cover: p.cover || undefined,
       panels: p.panels.map(c => ({
         id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, ex: c.ex, ey: c.ey, ew: c.ew, eh: c.eh, stroke: c.stroke, active: c.active, note: c.note,
         layers: c.layers.map(layerMeta), mask: c.mask ? layerMeta(c.mask) : null,
@@ -186,7 +186,7 @@ export function projectFromMeta(meta) {
     schemaVersion: PROJECT_SCHEMA,
     tramas: meta.tramas || [],
     pages: meta.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden,
+      id: p.id, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden, guide: p.guide, cover: !!p.cover,
       panels: p.panels.map(c => ({
         id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, stroke: c.stroke, active: c.active, note: c.note || { plan: '', description: '' },
         ex: c.ex ?? c.x, ey: c.ey ?? c.y, ew: c.ew ?? c.w, eh: c.eh ?? c.h,

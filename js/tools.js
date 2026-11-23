@@ -7,10 +7,11 @@ import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
 } from './raster.js';
 import { tramaById } from './tramas.js';
-import { invalidate, setOverlay, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
+import { invalidate, setOverlay, requestRender, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
 import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
+import { guideMode, hitHandle, dragHandle, snapStart, guidedPoint } from './guides.js';
 import { currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
 let session = null, hinted = null;   // hinted : dernier calque d'aplat signalé (référence active)
@@ -87,6 +88,12 @@ export function down(pt) {
   if (ed.tool === 'bubble') { bubbleDown(pt); return; }
   if (ed.tool === 'layout') { layoutDown(pt); return; }
   if (ed.tool === 'select') { selectDown(pt); return; }
+  if (['pencil', 'eraser', 'shape'].includes(ed.tool) && guideMode(page()) !== 'off') {
+    // poignée d'un guide (règle, point de fuite) : on la déplace au lieu de dessiner
+    const h = hitHandle(page(), pt, 22 / view.s);
+    if (h) { session = { kind: 'guide', key: h.key, x0: pt.x, y0: pt.y, from: JSON.parse(JSON.stringify(page().guide)) }; return; }
+    if (ed.tool !== 'shape') pt = snapStart(page(), pt, 18 / view.s);
+  }
   const p = panelAt(pt.x, pt.y);
   if (!p) {
     // Départ hors de toute case : le geste est suivi, et il se pose dans la première case où il entre (rogné au cadre).
@@ -124,6 +131,7 @@ function begin(p, pt) {
     const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
     session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly }, mir: tool === 'mask' ? [] : mirrorsOf(p) };
+    if (tool !== 'mask' && guideMode(page()) !== 'off') session.gst = { start: { x: pt.x, y: pt.y }, dir: null };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
     stampBrush(session.ctx, lx, ly, d);
     for (const f of session.mir) stampBrush(session.ctx, ...f(lx, ly), d);
@@ -210,7 +218,13 @@ export function move(pt) {
     }
     return;
   }
+  if (session.kind === 'guide') {
+    dragHandle(page(), session.key, session.from, pt.x - session.x0, pt.y - session.y0);
+    requestRender();
+    return;
+  }
   if (session.kind === 'stroke') {
+    if (session.gst) { const q = guidedPoint(page(), session.gst, pt, 6 / view.s); if (!q) return; pt = q; }
     const s = session, tx = Math.floor(pt.x - s.p.ex), ty = Math.floor(pt.y - s.p.ey);
     s.target = { x: tx, y: ty };
     // stabilisation : le tampon suit le doigt avec un léger retard, ce qui lisse les tremblements
@@ -247,6 +261,7 @@ export function move(pt) {
 export function up() {
   const s = session; session = null;
   if (!s) return;
+  if (s.kind === 'guide') { markChanged(); requestRender(); return; }
   if (s.kind === 'stroke') {
     if (s.ctx.brush && s.ctx.brush.spec.smooth && (s.last.x !== s.target.x || s.last.y !== s.target.y)) {   // rattrape le retard de la stabilisation
       segment(s, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
@@ -298,6 +313,7 @@ export function cancel() {
   const s = session; session = null;
   if (!s) return;
   if (s.kind === 'stroke') { ed.undo.rollback(); invalidate(s.p); }
+  else if (s.kind === 'guide') { page().guide = s.from; requestRender(); }
   else if (s.kind === 'shape') setOverlay({ shape: null });
   else if (s.kind === 'free') setOverlay({ free: null });
   else if (s.kind === 'gutter') setOverlay({ guide: null });

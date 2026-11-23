@@ -2,7 +2,7 @@
 import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
-  snapshotBubble, goToPage, addPage, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
+  snapshotBubble, goToPage, addPage, addCover, reorderPages, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
   copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, snapNarration, applyNarrationEdge, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
@@ -17,9 +17,10 @@ import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } fro
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
 import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
-import { buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts } from './export.js';
+import { buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts, pageThumb } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
+import { GUIDE_MODES, guideMode, setGuideMode } from './guides.js';
 import { stampLibrary } from './library.js';
 import { syncSoon } from './sync.js';
 import { clearSelection, selectAll, invertSelection, clearSelectionContent, polyFinish, polyCancel, polyCount, currentSelection, transformSelection, TRANSFORMS, copySelection, pasteClip, hasClip, growSelection } from './selection.js';
@@ -402,13 +403,13 @@ function tramaControl() {
 export function renderOptbar() {
   const o = $('#optbar', root), t = ed.tool;
   let html = '';
-  if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush') + symBtn();
-  else if (t === 'eraser') html = paletteControl() + popBtn('brush') + symBtn();
+  if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush') + symBtn() + guideBtn();
+  else if (t === 'eraser') html = paletteControl() + popBtn('brush') + symBtn() + guideBtn();
   else if (t === 'fill') html = tramaControl() + gapControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
-      + tramaControl() + popBtn('trama') + symBtn();
+      + tramaControl() + popBtn('trama') + symBtn() + guideBtn();
   } else if (t === 'mask') {
     html = `<span class="seg" role="group" aria-label="Effet du masque">
         <button data-mask="off" class="${ed.maskMode === 'off' ? 'on' : ''}">Sans effet</button>
@@ -693,6 +694,15 @@ function cycleSymmetry(to = SYM_NEXT[ed.symmetry] || 'v') {
   toast(SYMMETRY[to][1] + (to === 'off' ? '' : ', au centre de la case.'), { duration: 1600 });
 }
 
+// Guides de la page : un toucher passe d'aucun guide à la règle, puis à la perspective à 1 et 2 points.
+const guideBtn = () => { const m = GUIDE_MODES.find(x => x.id === guideMode(page())) || GUIDE_MODES[0];
+  return `<button class="icon-btn icon-only ${m.id !== 'off' ? 'on' : ''}" data-guide="1" aria-pressed="${m.id !== 'off'}" title="Guide : ${m.name}" aria-label="Guide : ${m.name} (toucher pour changer)">${icon(m.id === 'off' ? 'ruler-2' : m.icon)}</button>`; };
+function cycleGuide() {
+  const i = GUIDE_MODES.findIndex(x => x.id === guideMode(page())), m = GUIDE_MODES[(i + 1) % GUIDE_MODES.length];
+  setGuideMode(page(), m.id, pageSize(ed.project)); markChanged(); renderOptbar(); requestRender();
+  toast(m.id === 'off' ? 'Guides retirés.' : m.id === 'ruler' ? 'Règle : les traits suivent sa direction. Fais glisser ses poignées pour la placer.' : `${m.name} : les traits filent vers le point de fuite${m.id === 'persp1' ? ', ou restent horizontaux ou verticaux' : ' le plus proche de leur direction, ou restent verticaux'}. Fais glisser les points pour les placer.`, { duration: m.id === 'off' ? 1400 : 4000 });
+}
+
 const popBtn = id => id === 'brush' || id === 'trama'
   ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="Réglages" aria-label="Réglages">${icon('adjustments-horizontal')}</button>`
   : `<button class="btn small ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}">${icon(POP_BTN[id][0])} ${POP_BTN[id][1]}</button>`;
@@ -758,6 +768,7 @@ function onOptbar(e) {
   if (b.dataset.openfocus) { setFocus(true); return; }
   if (b.dataset.selmode || b.dataset.selop || b.dataset.selact || b.dataset.seltf) onSelect(b);
   else if (b.dataset.sym) cycleSymmetry();
+  else if (b.dataset.guide) cycleGuide();
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -1379,10 +1390,73 @@ function miniPage(pg) {
   return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true">${pg.panels.map(c => `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" fill="none" stroke="#000" stroke-width="${Math.round(w / 40)}"/>`).join('')}</svg>`;
 }
 
+const pageLabel = (pg, i) => (pg.cover ? 'Couverture' : `Page ${i + 1}`);
+
+// ── Chemin de fer : toutes les pages en vignettes ; toucher ouvre la page, la poignée la déplace ──
+const boardThumbs = new Map();   // id de page → image (session) ; la page ouverte est toujours redessinée
+async function pagesBoard() {
+  await saveNow();
+  const project = ed.project, { w, h } = pageSize(project);
+  const m = openModal({ title: 'Chemin de fer', wide: true, noFocus: true,
+    body: `<small class="note">Touche une page pour l'ouvrir. Fais glisser sa poignée pour la déplacer.</small><div class="board" id="board"></div>` });
+  const grid = $('#board', m.el);
+  const card = (pg, i) => `<div class="board-card ${i === ed.pageIdx ? 'on' : ''}" data-bpage="${pg.id}">
+      <button type="button" class="board-open" data-bopen="${pg.id}" aria-label="Ouvrir ${pageLabel(pg, i)}" style="aspect-ratio:${w}/${h}">${boardThumbs.get(project.id + pg.id) ? `<img alt="" src="${boardThumbs.get(project.id + pg.id)}">` : miniPage(pg)}</button>
+      <div class="board-foot"><span>${pageLabel(pg, i)}</span><button type="button" class="icon-btn icon-only board-grip" data-bgrip="${pg.id}" aria-label="Déplacer ${pageLabel(pg, i)}">${icon('grip-horizontal')}</button></div></div>`;
+  const draw = () => { grid.innerHTML = project.pages.map(card).join(''); };
+  draw();
+  m.el.addEventListener('click', e => {
+    const o = e.target.closest('[data-bopen]');
+    if (!o) return;
+    const i = project.pages.findIndex(p => p.id === o.dataset.bopen);
+    m.close(); if (i >= 0) goToPage(i);
+  });
+  // glisser à la poignée : la carte suit le doigt entre les autres ; l'ordre s'applique au lâcher (annulable)
+  let drag = null;
+  grid.addEventListener('pointerdown', e => {
+    const g = e.target.closest('[data-bgrip]');
+    if (!g) return;
+    e.preventDefault(); g.setPointerCapture(e.pointerId);
+    drag = { el: g.closest('.board-card'), before: project.pages.map(p => p.id) };
+    drag.el.classList.add('dragging');
+  });
+  grid.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const over = document.elementFromPoint(e.clientX, e.clientY), c = over && over.closest('.board-card');
+    if (!c || c === drag.el || c.parentNode !== grid) return;
+    const r = c.getBoundingClientRect();
+    grid.insertBefore(drag.el, e.clientX < r.left + r.width / 2 ? c : c.nextSibling);
+  });
+  const end = () => {
+    if (!drag) return;
+    const { before } = drag; drag.el.classList.remove('dragging'); drag = null;
+    if (reorderPages([...grid.children].map(c => c.dataset.bpage))) {
+      draw();
+      toast('Pages réordonnées.', { actionLabel: 'Annuler', duration: 6000, onAction: () => { reorderPages(before); if (grid.isConnected) draw(); } });
+    }
+  };
+  grid.addEventListener('pointerup', end); grid.addEventListener('pointercancel', end);
+  // vignettes : chaque page est chargée le temps de la dessiner, puis libérée (seule la page ouverte reste en mémoire)
+  for (const [i, pg] of project.pages.entries()) {
+    const key = project.id + pg.id;
+    if (boardThumbs.has(key) && i !== ed.pageIdx) continue;
+    if (!grid.isConnected || ed.project !== project) return;
+    try {
+      const open = pg === page();
+      if (!open) await loadPage(project, pg);
+      await ensureFonts(project, [pg]);
+      boardThumbs.set(key, await pageThumb(project, pg, 240));
+      if (!open && pg !== page()) unloadPage(pg);
+    } catch { continue; }
+    const img = grid.querySelector(`[data-bopen="${pg.id}"]`);
+    if (img) img.innerHTML = `<img alt="" src="${boardThumbs.get(key)}">`;
+  }
+}
+
 function pagesTab() {
   return `<h3>Pages</h3>
     ${ed.project.pages.map((pg, i) => `<button class="page-btn ${i === ed.pageIdx ? 'on' : ''}" data-page="${i}">${miniPage(pg)}
-      <span><b>Page ${i + 1}</b><small>${pg.panels.length} case${pg.panels.length > 1 ? 's' : ''} · ${pg.bubbles.length} bulle${pg.bubbles.length > 1 ? 's' : ''}</small></span></button>`).join('')}
+      <span><b>${pageLabel(pg, i)}</b><small>${pg.panels.length} case${pg.panels.length > 1 ? 's' : ''} · ${pg.bubbles.length} bulle${pg.bubbles.length > 1 ? 's' : ''}</small></span></button>`).join('')}
     <div class="tools-row">
       <button class="icon-btn icon-only" data-act="add-page" title="Nouvelle page" aria-label="Nouvelle page">${icon('file-plus')}</button>
       <button class="icon-btn icon-only" data-act="dup-page" title="Dupliquer la page" aria-label="Dupliquer la page">${icon('copy')}</button>
@@ -1391,6 +1465,7 @@ function pagesTab() {
       <button class="icon-btn icon-only" data-act="relayout" title="Changer la disposition des cases" aria-label="Changer la disposition">${icon('layout-grid')}</button>
       <button class="icon-btn icon-only" data-act="del-page" title="Supprimer la page" aria-label="Supprimer la page">${icon('trash')}</button>
     </div>
+    <button class="btn" data-act="pages-board" style="margin-top:8px;width:100%">${icon('layout-grid')} Chemin de fer</button>
     <button class="btn primary" data-act="export-pdf" style="margin-top:8px;width:100%">${icon('file-type-pdf')} Exporter en PDF</button>`;
 }
 
@@ -1571,6 +1646,7 @@ async function onDock(e) {
   }
   else if (a === 'add-page') { const id = await pickLayout('Nouvelle page'); if (id) await addPage(id); }
   else if (a === 'dup-page') await duplicatePage();
+  else if (a === 'pages-board') pagesBoard();
   else if (a === 'page-left') movePage(-1);
   else if (a === 'page-right') movePage(1);
   else if (a === 'relayout') {
@@ -2244,6 +2320,9 @@ const COMMANDS = {
   fullscreen: () => toggleFullscreen(),
   dock: () => setDock(narrow() ? (dockOpen ? 'hidden' : 'full') : { full: 'mini', mini: 'hidden', hidden: 'full' }[dockMode()]),
   symmetry: () => { if (!['pencil', 'eraser', 'shape'].includes(ed.tool)) setTool('pencil'); cycleSymmetry(); },
+  guide: () => { if (!['pencil', 'eraser', 'shape'].includes(ed.tool)) setTool('pencil'); cycleGuide(); },
+  'add-cover': async () => { if (await addCover()) toast('Couverture ajoutée en tête, avec le titre du projet.', { duration: 3000 }); },
+  'pages-board': () => pagesBoard(),
   folio: () => { secState.pf = true; setFocus(false); showDock('page'); },
   notes: () => { ed.showNotes = !ed.showNotes; savePrefs(); requestRender(); },
   'hide-bubbles': () => togglePageBubbles(),

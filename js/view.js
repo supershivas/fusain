@@ -5,6 +5,7 @@ import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
 import { drawFolio } from './export.js';
+import { guideMode, guideHandles } from './guides.js';
 
 // r : rotation de la page à l'écran (radians, autour de l'origine ox, oy) ; moved : l'utilisateur a zoomé, tourné ou déplacé la page
 export const view = { s: 1, ox: 0, oy: 0, r: 0, w: 0, h: 0, dpr: 1, moved: false };
@@ -225,6 +226,7 @@ function renderFrame() {
 
   if (!fp) drawFolio(ctx, ed.project, ed.pageIdx);
   drawSymmetry(fp || pg.panels.find(p => p.id === ed.panelId));
+  drawGuides(pg);
 
   // aides, en pixels d'écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -272,6 +274,33 @@ function drawSymmetry(p) {
   if (ed.symmetry.includes('v')) { ctx.moveTo(cx, p.y); ctx.lineTo(cx, p.y + p.h); }
   if (ed.symmetry.includes('h')) { ctx.moveTo(p.x, cy); ctx.lineTo(p.x + p.w, cy); }
   ctx.stroke();
+  ctx.restore();
+}
+
+// Guides de tracé (règle, points de fuite) : lignes fines et poignées, jamais exportés.
+function drawGuides(pg) {
+  const mode = guideMode(pg);
+  if (mode === 'off' || !SYM_TOOLS.includes(ed.tool)) return;
+  const g = pg.guide, s = view.s, { w, h } = pageDims(), L = Math.hypot(w, h) * 2, accent = css('--accent') || '#C0392B';
+  const line = (x, y, ux, uy) => { ctx.moveTo(x - ux * L, y - uy * L); ctx.lineTo(x + ux * L, y + uy * L); };
+  ctx.save();
+  ctx.beginPath(); ctx.rect(-w, -h, 3 * w, 3 * h); ctx.clip();
+  ctx.strokeStyle = accent; ctx.lineWidth = 1.5 / s;
+  if (mode === 'ruler') {
+    const r = g.ruler, n = Math.hypot(r.x1 - r.x0, r.y1 - r.y0) || 1;
+    ctx.globalAlpha = 0.5; ctx.setLineDash([10 / s, 6 / s]); ctx.beginPath(); line(r.x0, r.y0, (r.x1 - r.x0) / n, (r.y1 - r.y0) / n); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineWidth = 3 / s; ctx.beginPath(); ctx.moveTo(r.x0, r.y0); ctx.lineTo(r.x1, r.y1); ctx.stroke();
+  } else {
+    const vps = mode === 'persp1' ? [g.vps[0]] : g.vps;
+    ctx.globalAlpha = 0.5; ctx.setLineDash([10 / s, 6 / s]); ctx.beginPath();   // ligne d'horizon
+    if (mode === 'persp1') line(vps[0].x, vps[0].y, 1, 0);
+    else { const n = Math.hypot(vps[1].x - vps[0].x, vps[1].y - vps[0].y) || 1; line(vps[0].x, vps[0].y, (vps[1].x - vps[0].x) / n, (vps[1].y - vps[0].y) / n); }
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 0.18; ctx.lineWidth = 1 / s; ctx.beginPath();   // rayons de fuite
+    for (const v of vps) for (let k = 0; k < 24; k++) { const a = k * Math.PI / 12; ctx.moveTo(v.x, v.y); ctx.lineTo(v.x + Math.cos(a) * L, v.y + Math.sin(a) * L); }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.lineWidth = 2 / s; ctx.fillStyle = '#fff';
+  for (const hd of guideHandles(pg)) { ctx.beginPath(); ctx.arc(hd.x, hd.y, (hd.key === 'rm' ? 7 : 10) / s, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
   ctx.restore();
 }
 
