@@ -22,7 +22,7 @@ reprend sur un autre. Plus tard : un jeu où l'on dessine (il passerait alors à
 - Hébergement : GitHub Pages (`.github/workflows/pages.yml`).
 - Données : cache local IndexedDB (copie de travail) + Supabase (projet existant), tables préfixées `fusain_`.
   Schéma, règles RLS et bucket : `supabase/fusain.sql`, à exécuter une fois à la main.
-  - `fusain_projects` : une ligne par projet, `data` = description sans pixels.
+  - `fusain_projects` : une ligne par projet, `data` = description sans pixels, plus la vignette de l'accueil `data.thumb` (JPEG en data URL, retirée de `meta` à la réception et rangée par `setThumb` ; `syncThumb` complète les projets synchronisés avant, par un PATCH qui ne change pas `updated_at`).
   - Storage, bucket privé `fusain` : un PNG par calque, `<uid>/<projet>/<calque>.png`.
   - `fusain_library` : une ligne par utilisateur, bibliothèque personnelle (`customBrushes`, `tramaPresets`, `bubbleTemplates`) ; `js/library.js` date chaque élément (`at`) et garde les suppressions (`deleted`, 180 jours), `syncLibrary` (`sync.js`) fusionne élément par élément. Table absente : rien ne casse, les Réglages le signalent.
 - Authentification : lien magique par email (Supabase Auth). L'URL du site doit figurer dans les « Redirect URLs » du projet

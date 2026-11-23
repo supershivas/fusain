@@ -1,6 +1,6 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-22 (v1.52.2).
+Dernière mise à jour : 2026-11-22 (v1.52.3).
 
 ## Fait (v1.29.0 → v1.50.2, 22 novembre 2026)
 

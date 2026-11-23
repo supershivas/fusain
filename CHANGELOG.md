@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.52.3 — 2026-11-23
+- L'aperçu des projets s'affiche sur l'accueil de tous les appareils, pas seulement sur celui où le projet a été dessiné
+
 ## 1.52.2 — 2026-11-23
 - Connexion : on peut coller dans les Réglages le lien reçu par email au lieu du code (pratique sur iPad avec l'app installée)
 

@@ -2,7 +2,7 @@
 // (description du projet), bucket Storage `fusain` (un PNG par calque). Aucune bibliothèque :
 // des appels `fetch` vers l'API REST. L'URL et la clé anon sont saisies dans les Réglages et gardées
 // dans ce navigateur (jamais dans le dépôt).
-import { listRecords, putRecord, updateRecord, getLayerRec, putLayerRec, deleteProjectHard, newRev } from './store.js';
+import { listRecords, putRecord, updateRecord, getLayerRec, putLayerRec, deleteProjectHard, newRev, getThumb, setThumb } from './store.js';
 import { projectFromMeta, allLayers } from './model.js';
 
 const CFG = 'fusain:supabase', SES = 'fusain:session', BUCKET = 'fusain';
@@ -200,14 +200,17 @@ async function push(rec) {
   });
   await check(await api('/rest/v1/fusain_projects', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({ id: meta.id, title: meta.title, data: meta, deleted: !!meta.deleted, updated_at: new Date(meta.updatedAt).toISOString() }),
+    body: JSON.stringify({ id: meta.id, title: meta.title, data: await withThumb(meta), deleted: !!meta.deleted, updated_at: new Date(meta.updatedAt).toISOString() }),
   }), 'Envoi du projet');
   // l'éditeur a pu enregistrer pendant l'envoi : le projet reste « à envoyer » s'il a changé depuis
   await updateRecord(meta.id, fresh => fresh && ({ ...fresh, base: meta.updatedAt, dirty: fresh.updatedAt !== meta.updatedAt }));
 }
 
+// La vignette de l'accueil voyage avec le projet, dans `data.thumb` (JPEG 240 px en data URL, ~15 ko) ;
+// elle n'est jamais rangée dans `meta` : chaque appareil la garde à part (`setThumb`).
 async function pull(rec, row) {
-  const meta = row.data;
+  const { thumb, ...meta } = row.data;
+  if (thumb) await setThumb(meta.id, thumb);
   await pool(layerMetas(meta), 4, async l => {
     if (!l.rev) return;
     const lr = await getLayerRec(meta.id, l.id);
@@ -235,8 +238,28 @@ async function conflict(rec, row) {
   window.dispatchEvent(new CustomEvent('fusain:conflict', { detail: { id: rec.id, copyId } }));
 }
 
+async function withThumb(meta) {
+  const thumb = await getThumb(meta.id).catch(() => null);
+  return thumb ? { ...meta, thumb } : meta;
+}
+
+// Vignettes des projets déjà synchronisés avant qu'elles ne voyagent : on récupère celle qui manque ici,
+// et on envoie la nôtre si le serveur n'en a pas (sans changer la date du projet).
+async function syncThumb(rec, row) {
+  const mine = await getThumb(rec.id).catch(() => null);
+  if (row.data.thumb && !mine) { await setThumb(rec.id, row.data.thumb); return true; }
+  if (!row.data.thumb && mine) {
+    await check(await api('/rest/v1/fusain_projects?id=eq.' + rec.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ data: { ...row.data, thumb: mine } }),
+    }), 'Envoi de la vignette');
+  }
+  return false;
+}
+
 async function syncOne(rec, row) {
   const remoteMs = row ? Date.parse(row.updated_at) : 0;
+  if (row && !rec.dirty && remoteMs <= rec.base && await syncThumb(rec, row)) window.dispatchEvent(new CustomEvent('fusain:thumbs'));
   if (!row) {
     if (rec.base > 0 && !rec.dirty) { await deleteProjectHard(projectFromMeta(rec.meta)); window.dispatchEvent(new CustomEvent('fusain:remote-updated', { detail: { id: rec.id, gone: true } })); }
     else await push(rec);

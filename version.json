@@ -1,7 +1,7 @@
 {
-  "version": "1.52.2",
+  "version": "1.52.3",
   "date": "2026-11-23",
   "changes": [
-    "Connexion : on peut coller dans les Réglages le lien reçu par email au lieu du code (pratique sur iPad avec l'app installée)"
+    "L'aperçu des projets s'affiche sur l'accueil de tous les appareils, pas seulement sur celui où le projet a été dessiné"
   ]
 }

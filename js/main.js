@@ -106,6 +106,7 @@ window.addEventListener('fusain:remote-updated', e => {
     else if (!hasPendingSave()) { toast('Mis à jour depuis un autre appareil.'); showEditor(id); }
   }
 });
+window.addEventListener('fusain:thumbs', () => { if (!inEditor) renderHome(root); });
 window.addEventListener('fusain:conflict', e => toast('Modifié sur deux appareils : ta version est gardée dans « copie locale ».', { duration: 9000 }));
 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
