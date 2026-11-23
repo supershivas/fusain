@@ -5,6 +5,7 @@ import { ensureData } from './model.js';
 import { floodRegion, compositeValues, compositeRect } from './raster.js';
 import { invalidate, requestRender, setOverlay } from './view.js';
 import { toast } from './toast.js';
+import { kvGet, kvSet } from './store.js';
 
 const frameOf = p => ({ x0: p.x - p.ex, y0: p.y - p.ey, x1: p.x - p.ex + p.w, y1: p.y - p.ey + p.h });
 
@@ -303,8 +304,31 @@ export function transformSelection(kind, p = panel()) {
 }
 
 // Presse-papiers de l'éditeur : pixels du calque actif sous la sélection (sans sélection : toute la case).
+// Partagé entre les onglets et les projets de cet appareil (IndexedDB, clé `clip`, signalé par BroadcastChannel) ;
+// la copie part aussi dans le presse-papiers du système en PNG (autres apps, et autres appareils Apple par Handoff).
 let clip = null;
 export const hasClip = () => !!clip;
+const clipChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('fusain-clip') : null;
+const loadClip = () => kvGet('clip').then(c => { if (c && c.buf && (!clip || (c.at || 0) > (clip.at || 0))) { clip = c; notify('clip'); } }).catch(() => {});
+loadClip();
+if (clipChannel) clipChannel.onmessage = () => loadClip();
+function shareClip() {
+  kvSet('clip', clip).then(() => clipChannel && clipChannel.postMessage('copied')).catch(() => {});
+  try {   // presse-papiers du système : l'image se construit pendant le geste (exigence de Safari)
+    if (!navigator.clipboard || typeof ClipboardItem === 'undefined') return;
+    const c = clip, png = new Promise(res => {
+      const cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
+      const x = cv.getContext('2d'), img = x.createImageData(c.w, c.h), d = img.data;
+      for (let i = 0; i < c.w * c.h; i++) {
+        if (!c.mask[i]) continue;
+        if (c.b === 4) { d.set(c.buf.subarray(i * 4, i * 4 + 4), i * 4); continue; }
+        const v = c.buf[i] === 2 ? 255 : 0; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = c.buf[i] ? 255 : 0;
+      }
+      x.putImageData(img, 0, 0); cv.toBlob(res, 'image/png');
+    });
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]).catch(() => {});
+  } catch { /* presse-papiers du système refusé : la copie reste dans Fusain */ }
+}
 export function copySelection(cut = false, p = panel()) {
   const cur = currentSelection(p), s = cur || selectAll(p, false), l = activeLayer(p), done = r => { if (!cur) applySel(null); return r; };
   if (!s) return 'none';
@@ -317,7 +341,16 @@ export function copySelection(cut = false, p = panel()) {
     buf.set(l.data.subarray(i * b, i * b + b), (y * bw + x) * b); mask[y * bw + x] = 1; any = true;
   }
   if (!any) return done('empty');
-  clip = { b, w: bw, h: bh, buf, mask, x: s.x0 + p.ex, y: s.y0 + p.ey, name: l.name };   // position en coordonnées de page
+  // la copie est rognée au dessin qu'elle contient (sans sélection, la case entière se réduit à son dessin)
+  let cx0 = bw, cy0 = bh, cx1 = 0, cy1 = 0;
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (mask[y * bw + x]) { if (x < cx0) cx0 = x; if (x >= cx1) cx1 = x + 1; if (y < cy0) cy0 = y; if (y >= cy1) cy1 = y + 1; }
+  const cw = cx1 - cx0, ch = cy1 - cy0, cbuf = new Uint8Array(cw * ch * b), cmask = new Uint8Array(cw * ch);
+  for (let y = 0; y < ch; y++) {
+    const from = (cy0 + y) * bw + cx0;
+    cbuf.set(buf.subarray(from * b, (from + cw) * b), y * cw * b); cmask.set(mask.subarray(from, from + cw), y * cw);
+  }
+  clip = { b, w: cw, h: ch, buf: cbuf, mask: cmask, x: s.x0 + cx0 + p.ex, y: s.y0 + cy0 + p.ey, name: l.name, at: Date.now() };   // position en coordonnées de page
+  shareClip();
   if (cut) {
     if (l.locked) return done('locked');
     ed.undo.begin('Couper');
@@ -344,8 +377,10 @@ export function pasteClip(newLayerFn, p = panel()) {
     if (!clip.mask[y * clip.w + x]) continue;
     const tx = x0 + x, ty = y0 + y; if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
     const j = y * clip.w + x;
-    d.set(clip.buf.subarray(j * b, j * b + b), (ty * W + tx) * b); mask[ty * W + tx] = 1;
+    d.set(clip.buf.subarray(j * b, j * b + b), (ty * W + tx) * b);
   }
+  // la sélection collée est le rectangle de la copie (plus simple à saisir et à transformer que la forme du dessin)
+  for (let y = Math.max(0, y0); y < Math.min(H, y0 + clip.h); y++) mask.fill(1, y * W + Math.max(0, x0), y * W + Math.min(W, x0 + clip.w));
   const next = build(p, mask, { x0: Math.max(0, x0), y0: Math.max(0, y0), x1: Math.min(W, x0 + clip.w), y1: Math.min(H, y0 + clip.h) });
   ed.undo.commit({ before: ed.sel, after: next });
   invalidate(p, { x: x0, y: y0, w: clip.w, h: clip.h }); markChanged();

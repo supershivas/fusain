@@ -59,6 +59,12 @@ function brushDiameter(pt, s, step) {
   return Math.max(1, Math.round(ed.size * f));
 }
 
+// Ligne de l'outil Forme : avec un guide, son extrémité suit la direction de guide la plus proche.
+function guidedLineEnd(s, pt) {
+  if (ed.shapeKind !== 'line' || guideMode(page()) === 'off') return pt;
+  return guidedPoint(page(), { start: { x: s.x0, y: s.y0 }, dir: null }, pt, 0) || pt;
+}
+
 // Symétrie (ed.symmetry : 'off', 'v' axe vertical, 'h' axe horizontal, 'vh' les deux) autour du centre du cadre de la case.
 // Renvoie les transformations des points en coordonnées de calque (pixel x ↔ 2·gauche + largeur − 1 − x).
 function mirrorsOf(p) {
@@ -92,7 +98,7 @@ export function down(pt) {
     // poignée d'un guide (règle, point de fuite) : on la déplace au lieu de dessiner
     const h = hitHandle(page(), pt, 22 / view.s);
     if (h) { session = { kind: 'guide', key: h.key, x0: pt.x, y0: pt.y, from: JSON.parse(JSON.stringify(page().guide)) }; return; }
-    if (ed.tool !== 'shape') pt = snapStart(page(), pt, 18 / view.s);
+    if (ed.tool !== 'shape' || ed.shapeKind === 'line') pt = snapStart(page(), pt, 18 / view.s);
   }
   const p = panelAt(pt.x, pt.y);
   if (!p) {
@@ -236,6 +242,7 @@ export function move(pt) {
     s.last = { x: lx, y: ly, d };
     flush(s);
   } else if (session.kind === 'shape') {
+    pt = guidedLineEnd(session, pt);
     setOverlay({ shape: { kind: ed.shapeKind, x0: session.x0, y0: session.y0, x1: pt.x, y1: pt.y } });
     session.x1 = pt.x; session.y1 = pt.y;
   } else if (session.kind === 'gutter') {

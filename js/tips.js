@@ -18,9 +18,9 @@ const TIPS = {
   'tool:pan': ['Déplacer la vue', 'Fait glisser la page sans dessiner ; un toucher change de case.'],
   // ── Barres ──
   'sym': ['Symétrie', 'Dessine en miroir autour du centre de la case. Chaque toucher change : aucune, axe vertical, axe horizontal, deux axes.'],
-  'guide': ['Guides de tracé', 'Règle, puis perspective à 1 et 2 points de fuite : les traits se calent sur la direction la plus proche. Fais glisser les poignées pour placer les guides.'],
+  'guide': ['Guides de tracé', 'Règle, perspective à 1, 2 ou 3 points de fuite, grille isométrique : les traits se calent sur la direction la plus proche. Fais glisser les poignées pour placer les guides.'],
   'act:symmetry': ['Symétrie', 'Dessin en miroir autour du centre de la case ; chaque choix passe au mode suivant.'],
-  'act:guide': ['Guides de tracé', 'Passe d\'aucun guide à la règle, puis à la perspective à 1 et 2 points.'],
+  'act:guide': ['Guides de tracé', 'Passe d\'aucun guide à la règle, à la perspective à 1, 2 et 3 points, puis à la grille isométrique.'],
   'act:folio': ['Numéros de page', 'Numérote les pages dans la marge : position, premier numéro, couverture sans numéro.'],
   'act:add-cover': ['Couverture', 'Ajoute en tête une page à fond perdu avec le titre du projet, jamais numérotée.'],
   'act:pages-board': ['Chemin de fer', 'Toutes les pages en vignettes : toucher en ouvre une, la poignée la déplace.'],

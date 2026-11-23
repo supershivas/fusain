@@ -5,7 +5,7 @@ import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
 import { drawFolio } from './export.js';
-import { guideMode, guideHandles } from './guides.js';
+import { guideMode, guideHandles, ISO_DIRS } from './guides.js';
 
 // r : rotation de la page à l'écran (radians, autour de l'origine ox, oy) ; moved : l'utilisateur a zoomé, tourné ou déplacé la page
 export const view = { s: 1, ox: 0, oy: 0, r: 0, w: 0, h: 0, dpr: 1, moved: false };
@@ -290,10 +290,18 @@ function drawGuides(pg) {
     const r = g.ruler, n = Math.hypot(r.x1 - r.x0, r.y1 - r.y0) || 1;
     ctx.globalAlpha = 0.5; ctx.setLineDash([10 / s, 6 / s]); ctx.beginPath(); line(r.x0, r.y0, (r.x1 - r.x0) / n, (r.y1 - r.y0) / n); ctx.stroke();
     ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineWidth = 3 / s; ctx.beginPath(); ctx.moveTo(r.x0, r.y0); ctx.lineTo(r.x1, r.y1); ctx.stroke();
+  } else if (mode === 'iso') {   // grille isométrique au pas de 10 mm
+    const step = mmToPx(10, ed.project.dpi);
+    ctx.globalAlpha = 0.22; ctx.lineWidth = 1 / s; ctx.beginPath();
+    for (const u of ISO_DIRS) {
+      const nx = -u.y, ny = u.x, span = Math.abs(nx) * w + Math.abs(ny) * h;   // pas mesuré perpendiculairement aux lignes
+      for (let t = -span; t <= span; t += step) line(w / 2 + nx * t, h / 2 + ny * t, u.x, u.y);
+    }
+    ctx.stroke();
   } else {
-    const vps = mode === 'persp1' ? [g.vps[0]] : g.vps;
+    const vps = mode === 'persp1' ? [g.vps[0]] : mode === 'persp2' ? g.vps.slice(0, 2) : g.vps;
     ctx.globalAlpha = 0.5; ctx.setLineDash([10 / s, 6 / s]); ctx.beginPath();   // ligne d'horizon
-    if (mode === 'persp1') line(vps[0].x, vps[0].y, 1, 0);
+    if (mode === 'persp1') line(vps[0].x, vps[0].y, 1, 0);   // persp2 et persp3 : la ligne passe par les deux premiers points
     else { const n = Math.hypot(vps[1].x - vps[0].x, vps[1].y - vps[0].y) || 1; line(vps[0].x, vps[0].y, (vps[1].x - vps[0].x) / n, (vps[1].y - vps[0].y) / n); }
     ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 0.18; ctx.lineWidth = 1 / s; ctx.beginPath();   // rayons de fuite
     for (const v of vps) for (let k = 0; k < 24; k++) { const a = k * Math.PI / 12; ctx.moveTo(v.x, v.y); ctx.lineTo(v.x + Math.cos(a) * L, v.y + Math.sin(a) * L); }

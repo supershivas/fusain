@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.56.0).
+Dernière mise à jour : 2026-11-23 (v1.57.0).
 
-## Fait (v1.29.0 → v1.56.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.57.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -85,17 +85,25 @@ Dernière mise à jour : 2026-11-23 (v1.56.0).
 - [x] Couverture : page en tête à fond perdu, titre du projet, jamais numérotée
 - [x] Chemin de fer : vignettes de toutes les pages, ouverture au toucher, ordre changé à la poignée (annulable)
 
+### Guides et presse-papiers (v1.57)
+- [x] Perspective à 3 points (le troisième point donne les verticales), grille isométrique (pas de 10 mm)
+- [x] Ligne de l'outil Forme guidée (règle, perspective, isométrique)
+- [x] Presse-papiers partagé entre onglets et projets de l'appareil ; copie envoyée aussi au presse-papiers du système (PNG)
+- [x] Coller : sélection en rectangle, copie rognée au dessin
+
 ### Impression pour l'imprimeur (v1.55)
 - [x] Couleur au choix : automatique, noir et blanc 1 bit (gris et couleurs tramés), niveaux de gris 8 bits, RVB, CMJN (gris et noir en K seul)
 - [x] Alerte sur les trames trop fines (points isolés d'un pixel à plus de 254 dpi), avec les pages concernées
 - [x] Fond perdu 3 mm (bords étirés), TrimBox / BleedBox, traits de coupe (une page par feuille)
 - [x] Lettrage net (v1.56) : bulles et textes en deux masques 1 bit à 1200 dpi (fond blanc, encre) au-dessus de l'image de la page
+- [x] Lettrage net aussi en impression directe (v1.57) : une image PNG par bulle, 1200 dpi (au plus 16 Mpx), posée sur la page
 - [x] CMJN visé PDF/X-1a (v1.56) : intention de sortie FOGRA39 (condition enregistrée, sans profil ICC joint), TrimBox sur chaque feuille, identifiant, Trapped
 
 ## Reste à faire
 
 ### À vérifier sur iPad
 - [ ] Symétrie au stylet (pinceaux à grain, gomme) et numéros de page à l'impression
+- [ ] Copier sur iPad : l'image arrive-t-elle dans le presse-papiers (Notes, Mac par Handoff) ?
 - [ ] Règle et perspective au stylet : poignées faciles à attraper, trait qui part dans la bonne direction ; chemin de fer : glisser à la poignée au doigt
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
@@ -109,7 +117,6 @@ Dernière mise à jour : 2026-11-23 (v1.56.0).
 - [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé
 
 ### Impression (suite)
-- [ ] Lettrage aussi net à l'impression directe (AirPrint : aujourd'hui à la résolution de la page)
 - [ ] PDF/X-1a : choisir le profil de l'imprimeur (aujourd'hui FOGRA39 fixe) ; conversion CMJN simple, sans profil ICC
 - [ ] Fond perdu dessiné : laisser dessiner jusqu'à 3 mm hors de la page dans les cases qui touchent le bord (aujourd'hui les bords sont étirés)
 
@@ -119,7 +126,7 @@ Dernière mise à jour : 2026-11-23 (v1.56.0).
 - [ ] Livret : sens de retournement recto verso (bord court) sur une vraie imprimante
 
 ### Améliorations possibles
-- [ ] Guides : ellipses en perspective, perspective à 3 points, grille isométrique ; guides appliqués à l'outil Forme
+- [ ] Guides : ellipses en perspective ; rectangles de l'outil Forme en perspective
 - [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet
-- [ ] Sélection : presse-papiers partagé entre onglets ou appareils (aujourd'hui interne à l'app) ; coller en rectangle plutôt qu'en forme du dessin
+- [ ] Sélection : coller une image venue du presse-papiers du système (autre app, autre appareil)
 - [ ] Info-bulles : couvrir les curseurs de taille et d'opacité (leur appui long pose déjà un repère) et compléter les explications des éléments qui n'ont que leur libellé

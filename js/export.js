@@ -3,7 +3,7 @@ import { pageSize, panelStroke, mmToPx, folioOf } from './model.js';
 import { compositeRect } from './raster.js';
 import { drawPageBubble, props, bubbleToPage } from './bubbles.js';
 import { loadFont, fontSpec, touchFont } from './fonts.js';
-import { encodePNGRGBA, canEncodePNG } from './png.js';
+import { encodePNGRGBA, encodePNG2, canEncodePNG } from './png.js';
 import { BAYER8 } from './dither.js';
 
 // Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
@@ -351,12 +351,11 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
 // Posés par-dessus l'image de la page, ils donnent un texte aussi net qu'en vectoriel à l'impression.
 // Rendu par bandes : le canevas ne dépasse jamais la limite de Safari.
 export const LETTER_DPI = 1200;
-function bubblesBox(project, page) {
+function bubblesBox(project, list) {
   const { w, h } = pageSize(project), pad = mmToPx(3, project.dpi);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
-  for (const b of page.bubbles) {
-    if (b.hidden) continue;
+  for (const b of list) {
     const m = Math.max(b.w, b.h) * 0.2 + pad;
     for (const [x, y] of [[b.x - m, b.y - m], [b.x + b.w + m, b.y - m], [b.x - m, b.y + b.h + m], [b.x + b.w + m, b.y + b.h + m]]) { const q = bubbleToPage(b, x, y); add(q.x, q.y); }
     if (b.tail) { add(b.tail.x - pad, b.tail.y - pad); add(b.tail.x + pad, b.tail.y + pad); }
@@ -364,12 +363,9 @@ function bubblesBox(project, page) {
   x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w, Math.ceil(x1)); y1 = Math.min(h, Math.ceil(y1));
   return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
 }
-export function letteringMasks(project, page) {
-  if (page.bubblesHidden || !page.bubbles.some(b => !b.hidden)) return null;
-  const box = bubblesBox(project, page);
-  if (!box) return null;
-  const k = Math.max(1, LETTER_DPI / project.dpi), W = Math.ceil(box.w * k), H = Math.ceil(box.h * k), rowBytes = (W + 7) >> 3;
-  const white = new Uint8Array(rowBytes * H), black = new Uint8Array(rowBytes * H);
+// Dessine les bulles `list` agrandies k fois dans le rectangle `box`, par bandes, et passe chaque pixel couvert à
+// put(x, y, encre) (encre : vrai pour le trait et le texte, faux pour le fond blanc). Renvoie vrai si un pixel est couvert.
+function rasterLettering(project, page, list, box, k, W, H, put) {
   const band = Math.max(64, Math.min(1024, Math.floor(4e6 / W))), c = document.createElement('canvas');
   c.width = W; c.height = band;
   const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -378,20 +374,41 @@ export function letteringMasks(project, page) {
     const rows = Math.min(band, H - top);
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, band);
     ctx.setTransform(k, 0, 0, k, -box.x * k, -box.y * k - top);
-    for (const b of page.bubbles) if (!b.hidden) drawPageBubble(ctx, b, project.dpi, page.panels);
+    for (const b of list) drawPageBubble(ctx, b, project.dpi, page.panels);
     const px = ctx.getImageData(0, 0, W, rows).data;
-    for (let y = 0; y < rows; y++) {
-      const o = (top + y) * rowBytes;
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        if (px[i + 3] < 128) continue;
-        any = true;
-        const bit = 0x80 >> (x & 7);
-        if ((px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8 < 128) black[o + (x >> 3)] |= bit; else white[o + (x >> 3)] |= bit;
-      }
+    for (let y = 0; y < rows; y++) for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      if (px[i + 3] < 128) continue;
+      any = true;
+      put(x, top + y, (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8 < 128);
     }
   }
+  c.width = c.height = 1;
+  return any;
+}
+const visibleBubbles = page => (page.bubblesHidden ? [] : page.bubbles.filter(b => !b.hidden));
+
+export function letteringMasks(project, page) {
+  const list = visibleBubbles(page), box = list.length ? bubblesBox(project, list) : null;
+  if (!box) return null;
+  const k = Math.max(1, LETTER_DPI / project.dpi), W = Math.ceil(box.w * k), H = Math.ceil(box.h * k), rowBytes = (W + 7) >> 3;
+  const white = new Uint8Array(rowBytes * H), black = new Uint8Array(rowBytes * H);
+  const any = rasterLettering(project, page, list, box, k, W, H, (x, y, ink) => { (ink ? black : white)[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7); });
   return any ? { box, W, H, white, black } : null;
+}
+
+// Impression directe : une image PNG par bulle (0 transparent, 1 encre, 2 blanc), au plus 16 Mpx, posée sur la page.
+async function letteringImages(project, page) {
+  const out = [];
+  for (const b of visibleBubbles(page)) {
+    const box = bubblesBox(project, [b]);
+    if (!box) continue;
+    const k = Math.max(1, Math.min(LETTER_DPI / project.dpi, Math.sqrt(16e6 / (box.w * box.h)))), W = Math.ceil(box.w * k), H = Math.ceil(box.h * k);
+    const data = new Uint8Array(W * H);
+    if (!rasterLettering(project, page, [b], box, k, W, H, (x, y, ink) => { data[y * W + x] = ink ? 1 : 2; })) continue;
+    out.push({ box, url: URL.createObjectURL(new Blob([await encodePNG2(data, W, H)], { type: 'image/png' })) });
+  }
+  return out;
 }
 
 // Traits de coupe aux quatre coins de la page coupée (tx, ty, tw, th en points) : filets de 0,25 pt, en noir de repérage
@@ -420,25 +437,29 @@ const pngOf = async canvas => {
 export async function printProject(project, { onProgress = () => {}, prepare = async () => {}, release = () => {}, onFine = () => {}, pages: pageIdx, imposition = 'single', drafts = false, bubbles = true, blue = false, color = 'auto' } = {}, ready = () => {}) {
   pageIdx = pageIdx || project.pages.map((_, i) => i);
   await ensureFonts(project, pageIdx.map(i => project.pages[i]));
-  const urls = new Map();
+  const urls = new Map(), overlays = new Map();
+  const letters = bubbles && !blue && canEncodePNG();   // lettrage net : chaque bulle à 1200 dpi, posée sur la page
   for (const [j, i] of pageIdx.entries()) {
     onProgress(j, pageIdx.length);
     const pg = project.pages[i];
     await prepare(pg);
-    const canvas = renderPage(project, pg, 1, { drafts, bubbles, blue });
+    const canvas = renderPage(project, pg, 1, { drafts, bubbles: bubbles && !letters, blue });
     release(pg);
+    if (letters) overlays.set(i, await letteringImages(project, pg));
     if (fineDotsMatter(project) && !blue && fineDotShare(canvas) > FINE_DOT_LIMIT) onFine(i);
     if (!blue) convertCanvas(canvas, color);
     urls.set(i, URL.createObjectURL(await pngOf(canvas)));
   }
   onProgress(pageIdx.length, pageIdx.length);
-  const sheets = impose(pageIdx, imposition, project.format);
+  const sheets = impose(pageIdx, imposition, project.format), pageW = pageSize(project).w;
+  const over = sl => (overlays.get(sl.page) || []).map(o => { const k = sl.w / pageW;
+    return `<img src="${o.url}" alt="" style="left:${sl.x + o.box.x * k}mm;top:${sl.y + o.box.y * k}mm;width:${o.box.w * k}mm;height:${o.box.h * k}mm">`; }).join('');
   const host = document.createElement('div'), style = document.createElement('style');
   host.id = 'print-sheets';
   style.id = 'print-page';
   style.textContent = `@page { size: ${sheets[0].wmm}mm ${sheets[0].hmm}mm; margin: 0; }`;
   host.innerHTML = sheets.map(sh => `<div class="print-sheet" style="width:${sh.wmm}mm;height:${sh.hmm}mm">${sh.slots.map(sl =>
-    `<img src="${urls.get(sl.page)}" alt="" style="left:${sl.x}mm;top:${sl.y}mm;width:${sl.w}mm;height:${sl.h}mm${sl.label ? ';outline:0.2mm solid #999' : ''}">` +
+    `<img src="${urls.get(sl.page)}" alt="" style="left:${sl.x}mm;top:${sl.y}mm;width:${sl.w}mm;height:${sl.h}mm${sl.label ? ';outline:0.2mm solid #999' : ''}">` + over(sl) +
     (sl.label ? `<span style="left:${sl.x}mm;top:${sl.y + sl.h + 1.5}mm">${sl.label}</span>` : '')).join('')}</div>`).join('');
   document.head.appendChild(style);
   document.body.appendChild(host);
@@ -447,7 +468,7 @@ export async function printProject(project, { onProgress = () => {}, prepare = a
   // restent en place jusqu'à la prochaine impression ou 10 min.
   printCleanup?.();
   const timer = setTimeout(() => printCleanup?.(), 600000);
-  printCleanup = () => { clearTimeout(timer); host.remove(); style.remove(); urls.forEach(u => URL.revokeObjectURL(u)); printCleanup = null; };
+  printCleanup = () => { clearTimeout(timer); host.remove(); style.remove(); urls.forEach(u => URL.revokeObjectURL(u)); overlays.forEach(l => l.forEach(o => URL.revokeObjectURL(o.url))); printCleanup = null; };
   ready();
   window.print();
 }

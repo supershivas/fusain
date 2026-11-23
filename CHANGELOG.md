@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.57.0 — 2026-11-23
+- Guides : perspective à 3 points, grille isométrique, et la ligne de l'outil Forme suit aussi les guides
+- Copier / coller partagé entre onglets et projets ; la copie part aussi dans le presse-papiers du système ; le collage est sélectionné en rectangle
+- Impression directe : bulles et textes nets (1200 dpi), comme dans le PDF
+
 ## 1.56.0 — 2026-11-23
 - PDF : bulles et textes à 1200 dpi, posés au-dessus de la page, pour un lettrage net à l'impression
 - PDF en CMJN préparé pour la norme PDF/X-1a (profil d'impression FOGRA39, zone de coupe sur chaque page)

@@ -1,5 +1,7 @@
-// Guides de tracé d'une page : règle (traits parallèles à la règle, ou le long de son bord) et perspective à 1 ou 2 points de fuite.
-// page.guide = { mode: 'off' | 'ruler' | 'persp1' | 'persp2', ruler: { x0, y0, x1, y1 }, vps: [{ x, y }, { x, y }] } en pixels de page.
+// Guides de tracé d'une page : règle (traits parallèles à la règle, ou le long de son bord), perspective à 1, 2 ou 3 points
+// de fuite, grille isométrique.
+// page.guide = { mode: 'off' | 'ruler' | 'persp1' | 'persp2' | 'persp3' | 'iso', ruler: { x0, y0, x1, y1 }, vps: [{ x, y } ×3] }
+// en pixels de page.
 // Un trait part libre ; dès qu'il a bougé de quelques pixels, il se cale sur la direction de guide la plus proche de son départ.
 
 export const GUIDE_MODES = [
@@ -7,7 +9,12 @@ export const GUIDE_MODES = [
   { id: 'ruler', name: 'Règle', icon: 'ruler-2' },
   { id: 'persp1', name: 'Perspective à 1 point', icon: 'perspective' },
   { id: 'persp2', name: 'Perspective à 2 points', icon: 'box' },
+  { id: 'persp3', name: 'Perspective à 3 points', icon: 'building-skyscraper' },
+  { id: 'iso', name: 'Grille isométrique', icon: 'cube' },
 ];
+// Directions de la grille isométrique : 30° de part et d'autre de l'horizontale, et la verticale.
+const C30 = Math.cos(Math.PI / 6), S30 = 0.5;
+export const ISO_DIRS = [{ x: C30, y: -S30 }, { x: C30, y: S30 }, { x: 0, y: 1 }];
 export const guideMode = pg => (pg && pg.guide && pg.guide.mode) || 'off';
 
 // Crée les positions par défaut (au premier usage) et change de mode.
@@ -15,7 +22,8 @@ export function setGuideMode(pg, mode, { w, h }) {
   const g = pg.guide || (pg.guide = {});
   if (!g.ruler) g.ruler = { x0: Math.round(w * 0.25), y0: Math.round(h * 0.5), x1: Math.round(w * 0.75), y1: Math.round(h * 0.5) };
   if (!g.vps) g.vps = [{ x: Math.round(w * 0.5), y: Math.round(h * 0.4) }, { x: Math.round(w * 0.9), y: Math.round(h * 0.4) }];
-  if (mode === 'persp2' && Math.abs(g.vps[0].x - g.vps[1].x) < w * 0.2) { g.vps[0] = { x: Math.round(w * 0.1), y: g.vps[0].y }; g.vps[1] = { x: Math.round(w * 0.9), y: g.vps[0].y }; }
+  if (!g.vps[2]) g.vps[2] = { x: Math.round(w * 0.5), y: Math.round(h * 0.95) };
+  if ((mode === 'persp2' || mode === 'persp3') && Math.abs(g.vps[0].x - g.vps[1].x) < w * 0.2) { g.vps[0] = { x: Math.round(w * 0.1), y: g.vps[0].y }; g.vps[1] = { x: Math.round(w * 0.9), y: g.vps[0].y }; }
   g.mode = mode;
 }
 
@@ -28,6 +36,7 @@ export function guideHandles(pg) {
   }
   if (mode === 'persp1') return [{ key: 'v0', ...g.vps[0] }];
   if (mode === 'persp2') return [{ key: 'v0', ...g.vps[0] }, { key: 'v1', ...g.vps[1] }];
+  if (mode === 'persp3') return [{ key: 'v0', ...g.vps[0] }, { key: 'v1', ...g.vps[1] }, { key: 'v2', ...g.vps[2] }];
   return [];
 }
 export function hitHandle(pg, pt, radius) {
@@ -42,10 +51,10 @@ export function dragHandle(pg, key, from, dx, dy) {
   if (key === 'r0') Object.assign(g.ruler, { x0: from.ruler.x0 + dx, y0: from.ruler.y0 + dy });
   else if (key === 'r1') Object.assign(g.ruler, { x1: from.ruler.x1 + dx, y1: from.ruler.y1 + dy });
   else if (key === 'rm') g.ruler = { x0: from.ruler.x0 + dx, y0: from.ruler.y0 + dy, x1: from.ruler.x1 + dx, y1: from.ruler.y1 + dy };
-  else if (key === 'v0' || key === 'v1') {
+  else if (key === 'v0' || key === 'v1' || key === 'v2') {
     const i = +key[1];
     g.vps[i] = { x: Math.round(from.vps[i].x + dx), y: Math.round(from.vps[i].y + dy) };
-    if (g.mode === 'persp2') g.vps[1 - i] = { x: g.vps[1 - i].x, y: g.vps[i].y };   // deux points sur la même ligne d'horizon
+    if (i < 2 && (g.mode === 'persp2' || g.mode === 'persp3')) g.vps[1 - i] = { x: g.vps[1 - i].x, y: g.vps[i].y };   // deux points sur la même ligne d'horizon
   }
 }
 
@@ -67,6 +76,8 @@ function directions(pg, s) {
   const toVp = v => unit(v.x - s.x, v.y - s.y);
   if (mode === 'persp1') return [toVp(g.vps[0]), { x: 1, y: 0 }, { x: 0, y: 1 }].filter(Boolean);
   if (mode === 'persp2') return [toVp(g.vps[0]), toVp(g.vps[1]), { x: 0, y: 1 }].filter(Boolean);
+  if (mode === 'persp3') return [toVp(g.vps[0]), toVp(g.vps[1]), toVp(g.vps[2])].filter(Boolean);
+  if (mode === 'iso') return ISO_DIRS;
   return [];
 }
 

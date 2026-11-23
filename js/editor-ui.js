@@ -158,7 +158,7 @@ export function mountEditor(el) {
     if (what === 'panels' || what === 'page' || what === 'project') { polyCancel(); clearSelection(false); }
     if (what === 'dirty' || what === 'undo') refreshMiniSoon();
     if (what === 'undo') { updateUndo(); if (ed.tool === 'layout') renderOptbar(); }
-    else if (what === 'sel') renderOptbar();
+    else if (what === 'sel' || (what === 'clip' && ed.tool === 'select')) renderOptbar();
     else if (what === 'panels') renderAll();
     else if (what === 'project' || what === 'page') { enterPageLevel(); renderAll(); fit(); }
     else if (what === 'panel') { renderDock(); renderOptbar(); renderZoombar(); if (ed.focus) fit(); }
@@ -700,7 +700,12 @@ const guideBtn = () => { const m = GUIDE_MODES.find(x => x.id === guideMode(page
 function cycleGuide() {
   const i = GUIDE_MODES.findIndex(x => x.id === guideMode(page())), m = GUIDE_MODES[(i + 1) % GUIDE_MODES.length];
   setGuideMode(page(), m.id, pageSize(ed.project)); markChanged(); renderOptbar(); requestRender();
-  toast(m.id === 'off' ? 'Guides retirés.' : m.id === 'ruler' ? 'Règle : les traits suivent sa direction. Fais glisser ses poignées pour la placer.' : `${m.name} : les traits filent vers le point de fuite${m.id === 'persp1' ? ', ou restent horizontaux ou verticaux' : ' le plus proche de leur direction, ou restent verticaux'}. Fais glisser les points pour les placer.`, { duration: m.id === 'off' ? 1400 : 4000 });
+  const HELP = { off: 'Guides retirés.', ruler: 'Règle : les traits suivent sa direction. Fais glisser ses poignées pour la placer.',
+    persp1: 'Perspective à 1 point : les traits filent vers le point de fuite, ou restent horizontaux ou verticaux. Fais glisser le point pour le placer.',
+    persp2: 'Perspective à 2 points : les traits filent vers le point de fuite le plus proche de leur direction, ou restent verticaux. Fais glisser les points.',
+    persp3: 'Perspective à 3 points : les traits filent vers l\'un des trois points de fuite (le troisième donne les verticales). Fais glisser les points.',
+    iso: 'Grille isométrique : les traits suivent les deux obliques à 30° ou la verticale.' };
+  toast(HELP[m.id], { duration: m.id === 'off' ? 1400 : 4000 });
 }
 
 const popBtn = id => id === 'brush' || id === 'trama'

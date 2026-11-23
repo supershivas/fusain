@@ -4,6 +4,7 @@ import { runCommand, TOOLS } from './editor-ui.js';
 import { openSettings } from './settings.js';
 import { esc, icon, $ } from './ui-core.js';
 import { canFullscreen, isFullscreen } from './shell.js';
+import { GUIDE_MODES } from './guides.js';
 
 // [commande, libellé, icône, raccourci, désactivée ?] ; null = séparateur
 const menus = () => {
@@ -21,7 +22,7 @@ const menus = () => {
     ['Outils', [
       ...TOOLS.map(t => ['tool:' + t.id, t.label.replace(/ \(.\)$/, ''), t.icon, t.key.toUpperCase()]), null,
       ['symmetry', `Symétrie : ${{ off: 'aucune', v: 'axe vertical', h: 'axe horizontal', vh: 'deux axes' }[ed.symmetry] || 'aucune'}`, 'flip-vertical'],
-      ['guide', `Guide : ${{ off: 'aucun', ruler: 'règle', persp1: 'perspective à 1 point', persp2: 'perspective à 2 points' }[(pg.guide && pg.guide.mode) || 'off']}`, 'ruler-2'], null,
+      ['guide', `Guide : ${(GUIDE_MODES.find(m => m.id === ((pg.guide && pg.guide.mode) || 'off')) || GUIDE_MODES[0]).name.toLowerCase()}`, 'ruler-2'], null,
       ['lib-brushes', 'Bibliothèque de pinceaux…', 'brush'], ['lib-tramas', 'Bibliothèque de trames…', 'texture'], ['lib-bubbles', 'Modèles de bulles…', 'message-circle']]],
     ['Image', [
       ['focus', ed.focus ? 'Revenir à la page' : `Ouvrir la case ${idx + 1} seule`, ed.focus ? 'layout-grid' : 'focus-2', 'Entrée'], ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['rot-view', 'Tourner la page de 90°', 'rotate-clockwise'], ['rot-reset', 'Remettre la page droite', 'rotate-2'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
