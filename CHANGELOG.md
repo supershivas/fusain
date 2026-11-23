@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.61.3 — 2026-11-23
+- Au lancement, l'écran de chargement synchronise d'abord avec les autres appareils (au plus 12 s) : l'accueil s'ouvre avec les projets à jour
+
 ## 1.61.2 — 2026-11-23
 - Calques : en glissant une ligne, « Dupliquer » et « Supprimer » sont découverts en entier
 - Calques : un nom long passe sur deux lignes au lieu d'être coupé ; une nouvelle carte de dégradé s'appelle « Dégradé »

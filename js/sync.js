@@ -307,11 +307,12 @@ export async function deleteRemote(project) {
 }
 
 // Passage régulier (au retour au premier plan, toutes les minutes) : appareils et onglets à jour.
-export function startAutoSync() {
+// initial = false : la première synchronisation a déjà été lancée (au démarrage, pendant l'écran de chargement).
+export function startAutoSync({ initial = true } = {}) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncAll(); });
   window.addEventListener('online', () => syncAll());
   setInterval(() => { if (document.visibilityState === 'visible') syncAll(); }, 60000);
-  syncAll();
+  if (initial) syncAll();
 }
 
 export { newRev };

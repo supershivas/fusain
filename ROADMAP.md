@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.61.2).
+Dernière mise à jour : 2026-11-23 (v1.61.3).
 
-## Fait (v1.29.0 → v1.61.2, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.61.3, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -72,6 +72,7 @@ Dernière mise à jour : 2026-11-23 (v1.61.2).
 - [x] Adresse Supabase collée avec un chemin corrigée toute seule (v1.52.1)
 - [x] Connexion par le lien de l'email collé, ou par le code à 6 chiffres (v1.52.2)
 - [x] Aperçu des projets synchronisé : visible sur l'accueil de tous les appareils (v1.52.3)
+- [x] Synchronisation pendant l'écran de chargement, avant l'accueil (au plus 12 s, puis en arrière-plan) (v1.61.3)
 
 ### Dessin, album, conventions (v1.53)
 - [x] Symétrie : dessin en miroir autour du centre de la case (vertical, horizontal, deux axes) ; pinceau, gomme, formes
@@ -123,7 +124,7 @@ Dernière mise à jour : 2026-11-23 (v1.61.2).
 - [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 
 ### À faire par toi
-- Rien en attente. Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
+- Rien en attente : `supabase/fusain.sql` n'a pas changé depuis la mise en service (v1.32 ; les nouveautés vivent dans la colonne `data`). Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
 
 ### À vérifier de bout en bout
 - [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé

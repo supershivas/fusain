@@ -42,9 +42,10 @@
       document.getElementById('boot-msg').textContent = msg || 'Fusain n\'a pas pu se charger. Vérifie la connexion, puis recharge.';
       document.getElementById('boot-retry').hidden = false;
     };
+    window.fusainBootMsg = function (t) { if (done) return; var m = document.getElementById('boot-msg'); if (m) m.textContent = t; };
     window.fusainBootDone = function () { done = true; clearTimeout(slow); var b = document.getElementById('boot'); if (b) b.remove(); };
     window.addEventListener('error', function (e) { if (!e.filename || /\/js\//.test(e.filename)) window.fusainBootFail(); });
-    var slow = setTimeout(function () { window.fusainBootFail('Le chargement est anormalement long. Vérifie la connexion, puis recharge.'); }, 30000);
+    var slow = setTimeout(function () { window.fusainBootFail('Le chargement est anormalement long. Vérifie la connexion, puis recharge.'); }, 45000);
   })();
 </script>
 <header class="topbar safe-top">

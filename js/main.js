@@ -18,6 +18,7 @@ import { initMenus, setVisible as setMenus } from './menus.js';
 import { installGuards, shouldSuggestInstall, markInstallTipSeen } from './shell.js';
 
 const root = document.getElementById('app');
+const SYNC_WAIT_MS = 12000;
 let inEditor = false;
 
 // ───────────────────────── En-tête ─────────────────────────
@@ -138,7 +139,16 @@ if ('serviceWorker' in navigator) {
   renderSyncDot();
   loadImportedFonts().catch(() => {});
   loadTramaLibrary().catch(() => {});
-  sync.startAutoSync();
+  // Connecté et en ligne : l'écran de chargement attend une première synchronisation, pour que l'accueil montre
+  // d'emblée les projets à jour des autres appareils (au plus SYNC_WAIT_MS ; elle continue ensuite si elle est longue).
+  if (sync.signedIn() && navigator.onLine) {
+    window.fusainBootMsg?.('Synchronisation avec tes autres appareils…');
+    const first = sync.syncAll();
+    sync.startAutoSync({ initial: false });
+    const late = await Promise.race([first.then(() => false), new Promise(r => setTimeout(() => r(true), SYNC_WAIT_MS))]);
+    if (late) toast('La synchronisation continue en arrière-plan.', { duration: 3000 });
+  } else sync.startAutoSync();
+  window.fusainBootMsg?.('Chargement…');
   await route();
   // l'écran de chargement attend aussi les polices de l'interface (icônes), sans dépasser 3 s
   if (document.fonts) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 3000))]);
