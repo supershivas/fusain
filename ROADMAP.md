@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.59.0).
+Dernière mise à jour : 2026-11-23 (v1.59.1).
 
-## Fait (v1.29.0 → v1.59.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.59.1, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -94,7 +94,7 @@ Dernière mise à jour : 2026-11-23 (v1.59.0).
 ### Sélection (v1.58)
 - [x] Tracé de sélection commencé hors de la case (rogné au cadre ; automatique : un toucher hors cadre désélectionne)
 - [x] Glisser depuis l'intérieur de la sélection = déplacer son contenu, sans le bouton Déplacer (v1.59) ; un simple toucher garde l'effet de l'outil
-- [x] Contenu déplacé hors du cadre (jusqu'au bord de la page) : la réserve de la case s'agrandit, rien n'est coupé, aperçu estompé hors cadre (v1.59)
+- [x] Contenu déplacé hors du cadre, et même hors de la page (jusqu'à une page de distance) : la réserve de la case s'agrandit, rien n'est coupé ; aperçu estompé hors cadre, pendant et après le geste (v1.59.1) ; poignées et quarts de tour agrandissent la réserve au lieu de couper
 - [x] Poignées de redimensionnement (coins et côtés) : homothétie par défaut, Maj ou second doigt posé = déformation libre ; aperçu en direct, une entrée d'historique
 
 ### Impression pour l'imprimeur (v1.55)

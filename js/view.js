@@ -114,12 +114,16 @@ export function setOverlay(o) { Object.assign(overlay, o); requestRender(); }
 
 // ───────────────────────── Cache des cases ─────────────────────────
 
+// Image de la case à l'écran : seulement son cadre (l'étendue des calques peut être bien plus grande, voire sortir de la page).
+// Les rectangles sales sont en coordonnées de calque, bornés au cadre ; `out` traduit vers l'image du cadre.
+const frameRect = p => ({ x: p.x - p.ex, y: p.y - p.ey, w: p.w, h: p.h });
 function cacheOf(panel) {
   let c = caches.get(panel);
-  if (!c || c.w !== panel.ew || c.h !== panel.eh) {
-    const canvasEl = document.createElement('canvas'); canvasEl.width = panel.ew; canvasEl.height = panel.eh;
-    const cx = canvasEl.getContext('2d'), img = cx.createImageData(panel.ew, panel.eh);
-    c = { w: panel.ew, h: panel.eh, canvas: canvasEl, cx, img, u32: new Uint32Array(img.data.buffer), dirty: { x: 0, y: 0, w: panel.ew, h: panel.eh },
+  const f = frameRect(panel);
+  if (!c || c.w !== f.w || c.h !== f.h || c.fx !== f.x || c.fy !== f.y) {
+    const canvasEl = document.createElement('canvas'); canvasEl.width = f.w; canvasEl.height = f.h;
+    const cx = canvasEl.getContext('2d'), img = cx.createImageData(f.w, f.h);
+    c = { w: f.w, h: f.h, fx: f.x, fy: f.y, out: { stride: f.w, ox: f.x, oy: f.y }, canvas: canvasEl, cx, img, u32: new Uint32Array(img.data.buffer), dirty: { ...f },
       mcanvas: null, mcx: null, mimg: null, mu32: null, mdirty: null };
     caches.set(panel, c);
   }
@@ -133,10 +137,10 @@ const union = (a, b) => {
 };
 
 export function invalidate(panel, rect) {
-  const c = cacheOf(panel);
-  const r = rect ? { x: Math.max(0, rect.x), y: Math.max(0, rect.y), w: rect.w, h: rect.h } : { x: 0, y: 0, w: panel.ew, h: panel.eh };
-  r.w = Math.min(panel.ew - r.x, r.w); r.h = Math.min(panel.eh - r.y, r.h);
-  if (r.w <= 0 || r.h <= 0) return;
+  const c = cacheOf(panel), f = frameRect(panel), q = rect || f;
+  const x0 = Math.max(f.x, q.x), y0 = Math.max(f.y, q.y), x1 = Math.min(f.x + f.w, q.x + q.w), y1 = Math.min(f.y + f.h, q.y + q.h);
+  if (x1 <= x0 || y1 <= y0) return;
+  const r = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   c.dirty = union(c.dirty, r);
   c.mdirty = union(c.mdirty, r);
   requestRender();
@@ -152,8 +156,8 @@ export function dropCaches(pg) { for (const p of pg.panels) caches.delete(p); }
 function refresh(panel) {
   const c = cacheOf(panel);
   if (c.dirty) {
-    compositeRect(panel, c.u32, c.dirty, true, { solo: ed.solo });
-    c.cx.putImageData(c.img, 0, 0, c.dirty.x, c.dirty.y, c.dirty.w, c.dirty.h);
+    compositeRect(panel, c.u32, c.dirty, true, { solo: ed.solo, out: c.out });
+    c.cx.putImageData(c.img, 0, 0, c.dirty.x - c.fx, c.dirty.y - c.fy, c.dirty.w, c.dirty.h);
     c.dirty = null;
   }
   return c;
@@ -162,13 +166,13 @@ function refresh(panel) {
 function refreshMask(panel) {
   const c = cacheOf(panel);
   if (!c.mcanvas) {
-    c.mcanvas = document.createElement('canvas'); c.mcanvas.width = panel.ew; c.mcanvas.height = panel.eh;
-    c.mcx = c.mcanvas.getContext('2d'); c.mimg = c.mcx.createImageData(panel.ew, panel.eh);
-    c.mu32 = new Uint32Array(c.mimg.data.buffer); c.mdirty = { x: 0, y: 0, w: panel.ew, h: panel.eh };
+    c.mcanvas = document.createElement('canvas'); c.mcanvas.width = c.w; c.mcanvas.height = c.h;
+    c.mcx = c.mcanvas.getContext('2d'); c.mimg = c.mcx.createImageData(c.w, c.h);
+    c.mu32 = new Uint32Array(c.mimg.data.buffer); c.mdirty = { x: c.fx, y: c.fy, w: c.w, h: c.h };
   }
   if (c.mdirty) {
-    maskRect(panel.mask, c.mu32, c.mdirty, panel.ew);
-    c.mcx.putImageData(c.mimg, 0, 0, c.mdirty.x, c.mdirty.y, c.mdirty.w, c.mdirty.h);
+    maskRect(panel.mask, c.mu32, c.mdirty, panel.ew, c.out);
+    c.mcx.putImageData(c.mimg, 0, 0, c.mdirty.x - c.fx, c.mdirty.y - c.fy, c.mdirty.w, c.mdirty.h);
     c.mdirty = null;
   }
   return c.mcanvas;
@@ -205,9 +209,9 @@ function renderFrame() {
   ctx.imageSmoothingEnabled = s < 1;
   for (const p of fp ? [fp] : pg.panels) {
     const c = refresh(p);
-    ctx.drawImage(c.canvas, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);
+    ctx.drawImage(c.canvas, p.x, p.y);
     if (p.mask && ed.maskMode !== 'off' || (p.mask && ed.tool === 'mask')) {
-      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h); }
+      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x, p.y); }
     }
     if (ed.sel && ed.sel.panelId === p.id) drawSelection(p, ed.sel);
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
@@ -329,9 +333,9 @@ export function colorAt(sx, sy) {
   if (!p) return null;
   // un doigt vise mal un trait fin : on regarde un petit voisinage (3 px d'écran) et on prend le pixel le plus couvert
   const r = Math.max(1, Math.round(3 / view.s)), cx = Math.floor(q.x - p.ex), cy = Math.floor(q.y - p.ey);
-  const x0 = Math.max(0, cx - r), y0 = Math.max(0, cy - r), w = Math.min(p.ew, cx + r + 1) - x0, h = Math.min(p.eh, cy + r + 1) - y0;
+  const f = frameRect(p), x0 = Math.max(f.x, cx - r), y0 = Math.max(f.y, cy - r), w = Math.min(f.x + f.w, cx + r + 1) - x0, h = Math.min(f.y + f.h, cy + r + 1) - y0;
   if (w <= 0 || h <= 0) return null;
-  const d = refresh(p).cx.getImageData(x0, y0, w, h).data;
+  const d = refresh(p).cx.getImageData(x0 - f.x, y0 - f.y, w, h).data;
   let best = -1, bd = Infinity;
   for (let i = 0; i < d.length; i += 4) {
     if (!d[i + 3]) continue;
@@ -344,6 +348,17 @@ export function colorAt(sx, sy) {
 }
 
 // Sélection : voile et contour (octets 0/1 → pixels), mis en cache sur l'objet sélection ; le contenu soulevé se montre par-dessus.
+// Contenu des calques sous le rectangle de la sélection (pour le montrer hors du cadre), gardé avec la sélection.
+function selGhost(p, sel) {
+  if (sel.ghost) return sel.ghost;
+  const bw = sel.x1 - sel.x0, bh = sel.y1 - sel.y0, cv = document.createElement('canvas');
+  cv.width = bw; cv.height = bh;
+  const cx = cv.getContext('2d'), img = cx.createImageData(bw, bh);
+  compositeRect(p, new Uint32Array(img.data.buffer), { x: sel.x0, y: sel.y0, w: bw, h: bh }, true, { solo: ed.solo, out: { stride: bw, ox: sel.x0, oy: sel.y0 } });
+  cx.putImageData(img, 0, 0);
+  return (sel.ghost = cv);
+}
+
 function selTint(sel) {
   if (sel.tint) return sel.tint;
   const bw = sel.x1 - sel.x0, bh = sel.y1 - sel.y0, W = sel.ew, cv = document.createElement('canvas');
@@ -370,13 +385,16 @@ function drawSelection(p, sel) {
   if (ed.tool === 'select' && sc) ctx.drawImage(selTint(sel), p.ex + sc.x, p.ey + sc.y, sc.w, sc.h);
   else if (ed.tool === 'select') ctx.drawImage(selTint(sel), p.ex + sel.x0 + sel.dx, p.ey + sel.y0 + sel.dy);
   ctx.restore();
-  if (f) {   // la part du contenu soulevé qui sort du cadre reste visible, estompée (elle sera gardée, cachée, dans la réserve)
-    const { w, h } = pageDims();
-    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip('evenodd');
-    ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.35;
-    if (sc) ctx.drawImage(f.canvas, p.ex + sc.x, p.ey + sc.y, sc.w, sc.h); else ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
-    ctx.restore();
-  }
+  // hors du cadre (même hors de la page), le contenu de la sélection reste visible, estompé : soulevé pendant un geste,
+  // ou gardé dans la réserve de la case une fois posé (on peut alors le reprendre et le ramener)
+  const { w, h } = pageDims();
+  ctx.save(); ctx.beginPath(); ctx.rect(-w, -h, 3 * w, 3 * h); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip('evenodd');
+  ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.35;
+  if (f && sc) ctx.drawImage(f.canvas, p.ex + sc.x, p.ey + sc.y, sc.w, sc.h);
+  else if (f) ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
+  else if (ed.tool === 'select') ctx.drawImage(selGhost(p, sel), p.ex + sel.x0, p.ey + sel.y0);
+  if (ed.tool === 'select' && !f) { ctx.globalAlpha = 1; ctx.drawImage(selTint(sel), p.ex + sel.x0, p.ey + sel.y0); }
+  ctx.restore();
 }
 
 // Plan et description de la case (aide au dessin, jamais exportés).

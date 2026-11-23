@@ -16,7 +16,7 @@ export function currentSelection(p = panel()) {
 }
 
 // Un changement de sélection voulu par l'utilisateur est une entrée d'historique (annuler / rétablir) ; record = false pour les effacements automatiques.
-function applySel(sel) { ed.sel = sel; notify('sel'); requestRender(); }
+function applySel(sel) { if (sel) sel.ghost = null; ed.sel = sel; notify('sel'); requestRender(); }   // ghost : aperçu hors cadre, à refaire
 ed.undo.onSelect = sel => { if (ed.tool === 'select') applySel(sel); };   // hors de l'outil Sélection, elle n'existe pas
 function setSel(sel, record = true) {
   const before = ed.sel;
@@ -180,9 +180,10 @@ export function beginMove(p, pt) {
     if (!f.buf[f.b === 4 ? (y * bw + x) * 4 + 3 : y * bw + x]) continue;
     if (x < cx0) cx0 = x; if (x >= cx1) cx1 = x + 1; if (y < cy0) cy0 = y; if (y >= cy1) cy1 = y + 1;
   }
-  // le contenu peut sortir du cadre et de la case (il reste dans la page) : au lâcher, la réserve de la case s'agrandit
+  // le contenu peut sortir du cadre, de la case et même de la page (jusqu'à une page de distance, borne de sûreté) :
+  // au lâcher, la réserve de la case s'agrandit pour le garder
   const pgs = pageSize(ed.project);
-  const limit = { x0: -(p.ex + s.x0 + cx0), x1: pgs.w - (p.ex + s.x0 + cx1), y0: -(p.ey + s.y0 + cy0), y1: pgs.h - (p.ey + s.y0 + cy1) };
+  const limit = { x0: -pgs.w - (p.ex + s.x0 + cx0), x1: 2 * pgs.w - (p.ex + s.x0 + cx1), y0: -pgs.h - (p.ey + s.y0 + cy0), y1: 2 * pgs.h - (p.ey + s.y0 + cy1) };
   if (!floats.length) { toast('Rien à déplacer dans la sélection.', { duration: 1600 }); if (implicit) clearSelection(false); return null; }
   ed.undo.begin(ed.selCopy ? 'Copier la sélection' : 'Déplacer');
   if (!ed.selCopy) {
@@ -216,14 +217,9 @@ export function endMove(m) {
   const { p, s, floats, bw, bh } = m, dx = s.dx, dy = s.dy, c = m.content;
   // contenu posé hors de la réserve de la case : on la remet en place, on agrandit la réserve, puis on refait le déplacement
   const need = { x: p.ex + s.x0 + c.x0 + dx, y: p.ey + s.y0 + c.y0 + dy, w: c.x1 - c.x0, h: c.y1 - c.y0 };
-  if (!m.regrown && (need.x < p.ex || need.y < p.ey || need.x + need.w > p.ex + p.ew || need.y + need.h > p.ey + p.eh)) {
+  if (!m.regrown && !fits(p, need)) {
     s.dx = s.dy = 0; ed.undo.rollback(); ed.selFloat = null;
-    const np = growExtent(p, need);
-    if (!m.implicit) {   // la sélection passe dans les coordonnées de la réserve agrandie
-      const ox = p.ex - np.ex, oy = p.ey - np.ey, mask = new Uint8Array(np.ew * np.eh);
-      for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) if (s.mask[y * p.ew + x]) mask[(y + oy) * np.ew + x + ox] = 1;
-      applySel(build(np, mask, { x0: s.x0 + ox, y0: s.y0 + oy, x1: s.x1 + ox, y1: s.y1 + oy }));
-    }
+    const np = makeRoom(p, need, !m.implicit).p;
     const m2 = beginMove(np, { x: 0, y: 0 });
     if (!m2) return;
     m2.regrown = true; m2.s.dx = dx; m2.s.dy = dy;
@@ -272,6 +268,20 @@ export function cancelMove(m) {
 // Huit poignées autour du rectangle de la sélection. Par défaut le contenu garde ses proportions (homothétie) ; Maj, ou un
 // second doigt posé pendant le geste, le déforme librement. Pendant le geste, le contenu est soulevé et montré à sa nouvelle
 // taille (`sel.scale`) ; au lâcher, il est redimensionné pour de bon, en une entrée d'historique.
+// Le rectangle (pixels de page) tient-il dans la réserve de la case ?
+const fits = (p, r) => r.x >= p.ex && r.y >= p.ey && r.x + r.w <= p.ex + p.ew && r.y + r.h <= p.ey + p.eh;
+// Agrandit la réserve pour contenir `need` (pixels de page) ; la sélection (si `keepSel`) passe dans les nouvelles coordonnées.
+// Renvoie { p, ox, oy } : la case (nouvelle ou non) et le décalage des coordonnées de calque.
+function makeRoom(p, need, keepSel = true) {
+  const s = currentSelection(p), np = growExtent(p, need), ox = p.ex - np.ex, oy = p.ey - np.ey;
+  if (np !== p && s && keepSel) {
+    const mask = new Uint8Array(np.ew * np.eh);
+    for (let y = s.y0; y < s.y1; y++) for (let x = s.x0; x < s.x1; x++) if (s.mask[y * p.ew + x]) mask[(y + oy) * np.ew + x + ox] = 1;
+    applySel(build(np, mask, { x0: s.x0 + ox, y0: s.y0 + oy, x1: s.x1 + ox, y1: s.y1 + oy }));
+  }
+  return { p: np, ox, oy };
+}
+
 // Le point (page) est-il sur la sélection ? (glisser depuis l'intérieur déplace son contenu)
 export function insideSelection(p, s, pt) {
   const x = Math.floor(pt.x - p.ex), y = Math.floor(pt.y - p.ey);
@@ -354,6 +364,14 @@ export function transformSelection(kind, p = panel(), to = null) {
   // case d'origine (x, y) dans l'ancienne boîte, pour la case (u, v) de la nouvelle
   const src = (u, v) => kind === 'flipH' ? [bw - 1 - u, v] : kind === 'flipV' ? [u, bh - 1 - v] : kind === 'rotCW' ? [v, bh - 1 - u]
     : kind === 'rotCCW' ? [bw - 1 - v, u] : [Math.min(bw - 1, Math.floor(u * bw / nw)), Math.min(bh - 1, Math.floor(v * bh / nh))];
+  // résultat hors de la réserve de la case : on l'agrandit d'abord (rien n'est coupé), puis on recommence dans la nouvelle case
+  const need = { x: p.ex + nx0, y: p.ey + ny0, w: nw, h: nh };
+  if (!fits(p, need)) {
+    if (implicit) applySel(null);
+    const room = makeRoom(p, need);
+    if (room.p === p) return 'locked';
+    return transformSelection(kind, room.p, scale ? { x: to.x + room.ox, y: to.y + room.oy, w: to.w, h: to.h } : null);
+  }
   const box = { x0: Math.max(0, Math.min(s.x0, nx0)), y0: Math.max(0, Math.min(s.y0, ny0)), x1: Math.min(W, Math.max(s.x1, nx0 + nw)), y1: Math.min(H, Math.max(s.y1, ny0 + nh)) };
   ed.undo.begin(TRANSFORMS[kind]);
   for (const l of ls) {

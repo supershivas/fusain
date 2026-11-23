@@ -41,11 +41,12 @@ export function renderPage(project, page, scale = 1, opts = {}) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
   ctx.scale(scale, scale);
   for (const p of page.panels) {
-    const pc = document.createElement('canvas'); pc.width = p.ew; pc.height = p.eh;
-    const pctx = pc.getContext('2d'), img = pctx.createImageData(p.ew, p.eh);
-    compositeRect(p, new Uint32Array(img.data.buffer), { x: 0, y: 0, w: p.ew, h: p.eh }, drafts, { export: true });
+    // seul le cadre visible est rendu : l'étendue des calques peut dépasser la case, et même la page
+    const fx = p.x - p.ex, fy = p.y - p.ey, pc = document.createElement('canvas'); pc.width = p.w; pc.height = p.h;
+    const pctx = pc.getContext('2d'), img = pctx.createImageData(p.w, p.h);
+    compositeRect(p, new Uint32Array(img.data.buffer), { x: fx, y: fy, w: p.w, h: p.h }, drafts, { export: true, out: { stride: p.w, ox: fx, oy: fy } });
     pctx.putImageData(img, 0, 0);
-    ctx.drawImage(pc, p.x - p.ex, p.y - p.ey, p.w, p.h, p.x, p.y, p.w, p.h);   // seul le cadre visible est imprimé
+    ctx.drawImage(pc, p.x, p.y);
     const bw = mmToPx(panelStroke(p), project.dpi);
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }

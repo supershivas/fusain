@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.59.1 — 2026-11-23
+- Sélection : le contenu se déplace sans limite, jusqu'à sortir entièrement de la page ; il reste visible, estompé, et se reprend pour le ramener
+- Agrandir avec les poignées ou faire un quart de tour ne coupe plus rien au bord de la case
+
 ## 1.59.0 — 2026-11-23
 - Sélection : glisser depuis l'intérieur de la sélection déplace son contenu, sans passer par le bouton Déplacer
 - Le contenu déplacé peut sortir du cadre de la case : la partie hors cadre est gardée, cachée, et revient si on le ramène

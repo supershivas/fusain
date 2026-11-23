@@ -538,11 +538,11 @@ export function gutterPreview(h, d) {
   });
 }
 
-// Agrandit l'étendue des calques d'une case pour qu'elle contienne `rect` (pixels de page, borné à la page) : un dessin poussé
+// Agrandit l'étendue des calques d'une case pour qu'elle contienne `rect` (pixels de page, jusqu'à une page hors de la page) : un dessin poussé
 // hors du cadre y est gardé, caché, au lieu d'être coupé. Le cadre ne bouge pas. Annulable ; renvoie la case (nouvelle ou non).
 export function growExtent(p, rect) {
-  const { w, h } = pageSize(ed.project);
-  const x0 = Math.max(0, Math.floor(rect.x)), y0 = Math.max(0, Math.floor(rect.y)), x1 = Math.min(w, Math.ceil(rect.x + rect.w)), y1 = Math.min(h, Math.ceil(rect.y + rect.h));
+  const { w, h } = pageSize(ed.project);   // borne de sûreté : une page de marge tout autour de la page
+  const x0 = Math.max(-w, Math.floor(rect.x)), y0 = Math.max(-h, Math.floor(rect.y)), x1 = Math.min(2 * w, Math.ceil(rect.x + rect.w)), y1 = Math.min(2 * h, Math.ceil(rect.y + rect.h));
   if (x0 >= p.ex && y0 >= p.ey && x1 <= p.ex + p.ew && y1 <= p.ey + p.eh) return p;
   const pg = page(), before = pg.panels.slice(), np = reshape(p, { x: p.x, y: p.y, w: p.w, h: p.h }, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   const after = before.map(q => (q === p ? np : q));

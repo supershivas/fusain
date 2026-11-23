@@ -569,25 +569,28 @@ function paintOver(px, i, cr, cg, cb, a, mode) {
   px[i + 2] = (cb * a + px[i + 2] * da * (1 - a)) / oa; px[i + 3] = oa * 255;
 }
 
+// opts.out = { stride, ox, oy } : l'image de sortie ne couvre qu'une partie de l'étendue (le cadre, à l'écran et à l'export) ;
+// le pixel (x, y) du calque va en (x − ox, y − oy) d'une image de largeur stride. Sans opts.out : image de la taille de l'étendue.
 export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   const w = panel.ew, px = new Uint8ClampedArray(u32.buffer);
-  for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, y * w + r.x, y * w + r.x + r.w);
+  const o = opts.out || { stride: w, ox: 0, oy: 0 }, S = o.stride;
+  for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, (y - o.oy) * S + r.x - o.ox, (y - o.oy) * S + r.x - o.ox + r.w);
   const solo = opts.solo ? panel.layers.find(l => l.id === opts.solo) : null;
   for (const l of panel.layers) {
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
-    if (bppOf(l) === 4) { compositeColor(l, px, w, r, alpha); continue; }
+    if (bppOf(l) === 4) { compositeColor(l, px, w, r, alpha, o); continue; }
     const rgb = l.draft ? (DRAFT_COLORS[l.color] || DRAFT_COLORS.blue).rgb : (tintOf(l) || [0, 0, 0]);
     const ditherOut = opts.export && !l.draft && alpha < 1, d = l.data;
     for (let y = r.y; y < r.y + r.h; y++) {
-      const row = y * w;
+      const row = y * w, orow = (y - o.oy) * S - o.ox;
       for (let x = r.x; x < r.x + r.w; x++) {
         const v = d[row + x];
         if (!v) continue;
         let a = alpha;
         if (ditherOut) { if (alpha * 64 <= BAYER8[(y + panel.ey) & 7][(x + panel.ex) & 7]) continue; a = 1; }
-        const i = (row + x) * 4;
+        const i = (orow + x) * 4;
         if (v !== INK && l.draft) { if (a >= 1) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; } continue; }   // le blanc d'un brouillon gomme ce qu'il recouvre
         paintOver(px, i, v === INK ? rgb[0] : 255, v === INK ? rgb[1] : 255, v === INK ? rgb[2] : 255, a, l.blend);
       }
@@ -596,19 +599,19 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
 }
 
 // Calque de couleur : mélange « par-dessus » de ses pixels RVBA, avec l'opacité du calque.
-function compositeColor(l, px, w, r, alpha) {
+function compositeColor(l, px, w, r, alpha, o) {
   const d = l.data;
   for (let y = r.y; y < r.y + r.h; y++) {
     for (let x = r.x; x < r.x + r.w; x++) {
-      const i = (y * w + x) * 4, sa = d[i + 3];
+      const j = (y * w + x) * 4, sa = d[j + 3];
       if (!sa) continue;
-      paintOver(px, i, d[i], d[i + 1], d[i + 2], sa / 255 * alpha, l.blend);
+      paintOver(px, ((y - o.oy) * o.stride + x - o.ox) * 4, d[j], d[j + 1], d[j + 2], sa / 255 * alpha, l.blend);
     }
   }
 }
 
-export function maskRect(mask, u32, r, w) {
+export function maskRect(mask, u32, r, w, o = { stride: w, ox: 0, oy: 0 }) {
   for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) {
-    u32[y * w + x] = mask.data && mask.data[y * w + x] ? C_MASK : 0;
+    u32[(y - o.oy) * o.stride + x - o.ox] = mask.data && mask.data[y * w + x] ? C_MASK : 0;
   }
 }
