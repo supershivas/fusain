@@ -931,6 +931,7 @@ export function renderDock() {
 function miniLayers() {
   const p = panel();
   return `<button class="mini-add" data-act="add-layer" title="Nouveau calque" aria-label="Nouveau calque">${icon('plus')}</button>`
+    + `<button class="mini-add" data-act="add-gradmap" title="Nouvelle carte de dégradé" aria-label="Nouvelle carte de dégradé">${icon('color-swatch')}</button>`
     + [...p.layers].reverse().map(l => `<div class="mini-layer ${l.id === p.active ? 'on' : ''} ${l.visible ? '' : 'off'}" data-layer="${l.id}">
       <button class="mini-thumb" data-act="select-layer" title="${esc(l.name)}" aria-label="Calque ${esc(l.name)}${l.id === p.active ? ' (actif)' : ''}" aria-pressed="${l.id === p.active}"><canvas width="104" height="104" data-mthumb="${l.id}"></canvas>
         <span class="mini-badges">${l.reference ? `<i class="ti ti-target" title="Référence"></i>` : ''}${l.alphaLock ? '<b title="Alpha verrouillé">α</b>' : ''}${l.locked ? `<i class="ti ti-lock" title="Verrouillé"></i>` : ''}${l.kind === 'draft' ? `<i class="mini-draft" style="background:rgb(${DRAFT_COLORS[l.color || 'blue'].rgb.join(',')})" title="Brouillon"></i>` : ''}</span></button>

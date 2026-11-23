@@ -1,7 +1,7 @@
 {
-  "version": "1.61.3",
+  "version": "1.61.4",
   "date": "2026-11-23",
   "changes": [
-    "Au lancement, l'écran de chargement synchronise d'abord avec les autres appareils (au plus 12 s) : l'accueil s'ouvre avec les projets à jour"
+    "Volet réduit (iPad) : un bouton ajoute une carte de dégradé, à côté du « + » des calques"
   ]
 }
