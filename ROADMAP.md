@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.55.0).
+Dernière mise à jour : 2026-11-23 (v1.56.0).
 
-## Fait (v1.29.0 → v1.55.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.56.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -89,6 +89,8 @@ Dernière mise à jour : 2026-11-23 (v1.55.0).
 - [x] Couleur au choix : automatique, noir et blanc 1 bit (gris et couleurs tramés), niveaux de gris 8 bits, RVB, CMJN (gris et noir en K seul)
 - [x] Alerte sur les trames trop fines (points isolés d'un pixel à plus de 254 dpi), avec les pages concernées
 - [x] Fond perdu 3 mm (bords étirés), TrimBox / BleedBox, traits de coupe (une page par feuille)
+- [x] Lettrage net (v1.56) : bulles et textes en deux masques 1 bit à 1200 dpi (fond blanc, encre) au-dessus de l'image de la page
+- [x] CMJN visé PDF/X-1a (v1.56) : intention de sortie FOGRA39 (condition enregistrée, sans profil ICC joint), TrimBox sur chaque feuille, identifiant, Trapped
 
 ## Reste à faire
 
@@ -107,8 +109,8 @@ Dernière mise à jour : 2026-11-23 (v1.55.0).
 - [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil (synchronisation vérifiée) → PDF imprimé
 
 ### Impression (suite)
-- [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF
-- [ ] PDF/X-1a : profil de sortie (OutputIntent, FOGRA39 ou celui de l'imprimeur) ; le CMJN actuel est une conversion simple, sans profil ICC
+- [ ] Lettrage aussi net à l'impression directe (AirPrint : aujourd'hui à la résolution de la page)
+- [ ] PDF/X-1a : choisir le profil de l'imprimeur (aujourd'hui FOGRA39 fixe) ; conversion CMJN simple, sans profil ICC
 - [ ] Fond perdu dessiné : laisser dessiner jusqu'à 3 mm hors de la page dans les cases qui touchent le bord (aujourd'hui les bords sont étirés)
 
 ### À vérifier sur iPad (impression)

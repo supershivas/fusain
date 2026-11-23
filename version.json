@@ -1,9 +1,8 @@
 {
-  "version": "1.55.0",
+  "version": "1.56.0",
   "date": "2026-11-23",
   "changes": [
-    "Impression : choix de la couleur (automatique, noir et blanc, niveaux de gris, RVB, CMJN pour un imprimeur)",
-    "PDF pour l'imprimeur : fond perdu 3 mm, traits de coupe et zones de coupe (TrimBox, BleedBox)",
-    "Alerte après l'export quand une trame est trop fine pour bien s'imprimer"
+    "PDF : bulles et textes à 1200 dpi, posés au-dessus de la page, pour un lettrage net à l'impression",
+    "PDF en CMJN préparé pour la norme PDF/X-1a (profil d'impression FOGRA39, zone de coupe sur chaque page)"
   ]
 }

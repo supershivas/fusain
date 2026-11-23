@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.56.0 — 2026-11-23
+- PDF : bulles et textes à 1200 dpi, posés au-dessus de la page, pour un lettrage net à l'impression
+- PDF en CMJN préparé pour la norme PDF/X-1a (profil d'impression FOGRA39, zone de coupe sur chaque page)
+
 ## 1.55.0 — 2026-11-23
 - Impression : choix de la couleur (automatique, noir et blanc, niveaux de gris, RVB, CMJN pour un imprimeur)
 - PDF pour l'imprimeur : fond perdu 3 mm, traits de coupe et zones de coupe (TrimBox, BleedBox)

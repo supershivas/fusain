@@ -1,7 +1,7 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
 import { pageSize, panelStroke, mmToPx, folioOf } from './model.js';
 import { compositeRect } from './raster.js';
-import { drawPageBubble, props } from './bubbles.js';
+import { drawPageBubble, props, bubbleToPage } from './bubbles.js';
 import { loadFont, fontSpec, touchFont } from './fonts.js';
 import { encodePNGRGBA, canEncodePNG } from './png.js';
 import { BAYER8 } from './dither.js';
@@ -259,38 +259,52 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
   const mode = blue ? 'blue' : color === 'auto' ? (colored ? 'rgb' : 'bits') : color === 'bw' ? 'bits' : color;
   if (imposition !== 'single') bleed = false;
   const bPx = bleed ? mmToPx(BLEED_MM, project.dpi) : 0, checkDots = fineDotsMatter(project) && !blue;
+  const letters = bubbles && !blue;   // lettrage à part, en masques 1 bit à 1200 dpi (net à l'impression), sauf en bleu non photo
+  const pdfx = mode === 'cmyk';       // CMJN : visé PDF/X-1a (intention de sortie FOGRA39, zone de coupe sur chaque feuille)
   await ensureFonts(project, pages);
   const sheets = impose(pageIdx, imposition, project.format);
-  // numéros d'objets : 1 catalogue, 2 liste des feuilles, 3 info, 4 police des légendes, puis une image par page,
-  // puis par feuille : feuille et contenu
-  const imageObj = j => 5 + j, sheetObj = s => 5 + n + s * 2, contentObj = s => 6 + n + s * 2;
+  // numéros d'objets : 1 catalogue, 2 liste des feuilles, 3 info, 4 police des légendes, puis par page : image, masque blanc
+  // et masque noir du lettrage (objet vide s'il n'y a pas de bulle), puis par feuille : feuille et contenu
+  const imageObj = j => 5 + j * 3, whiteObj = j => 6 + j * 3, blackObj = j => 7 + j * 3, sheetObj = s => 5 + 3 * n + s * 2, contentObj = s => 6 + 3 * n + s * 2;
   const obj = (num, body) => { offsets[num] = length; text(num + ' 0 obj\n' + body + '\nendobj\n'); };
+  const stream = async (num, dict, raw) => {
+    const packed = await deflate(raw), data = packed || raw;
+    offsets[num] = length;
+    text(num + ' 0 obj\n<< ' + dict + (packed ? ' /Filter /FlateDecode' : '') + ' /Length ' + data.length + ' >>\nstream\n');
+    write(data); text('\nendstream\nendobj\n');
+  };
+  const date = 'D:' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z';
 
-  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R' + (pdfx ? ' /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFX /OutputConditionIdentifier (FOGRA39) /RegistryName (http://www.color.org) /Info (Coated FOGRA39 \\(ISO 12647-2:2004\\)) >>]' : '') + ' >>');
   obj(2, '<< /Type /Pages /Count ' + sheets.length + ' /Kids [' + sheets.map((_, s) => sheetObj(s) + ' 0 R').join(' ') + '] >>');
-  obj(3, '<< /Title ' + pdfString(project.title) + ' /Producer (Fusain) /CreationDate (D:' +
-    new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z) >>');
+  obj(3, '<< /Title ' + pdfString(project.title) + ' /Producer (Fusain) /Creator (Fusain) /CreationDate (' + date + ') /ModDate (' + date + ')' +
+    (pdfx ? ' /GTS_PDFXVersion (PDF/X-1a:2003) /GTS_PDFXConformance (PDF/X-1a:2003) /Trapped /False' : '') + ' >>');
   obj(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const lettering = [];
 
   for (let j = 0; j < n; j++) {
     onProgress(j, n);
     await prepare(pages[j]);
-    let canvas = renderPage(project, pages[j], 1, { drafts, bubbles });
+    let canvas = renderPage(project, pages[j], 1, { drafts, bubbles: bubbles && !letters });
     release(pages[j]);
     if (checkDots && fineDotShare(canvas) > FINE_DOT_LIMIT) onFine(pageIdx[j]);
     if (bPx) canvas = withBleed(canvas, bPx);
-    const raw = mode === 'blue' || mode === 'gray' ? packGray(canvas) : mode === 'rgb' ? packRGB(canvas) : mode === 'cmyk' ? packCMYK(canvas) : packBits(canvas, colored), packed = await deflate(raw);
-    const data = packed || raw;
+    const raw = mode === 'blue' || mode === 'gray' ? packGray(canvas) : mode === 'rgb' ? packRGB(canvas) : mode === 'cmyk' ? packCMYK(canvas) : packBits(canvas, colored);
     const space = mode === 'blue' ? '/ColorSpace [/Indexed /DeviceRGB 255 ' + BLUE_PALETTE + '] /BitsPerComponent 8'
       : mode === 'gray' ? '/ColorSpace /DeviceGray /BitsPerComponent 8'
       : mode === 'cmyk' ? '/ColorSpace /DeviceCMYK /BitsPerComponent 8'
       : mode === 'rgb' ? '/ColorSpace /DeviceRGB /BitsPerComponent 8' : '/ColorSpace /DeviceGray /BitsPerComponent 1';
-    offsets[imageObj(j)] = length;
-    text(imageObj(j) + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + canvas.height + ' ' + space +
-      (packed ? ' /Filter /FlateDecode' : '') + ' /Length ' + data.length + ' >>\nstream\n');
-    write(data);
-    text('\nendstream\nendobj\n');
+    await stream(imageObj(j), '/Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + canvas.height + ' ' + space, raw);
+    canvas = null;
+    const lt = letters ? letteringMasks(project, pages[j]) : null;
+    lettering[j] = lt;
+    if (lt) {
+      const dict = '/Type /XObject /Subtype /Image /Width ' + lt.W + ' /Height ' + lt.H + ' /ImageMask true /BitsPerComponent 1 /Decode [1 0]';
+      await stream(whiteObj(j), dict, lt.white); await stream(blackObj(j), dict, lt.black);
+      lt.white = lt.black = null;
+    } else { obj(whiteObj(j), 'null'); obj(blackObj(j), 'null'); }
   }
+  const pagePx = pageSize(project);
 
   const pt = mm => +(mm / 25.4 * 72).toFixed(2);
   sheets.forEach((sh, s) => {
@@ -302,6 +316,13 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
       const e = bleed ? BLEED_MM : 0;
       const w = pt(sl.w + 2 * e), h = pt(sl.h + 2 * e), x = pt(sl.x + off - e), y = +(H - pt(sl.y + off - e) - h).toFixed(2);
       content += 'q ' + w + ' 0 0 ' + h + ' ' + x + ' ' + y + ' cm /Im' + j + ' Do Q\n';
+      const lt = lettering[j];
+      if (lt) {   // lettrage : d'abord le fond blanc des bulles, puis l'encre, posés à leur place sur la page
+        const k = sl.w / pagePx.w, mw = pt(lt.box.w * k), mh = pt(lt.box.h * k), mx = pt(sl.x + off + lt.box.x * k), my = +(H - pt(sl.y + off + lt.box.y * k) - mh).toFixed(2);
+        const [white, black] = mode === 'cmyk' ? ['0 0 0 0 k', '0 0 0 1 k'] : ['1 g', '0 g'];
+        content += 'q ' + white + ' ' + mw + ' 0 0 ' + mh + ' ' + mx + ' ' + my + ' cm /Wm' + j + ' Do Q\n';
+        content += 'q ' + black + ' ' + mw + ' 0 0 ' + mh + ' ' + mx + ' ' + my + ' cm /Bm' + j + ' Do Q\n';
+      }
       if (bleed) {
         const tx = pt(off), ty = pt(off), tw = pt(sl.w), th = pt(sl.h), b = pt(BLEED_MM);
         boxes = ' /TrimBox [' + [tx, ty, +(tx + tw).toFixed(2), +(ty + th).toFixed(2)].join(' ') + '] /BleedBox [' + [+(tx - b).toFixed(2), +(ty - b).toFixed(2), +(tx + tw + b).toFixed(2), +(ty + th + b).toFixed(2)].join(' ') + ']';
@@ -309,18 +330,68 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
       }
       if (sl.label) content += '0.6 G 0.5 w ' + x + ' ' + y + ' ' + w + ' ' + h + ' re S 0 g BT /F1 9 Tf ' + x + ' ' + (y - 12).toFixed(2) + ' Td (' + sl.label + ') Tj ET\n';
     }
+    if (pdfx && !boxes) boxes = ' /TrimBox [0 0 ' + W + ' ' + H + ']';
     obj(sheetObj(s), '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + ']' + boxes + ' /Contents ' + contentObj(s) + ' 0 R /Resources << /XObject << ' +
-      [...used].map(j => '/Im' + j + ' ' + imageObj(j) + ' 0 R').join(' ') + ' >> /Font << /F1 4 0 R >> >> >>');
+      [...used].map(j => '/Im' + j + ' ' + imageObj(j) + ' 0 R' + (lettering[j] ? ' /Wm' + j + ' ' + whiteObj(j) + ' 0 R /Bm' + j + ' ' + blackObj(j) + ' 0 R' : '')).join(' ') + ' >> /Font << /F1 4 0 R >> >> >>');
     obj(contentObj(s), '<< /Length ' + content.length + ' >>\nstream\n' + content + 'endstream');
   });
 
-  const count = 4 + n + sheets.length * 2, xref = length;
+  const count = 4 + 3 * n + sheets.length * 2, xref = length;
   let table = 'xref\n0 ' + (count + 1) + '\n0000000000 65535 f \n';
   for (let i = 1; i <= count; i++) table += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
-  text(table + 'trailer\n<< /Size ' + (count + 1) + ' /Root 1 0 R /Info 3 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+  const id = '<' + Array.from(crypto.getRandomValues(new Uint8Array(16)), v => v.toString(16).padStart(2, '0')).join('') + '>';
+  text(table + 'trailer\n<< /Size ' + (count + 1) + ' /Root 1 0 R /Info 3 0 R /ID [' + id + ' ' + id + '] >>\nstartxref\n' + xref + '\n%%EOF\n');
 
   onProgress(n, n);
   return new Blob(chunks, { type: 'application/pdf' });
+}
+
+// ───────────────────────── Lettrage net ─────────────────────────
+// Les bulles et textes sont rendus à part, à 1200 dpi, en deux masques 1 bit : le blanc des bulles et l'encre (trait, texte).
+// Posés par-dessus l'image de la page, ils donnent un texte aussi net qu'en vectoriel à l'impression.
+// Rendu par bandes : le canevas ne dépasse jamais la limite de Safari.
+export const LETTER_DPI = 1200;
+function bubblesBox(project, page) {
+  const { w, h } = pageSize(project), pad = mmToPx(3, project.dpi);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+  for (const b of page.bubbles) {
+    if (b.hidden) continue;
+    const m = Math.max(b.w, b.h) * 0.2 + pad;
+    for (const [x, y] of [[b.x - m, b.y - m], [b.x + b.w + m, b.y - m], [b.x - m, b.y + b.h + m], [b.x + b.w + m, b.y + b.h + m]]) { const q = bubbleToPage(b, x, y); add(q.x, q.y); }
+    if (b.tail) { add(b.tail.x - pad, b.tail.y - pad); add(b.tail.x + pad, b.tail.y + pad); }
+  }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w, Math.ceil(x1)); y1 = Math.min(h, Math.ceil(y1));
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+export function letteringMasks(project, page) {
+  if (page.bubblesHidden || !page.bubbles.some(b => !b.hidden)) return null;
+  const box = bubblesBox(project, page);
+  if (!box) return null;
+  const k = Math.max(1, LETTER_DPI / project.dpi), W = Math.ceil(box.w * k), H = Math.ceil(box.h * k), rowBytes = (W + 7) >> 3;
+  const white = new Uint8Array(rowBytes * H), black = new Uint8Array(rowBytes * H);
+  const band = Math.max(64, Math.min(1024, Math.floor(4e6 / W))), c = document.createElement('canvas');
+  c.width = W; c.height = band;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  let any = false;
+  for (let top = 0; top < H; top += band) {
+    const rows = Math.min(band, H - top);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, band);
+    ctx.setTransform(k, 0, 0, k, -box.x * k, -box.y * k - top);
+    for (const b of page.bubbles) if (!b.hidden) drawPageBubble(ctx, b, project.dpi, page.panels);
+    const px = ctx.getImageData(0, 0, W, rows).data;
+    for (let y = 0; y < rows; y++) {
+      const o = (top + y) * rowBytes;
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        if (px[i + 3] < 128) continue;
+        any = true;
+        const bit = 0x80 >> (x & 7);
+        if ((px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8 < 128) black[o + (x >> 3)] |= bit; else white[o + (x >> 3)] |= bit;
+      }
+    }
+  }
+  return any ? { box, W, H, white, black } : null;
 }
 
 // Traits de coupe aux quatre coins de la page coupée (tx, ty, tw, th en points) : filets de 0,25 pt, en noir de repérage
