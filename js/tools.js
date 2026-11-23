@@ -138,6 +138,7 @@ function begin(p, pt) {
       layer = fillLayer(p);
       if (hinted !== layer.id) { hinted = layer.id; toast(`Aplat posé dans « ${layer.name} » : « ${activeLayer(p).name} » est une référence.`, { duration: 2400 }); }
     }
+    if (layer.kind === 'gradmap') { toast(`« ${layer.name} » est une carte de dégradé : choisis un calque de dessin.`); return; }
     if (!layer.visible) { toast(`Le calque « ${layer.name} » est masqué : affiche-le pour dessiner.`); return; }
     if (layer.locked) { toast(`Le calque « ${layer.name} » est verrouillé.`); return; }
     if (ed.ink === 3 && ed.tool !== 'eraser' && !layer.draft) toRGBA(layer);   // la couleur s'applique au calque choisi

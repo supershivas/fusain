@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.60.0).
+Dernière mise à jour : 2026-11-23 (v1.61.0).
 
-## Fait (v1.29.0 → v1.60.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.61.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -91,6 +91,10 @@ Dernière mise à jour : 2026-11-23 (v1.60.0).
 - [x] Presse-papiers partagé entre onglets et projets de l'appareil ; copie envoyée aussi au presse-papiers du système (PNG)
 - [x] Coller : sélection en rectangle, copie rognée au dessin
 
+### Carte de dégradé (v1.61)
+- [x] Calque de réglage « Carte de dégradé » (bouton « + Dégradé », menu Calque) : luminosité du dessous → couleur du dégradé, à l'écran, en PNG, PDF et impression
+- [x] Modèles, arrêts réglables (couleur, position, ajouter, retirer), inverser, opacité, mode de fusion ; vignette = le dégradé ; pas de dessin ni de fusion dans ce calque
+
 ### Sélection (v1.58)
 - [x] Tracé de sélection commencé hors de la case (rogné au cadre ; automatique : un toucher hors cadre désélectionne)
 - [x] Glisser depuis l'intérieur de la sélection = déplacer son contenu, sans le bouton Déplacer (v1.59) ; un simple toucher garde l'effet de l'outil
@@ -134,7 +138,8 @@ Dernière mise à jour : 2026-11-23 (v1.60.0).
 - [ ] Livret : sens de retournement recto verso (bord court) sur une vraie imprimante
 
 ### Améliorations possibles
+- [ ] Carte de dégradé : la limiter au calque juste dessous (masque d'écrêtage) ; l'appliquer définitivement (pixellisation)
 - [ ] Guides : ellipses en perspective ; rectangles de l'outil Forme en perspective
-- [ ] Labo : ajouter les options de sélection, les info-bulles et la navigation dans le volet
+- [ ] Labo : ajouter la carte de dégradé, les options de sélection, les info-bulles et la navigation dans le volet
 - [ ] Sélection : coller une image venue du presse-papiers du système (autre app, autre appareil) ; rotation libre à la poignée
 - [ ] Info-bulles : couvrir les curseurs de taille et d'opacité (leur appui long pose déjà un repère) et compléter les explications des éléments qui n'ont que leur libellé

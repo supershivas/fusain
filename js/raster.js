@@ -1,7 +1,7 @@
 // Moteur raster 1-bit : annuler par différences de tuiles, pinceaux, formes, remplissage, composition.
 // Repris de Pixel Studio (pointeur, remplissage, tramage par Bayer), refait pour de grands canevas :
 // un calque est un tampon d'octets, et l'historique ne garde que les tuiles modifiées.
-import { ensureData, DRAFT_COLORS, bppOf } from './model.js';
+import { ensureData, DRAFT_COLORS, bppOf, gradientLut } from './model.js';
 import { BAYER8 } from './dither.js';
 
 export const TILE = 64;
@@ -578,6 +578,7 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
   for (let y = r.y; y < r.y + r.h; y++) u32.fill(0, (y - o.oy) * S + r.x - o.ox, (y - o.oy) * S + r.x - o.ox + r.w);
   const solo = opts.solo ? panel.layers.find(l => l.id === opts.solo) : null;
   for (const l of panel.layers) {
+    if (l.kind === 'gradmap') { if (!solo && l.visible) gradientMap(l, px, r, o); continue; }
     if (!l.data || (solo ? l !== solo : !l.visible) || (l.draft && !draft)) continue;
     const alpha = (l.opacity ?? 100) / 100;
     if (alpha <= 0) continue;
@@ -595,6 +596,31 @@ export function compositeRect(panel, u32, r, draft = true, opts = {}) {
         if (v !== INK && l.draft) { if (a >= 1) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; } continue; }   // le blanc d'un brouillon gomme ce qu'il recouvre
         paintOver(px, i, v === INK ? rgb[0] : 255, v === INK ? rgb[1] : 255, v === INK ? rgb[2] : 255, a, l.blend);
       }
+    }
+  }
+}
+
+// Carte de dégradé : ce qui est déjà composé (posé sur le papier blanc) est remplacé par la couleur du dégradé qui
+// correspond à sa luminosité, mélangée selon l'opacité et le mode de fusion du calque. Le résultat est opaque.
+const lutCache = new WeakMap();
+function lutOf(l) {
+  const key = JSON.stringify(l.gradient && l.gradient.stops), c = lutCache.get(l);
+  if (c && c.key === key) return c.lut;
+  const lut = gradientLut((l.gradient && l.gradient.stops) || [[0, '#000000'], [1, '#FFFFFF']]);
+  lutCache.set(l, { key, lut });
+  return lut;
+}
+function gradientMap(l, px, r, o) {
+  const alpha = (l.opacity ?? 100) / 100, lut = lutOf(l);
+  if (alpha <= 0) return;
+  for (let y = r.y; y < r.y + r.h; y++) {
+    const orow = (y - o.oy) * o.stride - o.ox;
+    for (let x = r.x; x < r.x + r.w; x++) {
+      const i = (orow + x) * 4, a = px[i + 3] / 255;
+      const R = px[i] * a + 255 * (1 - a), G = px[i + 1] * a + 255 * (1 - a), B = px[i + 2] * a + 255 * (1 - a);
+      px[i] = R; px[i + 1] = G; px[i + 2] = B; px[i + 3] = 255;   // aplati sur le papier
+      const L = (R * 77 + G * 150 + B * 29) >> 8;
+      paintOver(px, i, lut[L * 3], lut[L * 3 + 1], lut[L * 3 + 2], alpha, l.blend);
     }
   }
 }

@@ -17,6 +17,11 @@ const TIPS = {
   'tool:layout': ['Taille des cases', 'Fais glisser les gouttières, ajoute une case avec les « + », fusionne deux cases voisines.'],
   'tool:pan': ['Déplacer la vue', 'Fait glisser la page sans dessiner ; un toucher change de case.'],
   // ── Barres ──
+  'act:add-gradmap': ['Carte de dégradé', 'Calque de réglage, comme dans Photoshop : la luminosité de tout ce qui est dessous devient une couleur du dégradé (sombre = début, clair = fin).'],
+  'act:grad-preset': ['Modèle de dégradé', 'Remplace le dégradé par ce modèle ; on peut ensuite retoucher chaque arrêt.'],
+  'act:grad-add': ['Ajouter un arrêt', 'Ajoute une couleur au milieu du plus grand écart du dégradé.'],
+  'act:grad-del': ['Retirer l\'arrêt', 'Retire cette couleur du dégradé (il en garde au moins deux).'],
+  'act:grad-reverse': ['Inverser', 'Retourne le dégradé : les ombres prennent les couleurs des lumières.'],
   'sym': ['Symétrie', 'Dessine en miroir autour du centre de la case. Chaque toucher change : aucune, axe vertical, axe horizontal, deux axes.'],
   'guide': ['Guides de tracé', 'Règle, perspective à 1, 2 ou 3 points de fuite, grille isométrique : les traits se calent sur la direction la plus proche. Fais glisser les poignées pour placer les guides.'],
   'act:symmetry': ['Symétrie', 'Dessin en miroir autour du centre de la case ; chaque choix passe au mode suivant.'],

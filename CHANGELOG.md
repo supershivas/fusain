@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.61.0 — 2026-11-23
+- Nouveau type de calque « Carte de dégradé », comme dans Photoshop : la luminosité des calques du dessous devient une couleur du dégradé
+- Sept modèles (sépia, nuit, bleu et orange, feu, menthe, noir et blanc, négatif), arrêts réglables (couleur, position), inverser, opacité et mode de fusion
+
 ## 1.60.0 — 2026-11-23
 - Fond perdu dessiné : une case qui touche le bord de la page (la couverture, par exemple) se dessine jusqu'à 3 mm au-delà, bord de coupe en pointillés
 - PDF pour l'imprimeur : ce dessin remplit le fond perdu (les bords étirés ne servent plus que là où rien n'est dessiné)

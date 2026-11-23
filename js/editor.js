@@ -350,7 +350,7 @@ export async function duplicatePage() {
     Object.assign(np, { ex: p.ex, ey: p.ey, ew: p.ew, eh: p.eh, stroke: p.stroke });
     np.note = { ...p.note };
     np.layers = p.layers.map(l => {
-      const nl = newLayer(l.name, l.w, l.h, { kind: l.kind, color: l.color });
+      const nl = newLayer(l.name, l.w, l.h, { kind: l.kind, color: l.color, gradient: l.gradient });
       Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked });
       if (l.data) { nl.data = l.data.slice(); nl.dirty = true; }
       return nl;
@@ -609,7 +609,7 @@ export async function copyPanelTo(src, pageIdx, panelId, mode = 'same') {
   const dst = pg.panels.find(p => p.id === panelId);
   if (!dst || dst === src) return false;
   const clone = l => {
-    const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color });
+    const nl = newLayer(l.name, dst.ew, dst.eh, { kind: l.kind, color: l.color, gradient: l.gradient });
     Object.assign(nl, { visible: l.visible, opacity: l.opacity, locked: l.locked, rgba: !!l.rgba, blend: l.blend, reference: l.reference, alphaLock: l.alphaLock });
     if (l.data) nl.data = placeVisible(transferPixels(visibleData(l, src), src.w, src.h, dst.w, dst.h, mode, bppOf(l)), dst, bppOf(l));
     nl.dirty = true;
@@ -796,6 +796,15 @@ function nextDraftColor(p) {
 
 export function addLayer(kind = 'ink') {
   if (kind === true) kind = 'draft';
+  if (kind === 'gradmap') {   // carte de dégradé : au-dessus du calque actif, elle colore tout ce qui est dessous
+    const p = panel(), n = p.layers.filter(x => x.kind === 'gradmap').length;
+    const l = newLayer(n ? `Carte de dégradé ${n + 1}` : 'Carte de dégradé', p.ew, p.eh, { kind: 'gradmap' });
+    const at = p.layers.findIndex(x => x.id === p.active) + 1, prevActive = p.active;
+    const apply = () => { p.layers.splice(at, 0, l); p.active = l.id; invalidate(p); notify('layers'); markChanged(); };
+    const unapply = () => { p.layers.splice(p.layers.indexOf(l), 1); p.active = prevActive; invalidate(p); notify('layers'); markChanged(); };
+    apply(); ed.undo.pushAction('Nouvelle carte de dégradé', unapply, apply);
+    return l;
+  }
   const p = panel(), color = kind === 'draft' ? nextDraftColor(p) : undefined;
   if (kind !== 'draft') kind = 'ink';   // calques tous pareils : seul le brouillon est une option à part
   const base = kind === 'draft' ? 'Brouillon' : 'Calque', n = p.layers.filter(x => (kind === 'draft') === (x.kind === 'draft')).length;
@@ -809,7 +818,7 @@ export function addLayer(kind = 'ink') {
 // Calque qui reçoit un remplissage : l'actif, sauf s'il est une référence (ou verrouillé, masqué, brouillon) ;
 // sinon le plus haut calque possible ; à défaut, un calque « Aplats » est créé sous la référence (annulable).
 export function fillLayer(p) {
-  const ok = l => !l.reference && !l.locked && l.visible && l.kind !== 'draft';
+  const ok = l => !l.reference && !l.locked && l.visible && l.kind !== 'draft' && l.kind !== 'gradmap';
   const act = activeLayer(p);
   if (ok(act)) return act;
   const cand = [...p.layers].reverse().find(ok);
@@ -856,7 +865,7 @@ export function moveStrokeBelow(p, layer, entry) {
 
 export function duplicateLayer() {
   const p = panel(), src = activeLayer(p);
-  const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color });
+  const l = newLayer(src.name + ' (copie)', src.w, src.h, { kind: src.kind, color: src.color, gradient: src.gradient });
   Object.assign(l, { visible: src.visible, opacity: src.opacity, locked: false, rgba: !!src.rgba, blend: src.blend, alphaLock: src.alphaLock });
   if (src.data) l.data = src.data.slice();
   l.dirty = true;
@@ -948,6 +957,7 @@ export function mergeDown() {
   const p = panel(), l = activeLayer(p), i = p.layers.indexOf(l);
   if (i < 1) return false;
   const below = p.layers[i - 1];
+  if (l.kind === 'gradmap' || below.kind === 'gradmap') return 'gradmap';   // un calque de réglage n'a pas de pixels à fusionner
   if (bppOf(l) === 4 && bppOf(below) === 1 && below.kind !== 'draft') toRGBA(below);
   if (bppOf(l) !== bppOf(below)) return 'kind';   // un calque en couleur ne se fusionne pas dans un brouillon
   ed.undo.begin('Fusionner vers le bas');

@@ -108,12 +108,42 @@ export const DRAFT_COLORS = {
   gray: { name: 'Gris', rgb: [138, 138, 138] },
 };
 
+// Carte de dégradé (calque de réglage, comme dans Photoshop) : la luminosité de ce qui est dessous devient une couleur
+// prise sur le dégradé (sombre = début, clair = fin). Le calque n'a pas de pixels ; `gradient.stops` = [[position 0–1, '#rrggbb'], …].
+export const GRADIENT_PRESETS = [
+  { id: 'sepia', name: 'Sépia', stops: [[0, '#2B1A0E'], [0.55, '#A2794A'], [1, '#F6EBD3']] },
+  { id: 'nuit', name: 'Nuit', stops: [[0, '#0D1B3D'], [0.5, '#5A6FA8'], [1, '#E8ECF7']] },
+  { id: 'duo', name: 'Bleu et orange', stops: [[0, '#1E2A5A'], [0.5, '#E8873A'], [1, '#FFF2D9']] },
+  { id: 'feu', name: 'Feu', stops: [[0, '#000000'], [0.35, '#8B1A00'], [0.7, '#FF8C1A'], [1, '#FFFBE0']] },
+  { id: 'menthe', name: 'Menthe', stops: [[0, '#0F3B34'], [0.6, '#5FB39E'], [1, '#EFFAF5']] },
+  { id: 'nb', name: 'Noir et blanc', stops: [[0, '#000000'], [1, '#FFFFFF']] },
+  { id: 'negatif', name: 'Négatif', stops: [[0, '#FFFFFF'], [1, '#000000']] },
+];
+export const cloneStops = stops => stops.map(([t, c]) => [t, c]);
+// Table de 256 couleurs [r, g, b] pour une luminosité 0–255.
+export function gradientLut(stops) {
+  const st = [...stops].sort((a, b) => a[0] - b[0]), hex = c => [1, 3, 5].map(k => parseInt(c.slice(k, k + 2), 16)), lut = new Uint8Array(256 * 3);
+  for (let L = 0; L < 256; L++) {
+    const t = L / 255;
+    let i = 0; while (i < st.length - 1 && st[i + 1][0] < t) i++;
+    const a = st[i], b = st[Math.min(i + 1, st.length - 1)], k = b[0] > a[0] ? Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0]))) : 0;
+    const ca = hex(a[1]), cb = hex(b[1]);
+    for (let j = 0; j < 3; j++) lut[L * 3 + j] = Math.round(ca[j] + (cb[j] - ca[j]) * (t <= st[0][0] ? 0 : k));
+  }
+  return lut;
+}
+export const cssGradient = stops => `linear-gradient(90deg, ${[...stops].sort((a, b) => a[0] - b[0]).map(([t, c]) => `${c} ${Math.round(t * 100)}%`).join(', ')})`;
+
 // opacity : 0 à 100 ; locked : on ne peut plus y dessiner ; color : couleur d'un brouillon.
 // kind : 'ink' (encrage), 'tram' (trames), 'draft' (brouillon) ou 'color' (couleur). Les outils ne dessinent que dans les calques de leur sorte.
 // Encre, trame et brouillon : un octet par pixel (0 transparent, 1 encre, 2 blanc). Couleur : RVBA, 4 octets par pixel,
 // non prémultiplié ; un calque de couleur couvre l'étendue de sa case, comme les autres.
 export function newLayer(name, w, h, opts = {}) {
   const kind = opts.kind || (opts.draft ? 'draft' : 'ink');
+  if (kind === 'gradmap') return {
+    id: uid(), name, visible: true, kind, draft: false, opacity: 100, locked: false, w, h, data: null, loaded: true, dirty: false, rev: null,
+    gradient: { stops: cloneStops((opts.gradient && opts.gradient.stops) || GRADIENT_PRESETS[0].stops) },
+  };
   return {
     id: uid(), name, visible: true, kind, draft: kind === 'draft', opacity: 100, locked: false, color: kind === 'draft' ? (opts.color || 'blue') : kind === 'color' ? undefined : opts.color,
     w, h, data: null, loaded: true, dirty: false, rev: null,
@@ -171,7 +201,7 @@ export function newBubble(kind, x, y) {
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, blend: l.blend && l.blend !== 'normal' ? l.blend : undefined, rev: l.rev });
+  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, gradient: l.kind === 'gradmap' ? l.gradient : undefined, blend: l.blend && l.blend !== 'normal' ? l.blend : undefined, rev: l.rev });
   return {
     schemaVersion: PROJECT_SCHEMA,
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
@@ -190,7 +220,7 @@ export function projectMeta(project) {
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 // Migration du schéma 1 : étendue des calques (ex, ey, ew, eh) = cadre, type de calque déduit du nom, notes vides.
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal',
+  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal', gradient: kindOf(l) === 'gradmap' ? { stops: cloneStops((l.gradient && l.gradient.stops) || GRADIENT_PRESETS[0].stops) } : undefined,
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,

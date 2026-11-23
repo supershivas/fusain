@@ -10,7 +10,7 @@ import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
 import { colorDrop, fillSelection } from './tools.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx, FOLIO_POSITIONS } from './model.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx, FOLIO_POSITIONS, GRADIENT_PRESETS, cloneStops, cssGradient } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -237,6 +237,7 @@ function mergeWithToast() {
   const p = panel(), l = activeLayer(), below = p.layers[p.layers.indexOf(l) - 1], r = mergeDown();
   if (!r) toast('Pas de calque en dessous.');
   else if (r === 'kind') toast('Un calque en couleur ne se fusionne pas dans un brouillon.');
+  else if (r === 'gradmap') toast('Une carte de dégradé n\'a pas de pixels : elle ne se fusionne pas. Elle colore les calques du dessous.');
   else toast(`« ${l.name} » fusionné dans « ${below.name} ».`, { actionLabel: 'Annuler', duration: 7000, onAction: () => { undo(); undo(); } });
 }
 function clearActiveLayer() {
@@ -960,6 +961,11 @@ function paintMiniThumbs(scope) {
   const p = panel();
   $$('canvas[data-mthumb]', scope).forEach(c => {
     const l = p.layers.find(x => x.id === c.dataset.mthumb);
+    if (l && l.kind === 'gradmap') {   // carte de dégradé : sa vignette est le dégradé lui-même
+      const g2 = c.getContext('2d'), gr = g2.createLinearGradient(0, 0, c.width, 0);
+      for (const [t, col] of [...l.gradient.stops].sort((a, b) => a[0] - b[0])) gr.addColorStop(t, col);
+      g2.fillStyle = gr; g2.fillRect(0, 0, c.width, c.height); return;
+    }
     const cx = c.getContext('2d'), W = c.width, H = c.height, img = cx.createImageData(W, H), out = new Uint32Array(img.data.buffer);
     out.fill(0xFFFFFFFF);
     if (l && l.data) {
@@ -1250,7 +1256,8 @@ function layersTab() {
     `<button data-act="swipe-dup" data-for="${l.id}">${icon('copy')} Dupliquer</button><button class="danger" data-act="swipe-del" data-for="${l.id}">${icon('trash')} Supprimer</button>`) + (layerOpts === l.id ? layerOptions(l) : '')).join('');
   const acts = `<div class="tools-row">
       <button class="btn small" data-act="add-layer">${icon('plus')} Calque</button>
-      <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button></div>
+      <button class="btn small" data-act="add-draft">${icon('plus')} Brouillon</button>
+      <button class="btn small" data-act="add-gradmap" title="Carte de dégradé : colore ce qui est dessous selon sa luminosité">${icon('plus')} Dégradé</button></div>
     <small class="note">Touche le calque actif pour ses options.</small>`;
   const eye = `<button class="icon-btn icon-only sec-eye" data-act="bubs-vis" aria-label="${pg.bubblesHidden ? 'Afficher' : 'Masquer'} toutes les bulles">${icon(pg.bubblesHidden ? 'eye-off' : 'eye')}</button>`;
   return sec('bubs', `Case ${idx + 1} · bulles et textes · ${caseBubbles.length}`, bubRows || '<small class="note">Aucune bulle dans cette case.</small>', caseBubbles.length > 0, eye)
@@ -1258,7 +1265,31 @@ function layersTab() {
 }
 
 // Options du calque, dépliées sous sa ligne : actions, opacité, mode de fusion, et bascules (référence, alpha, brouillon, verrou, seul).
+// Carte de dégradé : aperçu, modèles, arrêts (couleur et position), inverser.
+function setGradient(stops) {
+  const l = activeLayer(); if (!l || l.kind !== 'gradmap') return;
+  l.gradient = { stops }; invalidate(panel()); markChanged(); renderDock(); refreshMiniSoon();
+}
+function gradientOptions(l) {
+  const st = l.gradient.stops;
+  return `<div class="grad-bar" style="background:${cssGradient(st)}" aria-hidden="true"></div>
+    <div class="grad-presets">${GRADIENT_PRESETS.map(pr => `<button data-act="grad-preset" data-preset="${pr.id}" title="${pr.name}" aria-label="Dégradé ${pr.name}"><i style="background:${cssGradient(pr.stops)}"></i><span>${pr.name}</span></button>`).join('')}</div>
+    ${st.map(([t, c], k) => `<div class="grad-stop"><input type="color" id="g-col-${k}" value="${c.toLowerCase()}" aria-label="Couleur de l'arrêt ${k + 1}">
+      <label class="field inline" style="flex:1;margin:0"><span>${k === 0 ? 'Ombres' : k === st.length - 1 ? 'Lumières' : 'Arrêt ' + (k + 1)} : ${Math.round(t * 100)} %</span><input type="range" id="g-pos-${k}" min="0" max="100" value="${Math.round(t * 100)}"></label>
+      ${st.length > 2 ? `<button class="icon-btn icon-only" data-act="grad-del" data-stop="${k}" aria-label="Retirer l'arrêt ${k + 1}">${icon('x')}</button>` : ''}</div>`).join('')}
+    <div class="row tight" style="margin:4px 0 8px"><button class="btn small" data-act="grad-add">${icon('plus')} Arrêt</button><button class="btn small" data-act="grad-reverse">${icon('arrows-exchange')} Inverser</button></div>`;
+}
+
 function layerOptions(l) {
+  if (l.kind === 'gradmap') return `<div class="lopts" role="group" aria-label="Options de la carte de dégradé ${esc(l.name)}">
+    <div class="lopt-acts">
+      <button data-act="rename" title="Renommer">${icon('pencil')}<span>Renommer</span></button>
+      <button data-act="dup-layer" title="Dupliquer">${icon('copy')}<span>Dupliquer</span></button>
+      <button data-act="del-layer" class="danger" title="Supprimer le calque">${icon('trash')}<span>Supprimer</span></button></div>
+    ${gradientOptions(l)}
+    <label class="field inline"><span>Opacité : ${l.opacity} %</span><input type="range" id="l-op" min="0" max="100" step="5" value="${l.opacity}"></label>
+    <label class="field inline"><span>Mode de fusion</span><select id="l-blend">${BLEND_MODES.map(([v, n]) => `<option value="${v}" ${(l.blend || 'normal') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <small class="note">Colore tous les calques en dessous selon leur luminosité : sombre = début du dégradé, clair = fin.</small></div>`;
   const oneBit = bppOf(l) === 1, tinted = oneBit && l.kind !== 'draft' && /^#[0-9a-f]{6}$/i.test(l.color || '');
   const tog = (prop, ic, label, on, title) => `<button class="lopt-tog ${on ? 'on' : ''}" data-act="ltoggle" data-prop="${prop}" aria-pressed="${!!on}" title="${title}">${icon(ic)}<span>${label}</span></button>`;
   return `<div class="lopts" role="group" aria-label="Options du calque ${esc(l.name)}">
@@ -1634,6 +1665,11 @@ async function onDock(e) {
   else if (a === 'up') moveLayer(1);
   else if (a === 'down') moveLayer(-1);
   else if (a === 'lock') { const l = panel().layers.find(x => x.id === lay.dataset.layer); setLayerProp(l.id, 'locked', !l.locked); toast(`« ${l.name} » ${l.locked ? 'est verrouillé' : 'est déverrouillé'}.`, { duration: 1600 }); }
+  else if (a === 'add-gradmap') { addLayer('gradmap'); layerOpts = activeLayer().id; renderDock(); toast('Carte de dégradé ajoutée : elle colore les calques du dessous selon leur luminosité.', { actionLabel: 'Annuler', duration: 5000, onAction: undo }); }
+  else if (a === 'grad-preset') { const pr = GRADIENT_PRESETS.find(x => x.id === act.dataset.preset); if (pr) setGradient(cloneStops(pr.stops)); }
+  else if (a === 'grad-reverse') setGradient(activeLayer().gradient.stops.map(([t, c]) => [1 - t, c]));
+  else if (a === 'grad-add') { const st = [...activeLayer().gradient.stops].sort((x, y) => x[0] - y[0]); let gi = 0, gw = -1; for (let k = 0; k < st.length - 1; k++) if (st[k + 1][0] - st[k][0] > gw) { gw = st[k + 1][0] - st[k][0]; gi = k; } st.splice(gi + 1, 0, [+(st[gi][0] + gw / 2).toFixed(3), st[gi][1]]); setGradient(st); }
+  else if (a === 'grad-del') { const st = activeLayer().gradient.stops; if (st.length > 2) setGradient(st.filter((_, k) => k !== +act.dataset.stop)); }
   else if (a === 'add-draft') { addLayer('draft'); toast(`Brouillon « ${activeLayer().name} » ajouté.`, { actionLabel: 'Annuler', duration: 4000, onAction: undo }); }
   else if (a === 'dup-layer') dupWithToast();
   else if (a === 'merge') mergeWithToast();
@@ -1883,6 +1919,15 @@ function onDockInput0(e) {
   if (id === 'n-plan') { setNote('plan', e.target.value); return; }
   if (id === 'n-desc') { setNote('description', e.target.value); return; }
   if (id === 'l-tint') { const l = activeLayer(); l.color = e.target.value === '#000000' ? undefined : e.target.value; if (!l.color) delete l.color; invalidate(panel()); markChanged(); return; }
+  if (/^g-(col|pos)-\d+$/.test(id)) {   // arrêt du dégradé : couleur ou position, rendu en direct
+    const l = activeLayer(), k = +id.split('-')[2], st = cloneStops(l.gradient.stops);
+    if (!st[k]) return;
+    if (id.startsWith('g-col')) st[k][1] = e.target.value.toUpperCase();
+    else { st[k][0] = +e.target.value / 100; e.target.previousElementSibling.textContent = e.target.previousElementSibling.textContent.replace(/\d+ %$/, e.target.value + ' %'); }
+    l.gradient = { stops: st }; invalidate(panel()); markChanged();
+    const bar = e.target.closest('.lopts') && e.target.closest('.lopts').querySelector('.grad-bar'); if (bar) bar.style.background = cssGradient(st);
+    refreshMiniSoon(); return;
+  }
   if (id === 'l-op') { const l = activeLayer(); l.opacity = +e.target.value; e.target.previousElementSibling.textContent = `Opacité : ${l.opacity} %`; invalidate(panel()); markChanged(); return; }
   if (id === 'l-lock') { setLayerProp(activeLayer().id, 'locked', e.target.checked); return; }
   if (id === 'l-blend') { const l = activeLayer(); setLayerProp(l.id, 'blend', e.target.value); toast(`Mode de fusion de « ${l.name} » : ${(BLEND_MODES.find(m => m[0] === e.target.value) || ['', 'Normal'])[1]}.`, { duration: 1800 }); return; }
@@ -2326,7 +2371,7 @@ const COMMANDS = {
   relayout: async () => { const id = await pickLayout('Disposition des cases'); if (id) { const r = relayoutPage(id); if (r.removed) toast(`${r.removed} case${r.removed > 1 ? 's' : ''} retirée${r.removed > 1 ? 's' : ''} (leur dessin revient avec Annuler).`, { actionLabel: 'Annuler', duration: 9000, onAction: undo }); } },
   frame: () => { secState.cf = true; setFocus(false); showDock('page'); },
   dither: ditherModal,
-  'add-color': () => addLayer('color'), 'add-ink': () => addLayer('ink'), 'add-draft': () => addLayer('draft'),
+  'add-color': () => addLayer('color'), 'add-gradmap': () => { addLayer('gradmap'); layerOpts = activeLayer().id; showDock('layers'); }, 'add-ink': () => addLayer('ink'), 'add-draft': () => addLayer('draft'),
   'rot-view': () => rotateView(Math.PI / 2), 'rot-reset': () => rotateView(),
   'dup-bubble': () => { if (!duplicateBubble()) toast('Sélectionne une bulle.'); }, 'dup-layer': dupWithToast, 'merge-layer': mergeWithToast, 'del-layer': needLayer,
   'lock-layer': () => { const l = activeLayer(); setLayerProp(l.id, 'locked', !l.locked); },
@@ -2347,7 +2392,7 @@ const COMMANDS = {
   'hide-bubbles': () => togglePageBubbles(),
 };
 Object.assign(COMMANDS, { 'lib-brushes': () => libraryModal('brushes'), 'lib-tramas': () => libraryModal('tramas'), 'lib-bubbles': () => libraryModal('bubbles') });
-const CASE_COMMANDS = ['sel-copy', 'sel-cut', 'add-color', 'add-ink', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
+const CASE_COMMANDS = ['sel-copy', 'sel-cut', 'add-gradmap', 'add-color', 'add-ink', 'add-draft', 'dup-layer', 'merge-layer', 'del-layer', 'lock-layer', 'solo-layer', 'clear-layer',
   'sel-all', 'sel-none', 'move-case', 'dither', 'dup-bubble', 'del-bubble', 'lib-brushes', 'lib-tramas', 'lib-bubbles'];
 export function runCommand(id) {
   if (id.startsWith('tool:')) { if (ed.project) setTool(id.slice(5)); return; }
