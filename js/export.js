@@ -4,6 +4,7 @@ import { compositeRect } from './raster.js';
 import { drawPageBubble, props } from './bubbles.js';
 import { loadFont, fontSpec, touchFont } from './fonts.js';
 import { encodePNGRGBA, canEncodePNG } from './png.js';
+import { BAYER8 } from './dither.js';
 
 // Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
 export const ensureFonts = (project, pages) =>
@@ -84,16 +85,83 @@ async function deflate(bytes) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-// Pixels du canevas → bits (1 = blanc), lignes alignées sur l'octet.
-function packBits(canvas) {
+// Pixels du canevas → bits (1 = blanc), lignes alignées sur l'octet. `dither` : les gris et les couleurs
+// passent par un seuil de Bayer 8 × 8 (noir et blanc imposé à une planche en couleur), sinon seuil à mi-gris.
+function packBits(canvas, dither = false) {
   const { width: w, height: h } = canvas, px = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
   const rowBytes = (w + 7) >> 3, out = new Uint8Array(rowBytes * h);
   for (let y = 0; y < h; y++) {
+    const row = BAYER8[y & 7];
     for (let x = 0; x < w; x++) {
-      if (px[(y * w + x) * 4] >= 128) out[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+      const i = (y * w + x) * 4, L = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+      if (L >= (dither ? row[x & 7] * 4 + 2 : 128)) out[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
     }
   }
   return out;
+}
+
+// CMJN 8 bits : un gris neutre ne prend que du noir (K), pour un trait net sans repérage ; une couleur, conversion simple.
+function packCMYK(canvas) {
+  const { width: w, height: h } = canvas, px = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const out = new Uint8Array(w * h * 4);
+  for (let i = 0, j = 0; i < px.length; i += 4, j += 4) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    if (Math.abs(r - g) < 3 && Math.abs(g - b) < 3) { out[j + 3] = 255 - Math.round((r + g + b) / 3); continue; }
+    const k = 255 - Math.max(r, g, b), d = 255 - k;
+    out[j] = Math.round((d - r) / d * 255); out[j + 1] = Math.round((d - g) / d * 255); out[j + 2] = Math.round((d - b) / d * 255); out[j + 3] = k;
+  }
+  return out;
+}
+
+// Trames trop fines : part de la page couverte de points isolés d'un seul pixel (encre entourée de blanc ou l'inverse).
+// À 300 dpi un tel point fait 0,08 mm : il risque de se boucher ou de disparaître à l'impression.
+export function fineDotShare(canvas) {
+  const { width: w, height: h } = canvas, px = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const ink = new Uint8Array(w * h);
+  for (let i = 0, j = 0; j < ink.length; i += 4, j++) ink[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8 < 128 ? 1 : 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y++) for (let x = 1, k = y * w + 1; x < w - 1; x++, k++) {
+    const v = ink[k];
+    if (ink[k - 1] !== v && ink[k + 1] !== v && ink[k - w] !== v && ink[k + w] !== v) n++;
+  }
+  return n / (w * h);
+}
+export const FINE_DOT_LIMIT = 0.001;   // au-delà de 0,1 % de la page (environ 0,6 cm² de damier sur une A4), on prévient
+export const fineDotsMatter = project => 25.4 / project.dpi < 0.1;   // à 150 dpi, un pixel fait 0,17 mm : pas de souci
+
+// Fond perdu : la page agrandie de `b` pixels de chaque côté, ses bords étirés dans la marge (une case à fond perdu
+// déborde ainsi sans filet blanc ; une page à marge blanche reste blanche).
+function withBleed(canvas, b) {
+  const { width: w, height: h } = canvas, c = document.createElement('canvas');
+  c.width = w + 2 * b; c.height = h + 2 * b;
+  const x = c.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.drawImage(canvas, b, b);
+  x.drawImage(canvas, 0, 0, w, 1, b, 0, w, b); x.drawImage(canvas, 0, h - 1, w, 1, b, h + b, w, b);
+  x.drawImage(canvas, 0, 0, 1, h, 0, b, b, h); x.drawImage(canvas, w - 1, 0, 1, h, w + b, b, b, h);
+  x.drawImage(canvas, 0, 0, 1, 1, 0, 0, b, b); x.drawImage(canvas, w - 1, 0, 1, 1, w + b, 0, b, b);
+  x.drawImage(canvas, 0, h - 1, 1, 1, 0, h + b, b, b); x.drawImage(canvas, w - 1, h - 1, 1, 1, w + b, h + b, b, b);
+  return c;
+}
+export const BLEED_MM = 3, SLUG_MM = 10;   // fond perdu ; marge totale autour de la page coupée, traits de coupe compris
+
+export const COLOR_MODES = [
+  { id: 'auto', name: 'Automatique', help: 'Noir et blanc 1 bit, ou couleur RVB si la planche a de la couleur ou des brouillons.' },
+  { id: 'bw', name: 'Noir et blanc', help: 'Un bit par pixel : le plus net pour une planche à la trame. Les gris et les couleurs sont tramés.' },
+  { id: 'gray', name: 'Niveaux de gris', help: 'Gris 8 bits, pour un lavis ou un crayonné.' },
+  { id: 'rgb', name: 'Couleur (RVB)', help: 'Pour l\'écran et les imprimantes de bureau.' },
+  { id: 'cmyk', name: 'Couleur (CMJN)', help: 'Pour un imprimeur : le noir et les gris en noir seul (K), les couleurs converties simplement. Fais valider le fichier par l\'imprimeur (pas de profil ICC).' },
+];
+// Gris ou noir et blanc imposé pour l'impression directe : le canevas est converti sur place.
+function convertCanvas(canvas, color) {
+  if (color !== 'gray' && color !== 'bw') return;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }), img = ctx.getImageData(0, 0, canvas.width, canvas.height), px = img.data, w = canvas.width;
+  for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+    let L = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+    if (color === 'bw') L = L >= BAYER8[((j / w) | 0) & 7][(j % w) & 7] * 4 + 2 ? 255 : 0;
+    px[i] = px[i + 1] = px[i + 2] = L;
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
 // Image RVB 8 bits (pages avec des calques en couleur).
@@ -176,7 +244,9 @@ export function impose(pageIdx, mode, { wmm, hmm }) {
 // Chaque feuille du PDF place une ou plusieurs de ces images (imposition).
 // opts : pages (indices, toutes par défaut), imposition, drafts, bubbles, blue.
 
-export async function buildPDF(project, { onProgress = () => {}, prepare = async () => {}, release = () => {}, pages: pageIdx, imposition = 'single', drafts = false, bubbles = true, blue = false } = {}) {
+// color : 'auto', 'bw', 'gray', 'rgb', 'cmyk' (COLOR_MODES) ; bleed : fond perdu, TrimBox / BleedBox et traits de coupe
+// (une page par feuille seulement) ; onFine(i) : la page d'indice i a des trames trop fines pour l'impression.
+export async function buildPDF(project, { onProgress = () => {}, prepare = async () => {}, release = () => {}, onFine = () => {}, pages: pageIdx, imposition = 'single', drafts = false, bubbles = true, blue = false, color = 'auto', bleed = false } = {}) {
   const chunks = [], offsets = [];
   let length = 0;
   const write = bytes => { chunks.push(bytes); length += bytes.length; };
@@ -185,7 +255,10 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
 
   pageIdx = pageIdx || project.pages.map((_, i) => i);
   const pages = pageIdx.map(i => project.pages[i]), n = pages.length;
-  const mode = blue ? 'blue' : usesColor(project) || drafts ? 'rgb' : 'bits';
+  const colored = usesColor(project) || drafts;
+  const mode = blue ? 'blue' : color === 'auto' ? (colored ? 'rgb' : 'bits') : color === 'bw' ? 'bits' : color;
+  if (imposition !== 'single') bleed = false;
+  const bPx = bleed ? mmToPx(BLEED_MM, project.dpi) : 0, checkDots = fineDotsMatter(project) && !blue;
   await ensureFonts(project, pages);
   const sheets = impose(pageIdx, imposition, project.format);
   // numéros d'objets : 1 catalogue, 2 liste des feuilles, 3 info, 4 police des légendes, puis une image par page,
@@ -202,11 +275,15 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
   for (let j = 0; j < n; j++) {
     onProgress(j, n);
     await prepare(pages[j]);
-    const canvas = renderPage(project, pages[j], 1, { drafts, bubbles });
+    let canvas = renderPage(project, pages[j], 1, { drafts, bubbles });
     release(pages[j]);
-    const raw = mode === 'blue' ? packGray(canvas) : mode === 'rgb' ? packRGB(canvas) : packBits(canvas), packed = await deflate(raw);
+    if (checkDots && fineDotShare(canvas) > FINE_DOT_LIMIT) onFine(pageIdx[j]);
+    if (bPx) canvas = withBleed(canvas, bPx);
+    const raw = mode === 'blue' || mode === 'gray' ? packGray(canvas) : mode === 'rgb' ? packRGB(canvas) : mode === 'cmyk' ? packCMYK(canvas) : packBits(canvas, colored), packed = await deflate(raw);
     const data = packed || raw;
     const space = mode === 'blue' ? '/ColorSpace [/Indexed /DeviceRGB 255 ' + BLUE_PALETTE + '] /BitsPerComponent 8'
+      : mode === 'gray' ? '/ColorSpace /DeviceGray /BitsPerComponent 8'
+      : mode === 'cmyk' ? '/ColorSpace /DeviceCMYK /BitsPerComponent 8'
       : mode === 'rgb' ? '/ColorSpace /DeviceRGB /BitsPerComponent 8' : '/ColorSpace /DeviceGray /BitsPerComponent 1';
     offsets[imageObj(j)] = length;
     text(imageObj(j) + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + canvas.width + ' /Height ' + canvas.height + ' ' + space +
@@ -217,15 +294,22 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
 
   const pt = mm => +(mm / 25.4 * 72).toFixed(2);
   sheets.forEach((sh, s) => {
-    const W = pt(sh.wmm), H = pt(sh.hmm), used = new Set();
-    let content = '';
+    const off = bleed ? SLUG_MM : 0;   // la page coupée est décalée de la marge des traits de coupe
+    const W = pt(sh.wmm + 2 * off), H = pt(sh.hmm + 2 * off), used = new Set();
+    let content = '', boxes = '';
     for (const sl of sh.slots) {
       const j = pageIdx.indexOf(sl.page); used.add(j);
-      const w = pt(sl.w), h = pt(sl.h), x = pt(sl.x), y = +(H - pt(sl.y) - h).toFixed(2);
+      const e = bleed ? BLEED_MM : 0;
+      const w = pt(sl.w + 2 * e), h = pt(sl.h + 2 * e), x = pt(sl.x + off - e), y = +(H - pt(sl.y + off - e) - h).toFixed(2);
       content += 'q ' + w + ' 0 0 ' + h + ' ' + x + ' ' + y + ' cm /Im' + j + ' Do Q\n';
+      if (bleed) {
+        const tx = pt(off), ty = pt(off), tw = pt(sl.w), th = pt(sl.h), b = pt(BLEED_MM);
+        boxes = ' /TrimBox [' + [tx, ty, +(tx + tw).toFixed(2), +(ty + th).toFixed(2)].join(' ') + '] /BleedBox [' + [+(tx - b).toFixed(2), +(ty - b).toFixed(2), +(tx + tw + b).toFixed(2), +(ty + th + b).toFixed(2)].join(' ') + ']';
+        content += cropMarks(tx, ty, tw, th, b, pt, mode === 'cmyk');
+      }
       if (sl.label) content += '0.6 G 0.5 w ' + x + ' ' + y + ' ' + w + ' ' + h + ' re S 0 g BT /F1 9 Tf ' + x + ' ' + (y - 12).toFixed(2) + ' Td (' + sl.label + ') Tj ET\n';
     }
-    obj(sheetObj(s), '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Contents ' + contentObj(s) + ' 0 R /Resources << /XObject << ' +
+    obj(sheetObj(s), '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + ']' + boxes + ' /Contents ' + contentObj(s) + ' 0 R /Resources << /XObject << ' +
       [...used].map(j => '/Im' + j + ' ' + imageObj(j) + ' 0 R').join(' ') + ' >> /Font << /F1 4 0 R >> >> >>');
     obj(contentObj(s), '<< /Length ' + content.length + ' >>\nstream\n' + content + 'endstream');
   });
@@ -239,6 +323,18 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
   return new Blob(chunks, { type: 'application/pdf' });
 }
 
+// Traits de coupe aux quatre coins de la page coupée (tx, ty, tw, th en points) : filets de 0,25 pt, en noir de repérage
+// (toutes les encres) en CMJN, noir ailleurs ; ils commencent 2 mm au-delà du fond perdu.
+function cropMarks(tx, ty, tw, th, b, pt, cmyk) {
+  const gap = b + pt(2), len = pt(5), r = v => +v.toFixed(2);
+  let c = 'q 0.25 w ' + (cmyk ? '1 1 1 1 K' : '0 G') + '\n';
+  for (const [x, sx] of [[tx, -1], [tx + tw, 1]]) for (const [y, sy] of [[ty, -1], [ty + th, 1]]) {
+    c += r(x + sx * gap) + ' ' + r(y) + ' m ' + r(x + sx * (gap + len)) + ' ' + r(y) + ' l S\n';
+    c += r(x) + ' ' + r(y + sy * gap) + ' m ' + r(x) + ' ' + r(y + sy * (gap + len)) + ' l S\n';
+  }
+  return c + 'Q\n';
+}
+
 // ───────────────────────── Impression directe ─────────────────────────
 // Les feuilles sont posées dans la page (images PNG placées en mm), puis le navigateur imprime
 // (AirPrint sur iPad). Pas de grand canevas : une planche double dépasserait la limite de Safari.
@@ -250,7 +346,7 @@ const pngOf = async canvas => {
   return new Blob([await encodePNGRGBA(img.data, canvas.width, canvas.height)], { type: 'image/png' });
 };
 
-export async function printProject(project, { onProgress = () => {}, prepare = async () => {}, release = () => {}, pages: pageIdx, imposition = 'single', drafts = false, bubbles = true, blue = false } = {}, ready = () => {}) {
+export async function printProject(project, { onProgress = () => {}, prepare = async () => {}, release = () => {}, onFine = () => {}, pages: pageIdx, imposition = 'single', drafts = false, bubbles = true, blue = false, color = 'auto' } = {}, ready = () => {}) {
   pageIdx = pageIdx || project.pages.map((_, i) => i);
   await ensureFonts(project, pageIdx.map(i => project.pages[i]));
   const urls = new Map();
@@ -260,6 +356,8 @@ export async function printProject(project, { onProgress = () => {}, prepare = a
     await prepare(pg);
     const canvas = renderPage(project, pg, 1, { drafts, bubbles, blue });
     release(pg);
+    if (fineDotsMatter(project) && !blue && fineDotShare(canvas) > FINE_DOT_LIMIT) onFine(i);
+    if (!blue) convertCanvas(canvas, color);
     urls.set(i, URL.createObjectURL(await pngOf(canvas)));
   }
   onProgress(pageIdx.length, pageIdx.length);

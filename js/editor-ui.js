@@ -17,7 +17,7 @@ import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } fro
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
 import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
-import { buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts, pageThumb } from './export.js';
+import { COLOR_MODES, buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts, pageThumb } from './export.js';
 import { loadPage, unloadPage } from './store.js';
 import { exportProject } from './portable.js';
 import { GUIDE_MODES, guideMode, setGuideMode } from './guides.js';
@@ -2164,10 +2164,15 @@ export function projectMenu() {
 // Imprimer ou exporter en PDF : choix des pages, du rendu (final ou bleu non photo), des brouillons et des bulles.
 // Les derniers choix sont gardés sur l'appareil (`fusain:print`).
 const PRINT_KEY = 'fusain:print';
-const PRINT_DEFAULTS = { pages: 'all', range: '', blue: false, drafts: false, bubbles: true, imposition: 'single' };
+const PRINT_DEFAULTS = { pages: 'all', range: '', blue: false, drafts: false, bubbles: true, imposition: 'single', color: 'auto', bleed: false };
 const printPrefs = () => { try { return { ...PRINT_DEFAULTS, ...JSON.parse(localStorage.getItem(PRINT_KEY) || '{}') }; } catch { return { ...PRINT_DEFAULTS }; } };
 const BLUE_HELP = ['Noir et blanc (ou couleur si la planche en a), sans aide visuelle.',
   'Tout est imprimé en bleu clair : on encre par-dessus, sur papier, et le scanner en noir et blanc ne voit pas le bleu.'];
+
+const colorHelp = id => (COLOR_MODES.find(x => x.id === id) || COLOR_MODES[0]).help + (id === 'auto' ? '' : ' Sans effet en bleu non photo.');
+const bleedHelp = imp => (imp === 'single'
+  ? 'PDF seulement : la page est agrandie de 3 mm de chaque côté (bords étirés), avec ses repères de coupe (TrimBox, BleedBox).'
+  : 'Seulement avec « Une page par feuille » : l\'imprimeur fait lui-même l\'imposition.');
 
 // Explication de la mise en page choisie, avec la taille de la feuille (A3 pour deux pages A4, A4 pour deux pages A5…).
 const PAPER = [['A2', 420, 594], ['A3', 297, 420], ['A4', 210, 297], ['A5', 148, 210]];
@@ -2191,6 +2196,11 @@ function printModal(action = 'pdf') {
       <div class="field"><span>Mise en page</span>
         <select id="pr-imposition">${IMPOSITIONS.map(x => `<option value="${x.id}" ${o.imposition === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
         <small id="pr-imp-help">${impHelp(o.imposition)}</small></div>
+      <div class="field"><span>Couleur</span>
+        <select id="pr-color">${COLOR_MODES.map(x => `<option value="${x.id}" ${o.color === x.id ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
+        <small id="pr-color-help">${colorHelp(o.color)}</small></div>
+      <label class="check"><input type="checkbox" id="pr-bleed" ${o.bleed ? 'checked' : ''}> Pour l'imprimeur : fond perdu 3 mm et traits de coupe</label>
+      <small id="pr-bleed-help" class="note">${bleedHelp(o.imposition)}</small>
       <label class="check"><input type="checkbox" id="pr-drafts" ${o.drafts ? 'checked' : ''}> Imprimer les brouillons</label>
       <label class="check"><input type="checkbox" id="pr-bubbles" ${o.bubbles ? 'checked' : ''}> Bulles et textes</label>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
@@ -2213,25 +2223,29 @@ function printModal(action = 'pdf') {
     o.range = range.value.trim();
     o.drafts = $('#pr-drafts', box).checked; o.bubbles = $('#pr-bubbles', box).checked;
     o.imposition = $('#pr-imposition', box).value;
+    o.color = $('#pr-color', box).value; o.bleed = $('#pr-bleed', box).checked;
     const pages = o.pages === 'current' ? [ed.pageIdx] : o.pages === 'range' ? parsePageRange(o.range, count) : null;
     if (o.pages === 'range' && !pages) { toast(`Pages à choisir entre 1 et ${count}, par exemple « 1-3, 5 ».`, { type: 'error' }); range.focus(); return; }
     try { localStorage.setItem(PRINT_KEY, JSON.stringify(o)); } catch {}
     m.close();
-    runPrint(go.dataset.go, { pages: pages || undefined, imposition: o.imposition, drafts: o.drafts, bubbles: o.bubbles, blue: o.blue });
+    runPrint(go.dataset.go, { pages: pages || undefined, imposition: o.imposition, drafts: o.drafts, bubbles: o.bubbles, blue: o.blue, color: o.color, bleed: o.bleed && go.dataset.go === 'pdf' });
   });
-  $('#pr-imposition', box).addEventListener('change', e => { $('#pr-imp-help', box).innerHTML = impHelp(e.target.value); });
+  $('#pr-imposition', box).addEventListener('change', e => { $('#pr-imp-help', box).innerHTML = impHelp(e.target.value); $('#pr-bleed-help', box).textContent = bleedHelp(e.target.value); });
+  $('#pr-color', box).addEventListener('change', e => { $('#pr-color-help', box).textContent = colorHelp(e.target.value); });
 }
 
 async function runPrint(how, opts) {
   await saveNow();
   const close = toast(how === 'print' ? 'Préparation de l\'impression…' : 'Création du PDF…', { duration: 600000 });
-  const io = { ...opts, prepare: pg => loadPage(ed.project, pg), release: pg => { if (pg !== page()) unloadPage(pg); } };
+  const fine = [];
+  const io = { ...opts, prepare: pg => loadPage(ed.project, pg), release: pg => { if (pg !== page()) unloadPage(pg); }, onFine: i => fine.push(i + 1) };
+  const warnFine = () => { if (fine.length) toast(`Trames très fines (points d'un pixel, 0,08 mm) sur la page ${fine.join(', ')} : elles risquent de se boucher ou de disparaître à l'impression. Agrandis l'échelle de la trame (×2 ou plus).`, { duration: 12000 }); };
   try {
-    if (how === 'print') await printProject(ed.project, io, close);
+    if (how === 'print') { await printProject(ed.project, io, close); warnFine(); }
     else {
       const blob = await buildPDF(ed.project, io);
-      download(blob, safeName(ed.project.title) + (opts.blue ? '-bleu' : '') + '.pdf');
-      close(); toast('PDF prêt.');
+      download(blob, safeName(ed.project.title) + (opts.blue ? '-bleu' : opts.bleed ? '-imprimeur' : '') + '.pdf');
+      close(); toast('PDF prêt.'); warnFine();
     }
   } catch (err) {
     console.error(err); close();

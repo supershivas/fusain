@@ -17,6 +17,15 @@ const TIPS = {
   'tool:layout': ['Taille des cases', 'Fais glisser les gouttières, ajoute une case avec les « + », fusionne deux cases voisines.'],
   'tool:pan': ['Déplacer la vue', 'Fait glisser la page sans dessiner ; un toucher change de case.'],
   // ── Barres ──
+  'sym': ['Symétrie', 'Dessine en miroir autour du centre de la case. Chaque toucher change : aucune, axe vertical, axe horizontal, deux axes.'],
+  'guide': ['Guides de tracé', 'Règle, puis perspective à 1 et 2 points de fuite : les traits se calent sur la direction la plus proche. Fais glisser les poignées pour placer les guides.'],
+  'act:symmetry': ['Symétrie', 'Dessin en miroir autour du centre de la case ; chaque choix passe au mode suivant.'],
+  'act:guide': ['Guides de tracé', 'Passe d\'aucun guide à la règle, puis à la perspective à 1 et 2 points.'],
+  'act:folio': ['Numéros de page', 'Numérote les pages dans la marge : position, premier numéro, couverture sans numéro.'],
+  'act:add-cover': ['Couverture', 'Ajoute en tête une page à fond perdu avec le titre du projet, jamais numérotée.'],
+  'act:pages-board': ['Chemin de fer', 'Toutes les pages en vignettes : toucher en ouvre une, la poignée la déplace.'],
+  'bopen': ['Ouvrir la page', 'Ferme le chemin de fer et ouvre cette page.'],
+  'bgrip': ['Déplacer la page', 'Fais glisser pour changer la place de la page dans l\'album.'],
   'act:undo': ['Annuler', 'Défait la dernière action. Toucher à deux doigts fait la même chose.'],
   'act:redo': ['Rétablir', 'Refait l\'action annulée. Toucher à trois doigts fait la même chose.'],
   'act:dock': ['Panneau de droite', 'Affiche ou réduit le panneau des calques et des pages.'],
@@ -180,6 +189,7 @@ const TIPS = {
 };
 // Sections du panneau (data-sec)
 const SECS = {
+  pf: ['Numéros de page', 'Numéros imprimés dans la marge, pour tout le projet.'],
   bubs: ['Bulles et textes', 'Les bulles de la case ouverte : choisir, masquer, verrouiller, supprimer.'],
   lays: ['Calques', 'Les calques de la case, le plus haut en premier. Toucher le calque actif ouvre ses options.'],
   cn: ['Notes de la case', 'Plan et description à dessiner, venus du découpage ; jamais exportés.'],

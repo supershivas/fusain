@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.54.0).
+Dernière mise à jour : 2026-11-23 (v1.55.0).
 
-## Fait (v1.29.0 → v1.54.0, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.55.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -85,6 +85,11 @@ Dernière mise à jour : 2026-11-23 (v1.54.0).
 - [x] Couverture : page en tête à fond perdu, titre du projet, jamais numérotée
 - [x] Chemin de fer : vignettes de toutes les pages, ouverture au toucher, ordre changé à la poignée (annulable)
 
+### Impression pour l'imprimeur (v1.55)
+- [x] Couleur au choix : automatique, noir et blanc 1 bit (gris et couleurs tramés), niveaux de gris 8 bits, RVB, CMJN (gris et noir en K seul)
+- [x] Alerte sur les trames trop fines (points isolés d'un pixel à plus de 254 dpi), avec les pages concernées
+- [x] Fond perdu 3 mm (bords étirés), TrimBox / BleedBox, traits de coupe (une page par feuille)
+
 ## Reste à faire
 
 ### À vérifier sur iPad
@@ -103,12 +108,12 @@ Dernière mise à jour : 2026-11-23 (v1.54.0).
 
 ### Impression (suite)
 - [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF
-- [ ] Noir et blanc / niveaux de gris / couleur au choix, alerte sur les trames trop fines
-- [ ] PDF pour imprimeur : fond perdu 3 mm, TrimBox / BleedBox, traits de coupe
-- [ ] Couleur CMJN / PDF/X (album couleur chez un imprimeur)
+- [ ] PDF/X-1a : profil de sortie (OutputIntent, FOGRA39 ou celui de l'imprimeur) ; le CMJN actuel est une conversion simple, sans profil ICC
+- [ ] Fond perdu dessiné : laisser dessiner jusqu'à 3 mm hors de la page dans les cases qui touchent le bord (aujourd'hui les bords sont étirés)
 
 ### À vérifier sur iPad (impression)
 - [ ] Imprimer par AirPrint depuis Safari et depuis l'app installée : format de page respecté, une page par feuille
+- [ ] PDF imprimeur (CMJN, fond perdu) : le faire valider par un imprimeur ou dans Acrobat (contrôle en amont)
 - [ ] Livret : sens de retournement recto verso (bord court) sur une vraie imprimante
 
 ### Améliorations possibles
