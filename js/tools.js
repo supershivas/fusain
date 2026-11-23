@@ -12,7 +12,7 @@ import { mmToPx } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 import { guideMode, hitHandle, dragHandle, snapStart, guidedPoint } from './guides.js';
-import { hitSelHandle, beginScale, scaleMove, endScale, cancelScale, currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
+import { insideSelection, hitSelHandle, beginScale, scaleMove, endScale, cancelScale, currentSelection, selectAuto, selectShape, polyAdd, polyFinish, polyFirst, polyCount, beginMove, moveMove, endMove, cancelMove, clearSelection } from './selection.js';
 
 let session = null, hinted = null;   // hinted : dernier calque d'aplat signalé (référence active)
 export const busy = () => !!session;
@@ -258,6 +258,14 @@ export function move(pt) {
     const l = session.pts[session.pts.length - 1];
     if (Math.hypot(pt.x - l.x, pt.y - l.y) > 3) { session.pts.push({ x: pt.x, y: pt.y }); setOverlay({ free: session.pts }); }
   } else if (session.kind === 'bubble') bubbleMove(pt);
+  else if (session.kind === 'selpend') {
+    const a = toScreen(session.pt.x, session.pt.y), b = toScreen(pt.x, pt.y);
+    if (Math.hypot(b.x - a.x, b.y - a.y) < (pt.type === 'touch' ? 10 : 5)) return;
+    const s = session; session = null;
+    selectPanel(s.p.id);
+    session = beginMove(s.p, s.pt);
+    if (session) moveMove(session, pt);
+  }
   else if (session.kind === 'selmove') moveMove(session, pt);
   else if (session.kind === 'selscale') { session.last = pt; scaleMove(session, pt, !!pt.shift || pt.held > 0); }
   else if (session.kind === 'selfree') {
@@ -308,7 +316,8 @@ export function up() {
     notify('bubbles'); notify('tool');
   } else if (s.kind === 'bubble') {
     commitBubbleEdit(s.b, s.before);
-  } else if (s.kind === 'selmove') endMove(s);
+  } else if (s.kind === 'selpend') { selectStart(s.pt); if (session) up(); }
+  else if (s.kind === 'selmove') endMove(s);
   else if (s.kind === 'selscale') endScale(s);
   else if (s.kind === 'selfree') {
     setOverlay({ free: null });
@@ -344,7 +353,13 @@ function selectDown(pt) {
   if (sp && !polyCount()) {
     const h = hitSelHandle(sp, ed.sel, pt, (pt.type === 'touch' ? 26 : 16) / view.s);
     if (h) { session = beginScale(sp, h, pt); if (session) { session.last = pt; return; } }
+    // glisser depuis l'intérieur de la sélection : son contenu se déplace (un simple toucher garde l'effet habituel de l'outil)
+    if (!ed.selMove && ed.selOp === 'new' && insideSelection(sp, ed.sel, pt)) { session = { kind: 'selpend', p: sp, pt }; return; }
   }
+  selectStart(pt);
+}
+
+function selectStart(pt) {
   if (ed.selMove) {   // déplacer : la sélection, ou à défaut tout le contenu de la case touchée
     const p = (ed.sel && page().panels.find(q => q.id === ed.sel.panelId)) || panelAt(pt.x, pt.y) || page().panels.find(q => q.id === ed.panelId);
     if (!p) return;

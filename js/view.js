@@ -370,6 +370,13 @@ function drawSelection(p, sel) {
   if (ed.tool === 'select' && sc) ctx.drawImage(selTint(sel), p.ex + sc.x, p.ey + sc.y, sc.w, sc.h);
   else if (ed.tool === 'select') ctx.drawImage(selTint(sel), p.ex + sel.x0 + sel.dx, p.ey + sel.y0 + sel.dy);
   ctx.restore();
+  if (f) {   // la part du contenu soulevé qui sort du cadre reste visible, estompée (elle sera gardée, cachée, dans la réserve)
+    const { w, h } = pageDims();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.rect(p.x, p.y, p.w, p.h); ctx.clip('evenodd');
+    ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.35;
+    if (sc) ctx.drawImage(f.canvas, p.ex + sc.x, p.ey + sc.y, sc.w, sc.h); else ctx.drawImage(f.canvas, p.ex + f.bx + sel.dx, p.ey + f.by + sel.dy);
+    ctx.restore();
+  }
 }
 
 // Plan et description de la case (aide au dessin, jamais exportés).

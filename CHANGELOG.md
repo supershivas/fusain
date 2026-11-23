@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.59.0 — 2026-11-23
+- Sélection : glisser depuis l'intérieur de la sélection déplace son contenu, sans passer par le bouton Déplacer
+- Le contenu déplacé peut sortir du cadre de la case : la partie hors cadre est gardée, cachée, et revient si on le ramène
+
 ## 1.58.0 — 2026-11-23
 - Sélection : on peut commencer le tracé hors de la case, la sélection est rognée à son cadre
 - Sélection : huit poignées pour agrandir ou réduire le contenu, proportions gardées ; Maj ou un second doigt posé pour déformer librement (remplacent les boutons Agrandir / Réduire)
