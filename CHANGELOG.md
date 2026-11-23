@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.52.1 — 2026-11-23
+- Synchronisation : l'adresse Supabase collée avec « /rest/v1/ » ou depuis le tableau de bord est corrigée toute seule (erreur « Invalid path specified in request URL »)
+
 ## 1.52.0 — 2026-11-22
 - Mise en page à l'impression et au PDF : planches en regard (pages impaires à droite), livret à plier (recto verso, pages remises dans l'ordre), 4 pages par feuille pour une épreuve
 - La fenêtre indique la taille de la feuille (A3 pour deux pages A4, A4 pour deux pages A5)

@@ -112,7 +112,7 @@ export async function openSettings({ onImported } = {}) {
   box.addEventListener('click', async e => {
     const b = e.target.closest('button'); if (!b) return;
     try {
-      if (b.id === 's-save-cfg') { sync.setConfig($('#s-url', box).value, $('#s-key', box).value); toast('Connexion enregistrée.'); renderStatus(); }
+      if (b.id === 's-save-cfg') { sync.setConfig($('#s-url', box).value, $('#s-key', box).value); $('#s-url', box).value = sync.getConfig()?.url || ''; toast('Connexion enregistrée.'); renderStatus(); }
       else if (b.id === 's-link') {
         const mail = $('#s-mail', box).value.trim(); if (!mail) { toast('Saisis ton adresse email.'); return; }
         await sync.sendMagicLink(mail); toast('Lien envoyé : regarde ta boîte mail.');

@@ -10,9 +10,20 @@ const CFG = 'fusain:supabase', SES = 'fusain:session', BUCKET = 'fusain';
 const read = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
 const write = (key, v) => { try { v == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
 
-export const getConfig = () => read(CFG);
+export const getConfig = () => { const c = read(CFG); return c && c.url ? { ...c, url: normalizeUrl(c.url) } : c; };
+// Ramène ce qu'on a collé à l'adresse du projet : « …supabase.co/rest/v1/ » (page Data API) ou
+// « supabase.com/dashboard/project/<ref> » (barre d'adresse du tableau de bord) → « https://<ref>.supabase.co ».
+export function normalizeUrl(url) {
+  url = (url || '').trim();
+  if (!url) return '';
+  const dash = url.match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/i);
+  if (dash) return 'https://' + dash[1].toLowerCase() + '.supabase.co';
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  try { return new URL(url).origin; } catch { return url.replace(/\/+$/, ''); }
+}
+
 export function setConfig(url, key) {
-  url = (url || '').trim().replace(/\/+$/, '');
+  url = normalizeUrl(url);
   key = (key || '').trim();
   write(CFG, url && key ? { url, key } : null);
   emit();
