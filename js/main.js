@@ -140,6 +140,9 @@ if ('serviceWorker' in navigator) {
   loadTramaLibrary().catch(() => {});
   sync.startAutoSync();
   await route();
-})();
+  // l'écran de chargement attend aussi les polices de l'interface (icônes), sans dépasser 3 s
+  if (document.fonts) await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 3000))]);
+  window.fusainBootDone?.();
+})().catch(err => { console.error(err); window.fusainBootFail?.(); });
 
 window.fusain = { ed };   // aide au débogage et aux tests

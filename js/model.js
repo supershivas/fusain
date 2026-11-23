@@ -65,6 +65,23 @@ export function layoutRects(layout, W, H, marginPx, gutterPx) {
   return rects;
 }
 
+// Numéro de format des projets enregistrés (table, IndexedDB, export). 1 : sans numéro (avant novembre 2026).
+// Les anciens formats se migrent à la lecture (`projectFromMeta`), jamais refusés.
+export const PROJECT_SCHEMA = 2;
+
+// Numéros de page (folio) : project.folio = { on, pos, start, skipFirst }. Absent : pas de numéro.
+export const FOLIO_POSITIONS = [
+  { id: 'bottom-center', name: 'En bas, au centre' },
+  { id: 'bottom-outer', name: 'En bas, à l\'extérieur' },
+  { id: 'top-outer', name: 'En haut, à l\'extérieur' },
+];
+// Numéro imprimé sur la page d'indice idx, ou null. Les pages impaires sont à droite, comme dans un album ouvert.
+export function folioOf(project, idx) {
+  const f = project.folio;
+  if (!f || !f.on || (f.skipFirst && idx === 0)) return null;
+  return { n: (Number.isFinite(f.start) ? f.start : 1) + idx, pos: f.pos || 'bottom-center', right: idx % 2 === 0 };
+}
+
 export function pageSize(project) {
   return {
     w: mmToPx(project.format.wmm, project.dpi),
@@ -145,9 +162,10 @@ export function newBubble(kind, x, y) {
 export function projectMeta(project) {
   const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, blend: l.blend && l.blend !== 'normal' ? l.blend : undefined, rev: l.rev });
   return {
+    schemaVersion: PROJECT_SCHEMA,
     id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
     deleted: project.deleted, format: project.format, dpi: project.dpi,
-    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, palettes: project.palettes, paletteId: project.paletteId,
+    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, palettes: project.palettes, paletteId: project.paletteId, folio: project.folio,
     pages: project.pages.map(p => ({
       id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden,
       panels: p.panels.map(c => ({
@@ -159,11 +177,13 @@ export function projectMeta(project) {
 }
 
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
+// Migration du schéma 1 : étendue des calques (ex, ey, ew, eh) = cadre, type de calque déduit du nom, notes vides.
 export function projectFromMeta(meta) {
   const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal',
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,
+    schemaVersion: PROJECT_SCHEMA,
     tramas: meta.tramas || [],
     pages: meta.pages.map(p => ({
       id: p.id, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden,

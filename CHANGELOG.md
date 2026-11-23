@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.53.0 — 2026-11-23
+- Symétrie : dessine en miroir autour du centre de la case (axe vertical, horizontal ou les deux), bouton dans la barre du haut et menu Outils
+- Numéros de page : position, premier numéro, sans numéro sur la couverture (onglet Page ou menu Page)
+- Écran de chargement au démarrage, qui dit clairement si l'app n'a pas pu se charger
+- Sauvegardes et projets portent un numéro de format ; une sauvegarde d'une version plus récente est refusée avec un message clair
+
 ## 1.52.3 — 2026-11-23
 - L'aperçu des projets s'affiche sur l'accueil de tous les appareils, pas seulement sur celui où le projet a été dessiné
 

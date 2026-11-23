@@ -13,7 +13,7 @@ export const ed = {
   project: null, pageIdx: 0, panelId: null, bubbleId: null, focus: false,
   tool: 'pencil', size: 6, sizeMm: 0.5, alpha: 1, slotId: null, ink: 1, color: '#000000', color2: '#FFFFFF', recentColors: [], picking: false, brushId: 'stylo', brushParams: null, customBrushes: [], brushSizes: {}, tramaPresets: [], toolSettings: {}, bubbleDefaults: {}, ditherOpts: {}, solo: null,
   tramaId: 'plein', tramaScale: 2, tramaOpaque: false,
-  shapeKind: 'rect', shapeFilled: false, fillGap: 100,
+  shapeKind: 'rect', shapeFilled: false, fillGap: 100, symmetry: 'off',
   maskMode: 'off', maskErase: false, bubbleDraw: false,
   sel: null, selFloat: null, selMode: 'auto', selOp: 'new', selMove: false, selScope: 'all', selCopy: false,   // outil Sélection (selection.js)
   addRatio: 50, addPreview: null, bubbleTemplate: 'parole', bubbleTemplates: [],

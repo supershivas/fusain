@@ -20,6 +20,7 @@ const menus = () => {
       ['del-case', 'Supprimer la case', 'trash', '', pg.panels.length < 2], ['del-bubble', 'Supprimer la bulle', 'message-circle-off', 'Suppr', !bubble()]]],
     ['Outils', [
       ...TOOLS.map(t => ['tool:' + t.id, t.label.replace(/ \(.\)$/, ''), t.icon, t.key.toUpperCase()]), null,
+      ['symmetry', `Symétrie : ${{ off: 'aucune', v: 'axe vertical', h: 'axe horizontal', vh: 'deux axes' }[ed.symmetry] || 'aucune'}`, 'flip-vertical'], null,
       ['lib-brushes', 'Bibliothèque de pinceaux…', 'brush'], ['lib-tramas', 'Bibliothèque de trames…', 'texture'], ['lib-bubbles', 'Modèles de bulles…', 'message-circle']]],
     ['Image', [
       ['focus', ed.focus ? 'Revenir à la page' : `Ouvrir la case ${idx + 1} seule`, ed.focus ? 'layout-grid' : 'focus-2', 'Entrée'], ['fit', 'Ajuster à l\'écran', 'zoom-scan', '0'], ['rot-view', 'Tourner la page de 90°', 'rotate-clockwise'], ['rot-reset', 'Remettre la page droite', 'rotate-2'], ['zoom-in', 'Zoom avant', 'zoom-in'], ['zoom-out', 'Zoom arrière', 'zoom-out'], null,
@@ -30,6 +31,7 @@ const menus = () => {
       ['lock-layer', layer.locked ? 'Déverrouiller' : 'Verrouiller', layer.locked ? 'lock-open' : 'lock'], ['solo-layer', ed.solo === layer.id ? 'Afficher tous les calques' : 'Afficher seul', 'eye']]],
     ['Page', [
       ['add-page', 'Nouvelle page…', 'file-plus'], ['dup-page', 'Dupliquer', 'copy'], ['del-page', 'Supprimer', 'trash', '', !many], null,
+      ['folio', ed.project.folio && ed.project.folio.on ? 'Numéros de page…' : 'Numéroter les pages…', 'list-numbers'], null,
       ['page-left', 'Reculer', 'arrow-up', '', ed.pageIdx === 0], ['page-right', 'Avancer', 'arrow-down', '', ed.pageIdx >= ed.project.pages.length - 1], null,
       ['page-prev', 'Page précédente', 'chevron-left', '', ed.pageIdx === 0], ['page-next', 'Page suivante', 'chevron-right', '', ed.pageIdx >= ed.project.pages.length - 1]]],
     ['Affichage', [

@@ -611,3 +611,15 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .dock-nav .zb-label { flex: 1; text-align: center; font: 500 .8rem var(--font-mono); white-space: nowrap; color: var(--text-secondary); }
 .dock.mini .dock-nav { flex-direction: column; padding: 6px 0; gap: 2px; }
 .dock.mini .dock-nav .zb-label { flex: none; font-size: .72rem; }
+
+/* Écran de chargement (dans index.html, retiré par main.js quand l'accueil est prêt) */
+.boot { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); padding: 24px; }
+.boot-card { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 320px; text-align: center; }
+.boot-name { font-family: var(--font-title); font-size: 28px; font-weight: 700; }
+.boot-bar { position: relative; width: 180px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.boot-bar span { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; border-radius: 2px; background: var(--accent); animation: boot-slide 1.2s ease-in-out infinite; }
+@keyframes boot-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.boot-msg { color: var(--text-muted); font-size: 14px; }
+.boot.failed .boot-bar { display: none; }
+.boot.failed .boot-msg { color: var(--text-primary); }
+@media (prefers-reduced-motion: reduce) { .boot-bar span { animation: none; left: 30%; } }

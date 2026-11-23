@@ -4,6 +4,7 @@ import { ed, page, gutterHandles, splitRects, mergeCandidates } from './editor.j
 import { pageSize, panelStroke, mmToPx } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
+import { drawFolio } from './export.js';
 
 // r : rotation de la page à l'écran (radians, autour de l'origine ox, oy) ; moved : l'utilisateur a zoomé, tourné ou déplacé la page
 export const view = { s: 1, ox: 0, oy: 0, r: 0, w: 0, h: 0, dpr: 1, moved: false };
@@ -222,6 +223,9 @@ function renderFrame() {
     }
   }
 
+  if (!fp) drawFolio(ctx, ed.project, ed.pageIdx);
+  drawSymmetry(fp || pg.panels.find(p => p.id === ed.panelId));
+
   // aides, en pixels d'écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const accent = css('--accent') || '#C0392B';
@@ -255,6 +259,20 @@ function renderFrame() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 0.5, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.arc(c.x, c.y, c.r - 0.5, 0, Math.PI * 2); ctx.stroke();
   }
+}
+
+// Axes de symétrie de la case active (dessin en miroir), en pointillés : jamais exportés.
+const SYM_TOOLS = ['pencil', 'eraser', 'shape'];
+function drawSymmetry(p) {
+  if (!p || !ed.symmetry || ed.symmetry === 'off' || !SYM_TOOLS.includes(ed.tool)) return;
+  const s = view.s, cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+  ctx.save();
+  ctx.strokeStyle = css('--accent') || '#C0392B'; ctx.lineWidth = 1.5 / s; ctx.setLineDash([8 / s, 6 / s]);
+  ctx.beginPath();
+  if (ed.symmetry.includes('v')) { ctx.moveTo(cx, p.y); ctx.lineTo(cx, p.y + p.h); }
+  if (ed.symmetry.includes('h')) { ctx.moveTo(p.x, cy); ctx.lineTo(p.x + p.w, cy); }
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Pipette : couleur composée de la case sous le point d'écran (sx, sy), sur fond blanc ; null hors des cases.

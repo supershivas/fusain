@@ -22,6 +22,31 @@
 <link rel="stylesheet" href="css/mobile.css"/>
 </head>
 <body>
+<div id="boot" class="boot" role="status" aria-live="polite">
+  <div class="boot-card">
+    <img src="favicon.svg" alt="" width="56" height="56"/>
+    <div class="boot-name">Fusain</div>
+    <div class="boot-bar" aria-hidden="true"><span></span></div>
+    <p id="boot-msg" class="boot-msg">Chargement…</p>
+    <button id="boot-retry" class="btn" type="button" hidden onclick="location.reload()">Recharger</button>
+  </div>
+</div>
+<script>
+  // Écran de chargement : il couvre tout jusqu'à ce que l'accueil soit prêt (main.js le retire), et dit l'échec s'il y en a un.
+  (function () {
+    var done = false;
+    window.fusainBootFail = function (msg) {
+      if (done) return; done = true;
+      var b = document.getElementById('boot'); if (!b) return;
+      b.classList.add('failed');
+      document.getElementById('boot-msg').textContent = msg || 'Fusain n\'a pas pu se charger. Vérifie la connexion, puis recharge.';
+      document.getElementById('boot-retry').hidden = false;
+    };
+    window.fusainBootDone = function () { done = true; clearTimeout(slow); var b = document.getElementById('boot'); if (b) b.remove(); };
+    window.addEventListener('error', function (e) { if (!e.filename || /\/js\//.test(e.filename)) window.fusainBootFail(); });
+    var slow = setTimeout(function () { window.fusainBootFail('Le chargement est anormalement long. Vérifie la connexion, puis recharge.'); }, 30000);
+  })();
+</script>
 <header class="topbar safe-top">
   <a id="home" class="brand" href="./" aria-label="Fusain, retour à l'accueil">
     <span class="brand-mark"><img src="favicon.svg" alt="" width="28" height="28"/></span>
@@ -39,6 +64,6 @@
 <div id="modals"></div>
 <div id="toasts" aria-live="polite"></div>
 <noscript><p style="padding:24px">Fusain a besoin de JavaScript.</p></noscript>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js" onerror="fusainBootFail()"></script>
 </body>
 </html>

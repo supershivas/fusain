@@ -10,7 +10,7 @@ import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
 import { attach, fit, view, zoomAt, requestRender, resize, invalidate, colorAt, rotateView, hooks, toScreen, toPage, bubbleRotHandle } from './view.js';
 import { colorDrop, fillSelection } from './tools.js';
 import { attachInput, typing } from './input.js';
-import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx } from './model.js';
+import { LAYOUTS, pageSize, panelStroke, DRAFT_COLORS, bppOf, mmToPx, FOLIO_POSITIONS } from './model.js';
 import { allTramas, tramaById, drawTramaSwatch, encodeTrama, saveToLibrary, removeFromLibrary, DITHER_METHODS, ditherGray, imageToGray } from './tramas.js';
 import { BUBBLE_KINDS, SHAPES as BUBBLE_SHAPES, TAILS, props, preset, bubblePanelOf, bubbleToPage } from './bubbles.js';
 import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } from './ui-core.js';
@@ -61,6 +61,7 @@ export function loadPrefs() {
     if (typeof p.pressureGamma === 'number') ed.pressureGamma = p.pressureGamma;
     if (['off', 'normal', 'strong'].includes(p.palm)) ed.palm = p.palm;
     if (typeof p.showNotes === 'boolean') ed.showNotes = p.showNotes;
+    if (['off', 'v', 'h', 'vh'].includes(p.symmetry)) ed.symmetry = p.symmetry;
     if (p.toolSettings && typeof p.toolSettings === 'object') ed.toolSettings = p.toolSettings;
     if (p.bubbleDefaults && typeof p.bubbleDefaults === 'object') ed.bubbleDefaults = p.bubbleDefaults;
     if (p.ditherOpts && typeof p.ditherOpts === 'object') ed.ditherOpts = p.ditherOpts;
@@ -81,7 +82,7 @@ export function savePrefs() {
   storeToolSettings();
   if (stampLibrary(ed)) syncSoon();   // pinceaux, réglages de trame ou modèles de bulles changés : on les partage
   try {
-    localStorage.setItem(prefsKey, JSON.stringify({ fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
+    localStorage.setItem(prefsKey, JSON.stringify({ schemaVersion: 1, symmetry: ed.symmetry, fingerDraws: ed.fingerDraws, pressure: ed.pressure, pressureGamma: ed.pressureGamma, palm: ed.palm, showNotes: ed.showNotes,
       toolSettings: ed.toolSettings, bubbleDefaults: ed.bubbleDefaults, ditherOpts: ed.ditherOpts, tool: ed.tool,
       color: ed.color, color2: ed.color2, recentColors: ed.recentColors,
       customBrushes: ed.customBrushes, brushSizes: ed.brushSizes, tramaPresets: ed.tramaPresets, bubbleTemplates: ed.bubbleTemplates, bubbleTemplate: ed.bubbleTemplate }));
@@ -401,13 +402,13 @@ function tramaControl() {
 export function renderOptbar() {
   const o = $('#optbar', root), t = ed.tool;
   let html = '';
-  if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush');
-  else if (t === 'eraser') html = paletteControl() + popBtn('brush');
+  if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush') + symBtn();
+  else if (t === 'eraser') html = paletteControl() + popBtn('brush') + symBtn();
   else if (t === 'fill') html = tramaControl() + gapControl() + popBtn('trama');
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
-      + tramaControl() + popBtn('trama');
+      + tramaControl() + popBtn('trama') + symBtn();
   } else if (t === 'mask') {
     html = `<span class="seg" role="group" aria-label="Effet du masque">
         <button data-mask="off" class="${ed.maskMode === 'off' ? 'on' : ''}">Sans effet</button>
@@ -682,6 +683,16 @@ function eraseSelection() {
 }
 
 const POP_BTN = { brush: ['adjustments-horizontal', 'Réglages'], trama: ['adjustments-horizontal', 'Réglages'], btext: ['typography', 'Texte'], bshape: ['shape', 'Forme'], btail: ['message-circle-plus', 'Queue'] };
+// Symétrie : un toucher passe de « sans » à axe vertical, horizontal, puis les deux.
+const SYMMETRY = { off: ['flip-vertical', 'Symétrie : aucune'], v: ['flip-vertical', 'Symétrie : axe vertical'], h: ['flip-horizontal', 'Symétrie : axe horizontal'], vh: ['border-inner', 'Symétrie : deux axes'] };
+const SYM_NEXT = { off: 'v', v: 'h', h: 'vh', vh: 'off' };
+const symBtn = () => { const [ic, label] = SYMMETRY[ed.symmetry] || SYMMETRY.off;
+  return `<button class="icon-btn icon-only ${ed.symmetry !== 'off' ? 'on' : ''}" data-sym="1" aria-pressed="${ed.symmetry !== 'off'}" title="${label}" aria-label="${label} (toucher pour changer)">${icon(ic)}</button>`; };
+function cycleSymmetry(to = SYM_NEXT[ed.symmetry] || 'v') {
+  ed.symmetry = to; savePrefs(); renderOptbar(); requestRender();
+  toast(SYMMETRY[to][1] + (to === 'off' ? '' : ', au centre de la case.'), { duration: 1600 });
+}
+
 const popBtn = id => id === 'brush' || id === 'trama'
   ? `<button class="icon-btn icon-only ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}" title="Réglages" aria-label="Réglages">${icon('adjustments-horizontal')}</button>`
   : `<button class="btn small ${popId === id ? 'on' : ''}" data-pop="${id}" aria-expanded="${popId === id}">${icon(POP_BTN[id][0])} ${POP_BTN[id][1]}</button>`;
@@ -746,6 +757,7 @@ function onOptbar(e) {
   }
   if (b.dataset.openfocus) { setFocus(true); return; }
   if (b.dataset.selmode || b.dataset.selop || b.dataset.selact || b.dataset.seltf) onSelect(b);
+  else if (b.dataset.sym) cycleSymmetry();
   else if (b.dataset.shape) { ed.shapeKind = b.dataset.shape; savePrefs(); renderToolbar(); renderOptbar(); }
   else if (b.dataset.mask) { ed.maskMode = b.dataset.mask; renderOptbar(); requestRender(); }
   else if (b.dataset.merge) { if (mergePanels(panel().id, b.dataset.merge)) toast('Cases fusionnées.', { actionLabel: 'Annuler', onAction: undo }); }
@@ -1179,7 +1191,22 @@ function popHtml() {
   return `<div class="pop-head"><b>${title}</b><button class="icon-btn icon-only" data-act="pop-close" aria-label="Fermer">${icon('x')}</button></div><div class="pop-body">${body()}</div>`;
 }
 
-function pageTab() { return pagesTab() + caseTab(); }
+function pageTab() { return pagesTab() + folioSec() + caseTab(); }
+
+// Numéros de page, pour tout le projet.
+function folioSec() {
+  const f = ed.project.folio || {}, on = !!f.on;
+  const body = `<label class="check compact"><input type="checkbox" id="f-on" ${on ? 'checked' : ''}> Numéroter les pages</label>
+    ${on ? `<label class="field inline"><span>Position</span><select id="f-pos">${FOLIO_POSITIONS.map(x => `<option value="${x.id}" ${x.id === (f.pos || 'bottom-center') ? 'selected' : ''}>${x.name}</option>`).join('')}</select></label>
+    <label class="field inline"><span>Premier numéro</span><input type="number" id="f-start" min="0" max="999" inputmode="numeric" value="${Number.isFinite(f.start) ? f.start : 1}" style="width:5em"></label>
+    <label class="check compact"><input type="checkbox" id="f-skip" ${f.skipFirst ? 'checked' : ''}> Pas de numéro sur la première page (couverture)</label>` : ''}
+    <small class="note">Le numéro se place dans la marge et s'imprime avec la page.</small>`;
+  return sec('pf', 'Numéros de page', body, false);
+}
+function setFolio(patch) {
+  ed.project.folio = { on: false, pos: 'bottom-center', start: 1, skipFirst: false, ...(ed.project.folio || {}), ...patch };
+  markChanged(); requestRender(); renderDock();
+}
 
 function layersTab() {
   const p = panel(), idx = page().panels.indexOf(p), cur = activeLayer(p), pg = page();
@@ -1787,6 +1814,9 @@ function onDockInput0(e) {
   }
   if (id === 'l-solo') { setSolo(activeLayer().id); return; }
   if (id === 'n-stroke') { setPanelStroke(+e.target.value); e.target.previousElementSibling.textContent = `Trait du cadre : ${fmtMm(+e.target.value)} mm`; return; }
+  if (id === 'f-on') { setFolio({ on: e.target.checked }); return; }
+  if (id === 'f-pos') { setFolio({ pos: e.target.value }); return; }
+  if (id === 'f-skip') { setFolio({ skipFirst: e.target.checked }); return; }
   if (id === 'n-show') { ed.showNotes = e.target.checked; savePrefs(); requestRender(); return; }
   if (!b || !/^b-/.test(id)) return;
   if (!bubbleBefore) bubbleBefore = snapshotBubble(b);
@@ -1826,6 +1856,7 @@ function onDockInput0(e) {
 }
 
 function onDockChange(e) {
+  if (e.target.id === 'f-start') { const v = Math.round(+e.target.value); if (e.target.value !== '' && v >= 0 && v <= 999) setFolio({ start: v }); return; }
   if (e.target.id === 'c-hex') { setColor(ed.color); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); return; }
   if (/^p-(shape|grainType|follow)$/.test(e.target.id || '')) { const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); renderOptbar(); return; }
   if (/^p-/.test(e.target.id || '')) { paintBrushPreviews($('#pop', root)); return; }
@@ -2212,6 +2243,8 @@ const COMMANDS = {
   'page-prev': () => goToPage(ed.pageIdx - 1), 'page-next': () => goToPage(ed.pageIdx + 1),
   fullscreen: () => toggleFullscreen(),
   dock: () => setDock(narrow() ? (dockOpen ? 'hidden' : 'full') : { full: 'mini', mini: 'hidden', hidden: 'full' }[dockMode()]),
+  symmetry: () => { if (!['pencil', 'eraser', 'shape'].includes(ed.tool)) setTool('pencil'); cycleSymmetry(); },
+  folio: () => { secState.pf = true; setFocus(false); showDock('page'); },
   notes: () => { ed.showNotes = !ed.showNotes; savePrefs(); requestRender(); },
   'hide-bubbles': () => togglePageBubbles(),
 };

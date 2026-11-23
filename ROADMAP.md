@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.52.3).
+Dernière mise à jour : 2026-11-23 (v1.53.0).
 
-## Fait (v1.29.0 → v1.52.3, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.53.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -73,9 +73,16 @@ Dernière mise à jour : 2026-11-23 (v1.52.3).
 - [x] Connexion par le lien de l'email collé, ou par le code à 6 chiffres (v1.52.2)
 - [x] Aperçu des projets synchronisé : visible sur l'accueil de tous les appareils (v1.52.3)
 
+### Dessin, album, conventions (v1.53)
+- [x] Symétrie : dessin en miroir autour du centre de la case (vertical, horizontal, deux axes) ; pinceau, gomme, formes
+- [x] Numéros de page : position (bas centre, bas extérieur, haut extérieur), premier numéro, couverture sans numéro
+- [x] Écran de chargement (règle du 14 novembre) ; échec de chargement affiché avec « Recharger »
+- [x] `schemaVersion` : projets (2) et sauvegardes JSON (2), anciens formats migrés, sauvegarde plus récente refusée
+
 ## Reste à faire
 
 ### À vérifier sur iPad
+- [ ] Symétrie au stylet (pinceaux à grain, gomme) et numéros de page à l'impression
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet
@@ -90,15 +97,10 @@ Dernière mise à jour : 2026-11-23 (v1.52.3).
 ### Outils de dessin
 - [ ] Règle droite (traits droits guidés)
 - [ ] Perspective à 1 et 2 points de fuite
-- [ ] Symétrie (dessin en miroir en direct)
 
 ### Album
-- [ ] Numéros de page
 - [ ] Page de couverture
 - [ ] Chemin de fer : toutes les pages en vignettes, réordonnables
-
-### Conventions
-- [ ] Vérifier l'écran de chargement (règle du 14 novembre) et le `schemaVersion` à l'import
 
 ### Impression (suite)
 - [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF

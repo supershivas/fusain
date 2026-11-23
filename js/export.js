@@ -1,13 +1,29 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
-import { pageSize, panelStroke, mmToPx } from './model.js';
+import { pageSize, panelStroke, mmToPx, folioOf } from './model.js';
 import { compositeRect } from './raster.js';
 import { drawPageBubble, props } from './bubbles.js';
-import { loadFont } from './fonts.js';
+import { loadFont, fontSpec, touchFont } from './fonts.js';
 import { encodePNGRGBA, canEncodePNG } from './png.js';
 
 // Les polices des bulles doivent être chargées avant de dessiner la page sur un canevas.
 export const ensureFonts = (project, pages) =>
-  Promise.all([...new Set(pages.flatMap(p => p.bubbles.map(b => props(b).font)))].map(loadFont));
+  Promise.all([...new Set([...pages.flatMap(p => p.bubbles.map(b => props(b).font)), ...(project.folio && project.folio.on ? [FOLIO_FONT] : [])])].map(loadFont));
+
+// Numéro de page, centré dans la marge du haut ou du bas ; « à l'extérieur » : à droite sur une page impaire, à gauche sur une paire.
+const FOLIO_FONT = 'inter', FOLIO_PT = 9;
+export function drawFolio(ctx, project, idx) {
+  const f = folioOf(project, idx);
+  if (!f) return;
+  touchFont(FOLIO_FONT);
+  const { w, h } = pageSize(project), dpi = project.dpi, m = mmToPx(Math.max(4, project.margin ?? 8), dpi), side = mmToPx(Math.max(4, project.margin ?? 8) + 2, dpi);
+  ctx.save();
+  ctx.font = fontSpec(FOLIO_FONT, FOLIO_PT / 72 * dpi);
+  ctx.fillStyle = '#000'; ctx.textBaseline = 'middle';
+  const y = f.pos === 'top-outer' ? m / 2 : h - m / 2;
+  if (f.pos === 'bottom-center') { ctx.textAlign = 'center'; ctx.fillText(String(f.n), w / 2, y); }
+  else { ctx.textAlign = f.right ? 'right' : 'left'; ctx.fillText(String(f.n), f.right ? w - side : side, y); }
+  ctx.restore();
+}
 
 // Bleu « non photo » : on imprime le crayonné dans ce bleu pour l'encrer à la main sur papier.
 export const BLUELINE = [164, 221, 237];
@@ -33,6 +49,7 @@ export function renderPage(project, page, scale = 1, opts = {}) {
     if (bw > 0) { ctx.strokeStyle = '#000'; ctx.lineWidth = bw; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   }
   if (bubbles && !page.bubblesHidden) for (const b of page.bubbles) if (!b.hidden) drawPageBubble(ctx, b, project.dpi, page.panels);
+  drawFolio(ctx, project, project.pages.indexOf(page));
   if (blue) toBlue(c);
   return c;
 }

@@ -9,6 +9,10 @@ const toDataURL = buf => new Promise((res, rej) => {
 });
 const fromDataURL = async url => (await fetch(url)).arrayBuffer();
 
+// Format des sauvegardes JSON. 1 : champ `schema` seul ; 2 : `schemaVersion`, projets numérotés (PROJECT_SCHEMA).
+export const EXPORT_SCHEMA = 2;
+const header = () => ({ format: 'fusain-export', schemaVersion: EXPORT_SCHEMA, schema: EXPORT_SCHEMA, exportedAt: new Date().toISOString() });
+
 async function exportRecord(rec) {
   const layers = {};
   const meta = rec.meta;
@@ -21,20 +25,20 @@ async function exportRecord(rec) {
 
 export async function exportAll() {
   const records = await listRecords();
-  return {
-    format: 'fusain-export', schema: 1, exportedAt: new Date().toISOString(),
-    projects: await Promise.all(records.map(exportRecord)),
-  };
+  return { ...header(), projects: await Promise.all(records.map(exportRecord)) };
 }
 
 export async function exportProject(id) {
   const rec = await getRecord(id);
-  return { format: 'fusain-export', schema: 1, exportedAt: new Date().toISOString(), projects: [await exportRecord(rec)] };
+  return { ...header(), projects: [await exportRecord(rec)] };
 }
 
 // Restaure une sauvegarde : chaque projet devient une copie (nouveaux identifiants) si son identifiant existe déjà.
 export async function importBackup(json) {
   if (!json || json.format !== 'fusain-export' || !Array.isArray(json.projects)) throw new Error('Ce fichier n\'est pas une sauvegarde Fusain.');
+  const version = json.schemaVersion ?? json.schema ?? 1;
+  if (version > EXPORT_SCHEMA) throw new Error('Cette sauvegarde vient d\'une version plus récente de Fusain : recharge l\'app pour la mettre à jour.');
+  // Schéma 1 → 2 : même structure ; chaque projet est migré à son ouverture (projectFromMeta).
   const existing = new Set((await listRecords()).map(r => r.id));
   let n = 0;
   for (const item of json.projects) {

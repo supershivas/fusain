@@ -58,6 +58,23 @@ function brushDiameter(pt, s, step) {
   return Math.max(1, Math.round(ed.size * f));
 }
 
+// Symétrie (ed.symmetry : 'off', 'v' axe vertical, 'h' axe horizontal, 'vh' les deux) autour du centre du cadre de la case.
+// Renvoie les transformations des points en coordonnées de calque (pixel x ↔ 2·gauche + largeur − 1 − x).
+function mirrorsOf(p) {
+  const m = ed.symmetry;
+  if (!m || m === 'off') return [];
+  const ax = 2 * (p.x - p.ex) + p.w - 1, ay = 2 * (p.y - p.ey) + p.h - 1, out = [];
+  if (m.includes('v')) out.push((x, y) => [ax - x, y]);
+  if (m.includes('h')) out.push((x, y) => [x, ay - y]);
+  if (m === 'vh') out.push((x, y) => [ax - x, ay - y]);
+  return out;
+}
+// Segment du trait et ses reflets.
+function segment(s, x0, y0, x1, y1, d0, d1) {
+  strokeSegment(s.ctx, x0, y0, x1, y1, d0, d1);
+  for (const f of s.mir) { const [a, b] = f(x0, y0), [c, d] = f(x1, y1); strokeSegment(s.ctx, a, b, c, d, d0, d1); }
+}
+
 function flush(s) {
   if (!s.ctx.dirty) return;
   const d = s.ctx.dirty;
@@ -106,9 +123,11 @@ function begin(p, pt) {
     ed.undo.begin({ pencil: currentTrama() ? 'Pinceau trame' : 'Pinceau', eraser: 'Gomme', mask: 'Masque' }[tool]);
     const sp = tool === 'pencil' || tool === 'eraser' ? ed.brushParams : null;
     const d = sp && sp.start > 0 ? Math.max(1, Math.round(ed.size * 0.3)) : diameter(pt);
-    session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly } };
+    session = { kind: 'stroke', p, layer, ctx: makeCtx(p, layer, paint, tool !== 'mask'), last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly }, mir: tool === 'mask' ? [] : mirrorsOf(p) };
     if (sp) session.ctx.brush = { spec: sp, seed: Math.floor(Math.random() * 1e6), n: 0, pr: pressureOf(pt) };
-    stampBrush(session.ctx, lx, ly, d); flush(session);
+    stampBrush(session.ctx, lx, ly, d);
+    for (const f of session.mir) stampBrush(session.ctx, ...f(lx, ly), d);
+    flush(session);
   } else if (tool === 'fill') {
     const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
     if (!region) return;
@@ -199,7 +218,7 @@ export function move(pt) {
     s.pos.x += (tx - s.pos.x) * k; s.pos.y += (ty - s.pos.y) * k;
     const lx = Math.round(s.pos.x), ly = Math.round(s.pos.y);
     const d = brushDiameter(pt, s, Math.hypot(lx - s.last.x, ly - s.last.y));
-    strokeSegment(s.ctx, s.last.x, s.last.y, lx, ly, s.last.d, d);
+    segment(s, s.last.x, s.last.y, lx, ly, s.last.d, d);
     s.last = { x: lx, y: ly, d };
     flush(s);
   } else if (session.kind === 'shape') {
@@ -230,7 +249,7 @@ export function up() {
   if (!s) return;
   if (s.kind === 'stroke') {
     if (s.ctx.brush && s.ctx.brush.spec.smooth && (s.last.x !== s.target.x || s.last.y !== s.target.y)) {   // rattrape le retard de la stabilisation
-      strokeSegment(s.ctx, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
+      segment(s, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
     }
     const entry = ed.undo.commit(); markChanged();
     inkHint(s.p, s.layer, entry, ed.tool);
@@ -243,9 +262,13 @@ export function up() {
     const x0 = Math.floor(s.x0 - p.ex), y0 = Math.floor(s.y0 - p.ey), x1 = Math.floor(s.x1 - p.ex), y1 = Math.floor(s.y1 - p.ey);
     ed.undo.begin({ line: 'Ligne', rect: 'Rectangle', ellipse: 'Ellipse' }[ed.shapeKind]);
     // les traits des formes suivent la même trame que les remplissages
-    if (ed.shapeKind === 'line') strokeSegment(ctx, x0, y0, x1, y1, ed.size);
-    else if (ed.shapeKind === 'rect') drawRect(ctx, x0, y0, x1, y1, ed.size, ed.shapeFilled);
-    else drawEllipse(ctx, x0, y0, x1, y1, ed.size, ed.shapeFilled);
+    const draw = (x0, y0, x1, y1) => {
+      if (ed.shapeKind === 'line') strokeSegment(ctx, x0, y0, x1, y1, ed.size);
+      else if (ed.shapeKind === 'rect') drawRect(ctx, x0, y0, x1, y1, ed.size, ed.shapeFilled);
+      else drawEllipse(ctx, x0, y0, x1, y1, ed.size, ed.shapeFilled);
+    };
+    draw(x0, y0, x1, y1);
+    for (const f of mirrorsOf(p)) draw(...f(x0, y0), ...f(x1, y1));
     ed.undo.commit();
     flush({ ctx, p });
     markChanged();
