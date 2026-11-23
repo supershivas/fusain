@@ -76,7 +76,24 @@ Dernière mise à jour : 2026-11-22 (v1.52.0).
 - [ ] Sélection : transformations, couper / copier / coller, remplir
 
 ### À faire par toi
-- [ ] Supabase : exécuter le bloc `fusain_library` de `supabase/fusain.sql` (bibliothèque partagée ; les Réglages le signalent tant qu'il manque)
+- [x] Supabase : exécuter `supabase/fusain.sql` (tables et bibliothèque partagée)
+- [ ] Fusain : saisir l'URL et la clé anon du projet Supabase dans les Réglages de chaque appareil, puis se connecter
+
+### À vérifier de bout en bout
+- [ ] Objectif v1.0 : page de 4 cases sur iPad → reprise sur un autre appareil → PDF imprimé
+
+### Outils de dessin
+- [ ] Règle droite (traits droits guidés)
+- [ ] Perspective à 1 et 2 points de fuite
+- [ ] Symétrie (dessin en miroir en direct)
+
+### Album
+- [ ] Numéros de page
+- [ ] Page de couverture
+- [ ] Chemin de fer : toutes les pages en vignettes, réordonnables
+
+### Conventions
+- [ ] Vérifier l'écran de chargement (règle du 14 novembre) et le `schemaVersion` à l'import
 
 ### Impression (suite)
 - [ ] Lettrage net : texte et cadres en vecteurs (ou texte à 1200 dpi) dans le PDF
