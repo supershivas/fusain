@@ -1,6 +1,6 @@
 // État de l'éditeur et actions sur le document (pages, cases, calques, bulles), toutes annulables.
 import {
-  newLayer, newPage, newBubble, pageLayers, ensureData, bppOf, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel, DRAFT_COLORS,
+  BLEED_MM, newLayer, newPage, newBubble, pageLayers, ensureData, bppOf, mmToPx, uid, layoutById, layoutRects, pageSize, newPanel, DRAFT_COLORS,
 } from './model.js';
 import { UndoStack, BUILTIN_BRUSHES, BRUSH_DEFAULTS, brushSpec } from './raster.js';
 import { saveProject, loadPage, unloadPage, setThumb } from './store.js';
@@ -390,7 +390,8 @@ export async function deletePage() {
 export async function addCover() {
   const project = ed.project, at = project.pages.findIndex(p => p.cover);
   if (at >= 0) { await goToPage(at); return false; }
-  const { w, h } = pageSize(project), panel = newPanel({ x: 0, y: 0, w, h });
+  const { w, h } = pageSize(project), b = mmToPx(BLEED_MM, project.dpi);
+  const panel = Object.assign(newPanel({ x: -b, y: -b, w: w + 2 * b, h: h + 2 * b }), { x: 0, y: 0, w, h });   // réserve sur le fond perdu dès le départ
   panel.stroke = 0;
   await loadFont('londrina');
   const title = newBubble('texte', 0, 0);

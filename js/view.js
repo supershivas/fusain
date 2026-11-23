@@ -1,7 +1,7 @@
 // Vue : une seule toile affiche la page (papier, cases, bulles, aides). Chaque case garde son propre
 // canevas, recomposé seulement là où on a dessiné.
 import { ed, page, gutterHandles, splitRects, mergeCandidates } from './editor.js';
-import { pageSize, panelStroke, mmToPx } from './model.js';
+import { pageSize, panelStroke, mmToPx, paintRect, hasBleed } from './model.js';
 import { compositeRect, maskRect } from './raster.js';
 import { drawPageBubble, tailOrigin, bubbleToPage } from './bubbles.js';
 import { drawFolio } from './export.js';
@@ -37,7 +37,7 @@ export const pageDims = () => pageSize(ed.project);
 export const focusPanel = () => (ed.focus && ed.project ? page().panels.find(p => p.id === ed.panelId) || null : null);
 export function viewBounds() {
   const f = focusPanel();
-  if (f) return { x: f.x, y: f.y, w: f.w, h: f.h };
+  if (f) return paintRect(ed.project, f);   // la case ouverte, avec son fond perdu
   const { w, h } = pageDims();
   return { x: 0, y: 0, w, h };
 }
@@ -116,7 +116,11 @@ export function setOverlay(o) { Object.assign(overlay, o); requestRender(); }
 
 // Image de la case à l'écran : seulement son cadre (l'étendue des calques peut être bien plus grande, voire sortir de la page).
 // Les rectangles sales sont en coordonnées de calque, bornés au cadre ; `out` traduit vers l'image du cadre.
-const frameRect = p => ({ x: p.x - p.ex, y: p.y - p.ey, w: p.w, h: p.h });
+// Partie montrée : le cadre, plus le fond perdu d'une case qui touche le bord de la page (s'il est déjà dans la réserve).
+const frameRect = p => {
+  const r = paintRect(ed.project, p), x0 = Math.max(0, r.x - p.ex), y0 = Math.max(0, r.y - p.ey);
+  return { x: x0, y: y0, w: Math.min(p.ew, r.x + r.w - p.ex) - x0, h: Math.min(p.eh, r.y + r.h - p.ey) - y0 };
+};
 function cacheOf(panel) {
   let c = caches.get(panel);
   const f = frameRect(panel);
@@ -209,9 +213,9 @@ function renderFrame() {
   ctx.imageSmoothingEnabled = s < 1;
   for (const p of fp ? [fp] : pg.panels) {
     const c = refresh(p);
-    ctx.drawImage(c.canvas, p.x, p.y);
+    ctx.drawImage(c.canvas, p.ex + c.fx, p.ey + c.fy);
     if (p.mask && ed.maskMode !== 'off' || (p.mask && ed.tool === 'mask')) {
-      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.x, p.y); }
+      if (p.id === ed.panelId) { ctx.imageSmoothingEnabled = s < 1; ctx.drawImage(refreshMask(p), p.ex + c.fx, p.ey + c.fy); }
     }
     if (ed.sel && ed.sel.panelId === p.id) drawSelection(p, ed.sel);
     const bw = mmToPx(panelStroke(p), ed.project.dpi);
@@ -229,6 +233,11 @@ function renderFrame() {
   }
 
   if (!fp) drawFolio(ctx, ed.project, ed.pageIdx);
+  // fond perdu : le bord de la page (trait de coupe) en pointillés, par-dessus le dessin qui le dépasse
+  if (pg.panels.some(p => (!fp || p === fp) && hasBleed(ed.project, p))) {
+    ctx.save(); ctx.strokeStyle = css('--accent') || '#C0392B'; ctx.lineWidth = 1.5 / s; ctx.setLineDash([8 / s, 6 / s]);
+    ctx.strokeRect(0, 0, w, h); ctx.restore();
+  }
   drawSymmetry(fp || pg.panels.find(p => p.id === ed.panelId));
   drawGuides(pg);
 

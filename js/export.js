@@ -1,5 +1,6 @@
 // Rendu d'une page à pleine résolution, PNG, vignettes et PDF (écrit à la main : aucune dépendance).
-import { pageSize, panelStroke, mmToPx, folioOf } from './model.js';
+import { pageSize, panelStroke, mmToPx, folioOf, BLEED_MM, paintRect, hasBleed } from './model.js';
+export { BLEED_MM };
 import { compositeRect } from './raster.js';
 import { drawPageBubble, props, bubbleToPage } from './bubbles.js';
 import { loadFont, fontSpec, touchFont } from './fonts.js';
@@ -144,7 +145,26 @@ function withBleed(canvas, b) {
   x.drawImage(canvas, 0, h - 1, 1, 1, 0, h + b, b, b); x.drawImage(canvas, w - 1, h - 1, 1, 1, w + b, h + b, b, b);
   return c;
 }
-export const BLEED_MM = 3, SLUG_MM = 10;   // fond perdu ; marge totale autour de la page coupée, traits de coupe compris
+export const SLUG_MM = 10;
+
+// Fond perdu dessiné : par-dessus les bords étirés, ce que l'auteur a dessiné au-delà de la page dans les cases qui touchent
+// un bord (paintRect). Seule la bande hors de la page est peinte ; la page elle-même garde son rendu.
+function bleedArt(c, project, page, b, drafts) {
+  const { w, h } = pageSize(project), x = c.getContext('2d');
+  for (const p of page.panels) {
+    if (!hasBleed(project, p)) continue;
+    const r = paintRect(project, p), x0 = Math.max(0, r.x - p.ex), y0 = Math.max(0, r.y - p.ey);
+    const rw = Math.min(p.ew, r.x + r.w - p.ex) - x0, rh = Math.min(p.eh, r.y + r.h - p.ey) - y0;
+    if (rw <= 0 || rh <= 0 || (rw === p.w && rh === p.h)) continue;   // réserve pas encore étendue : rien de dessiné au-delà
+    const t = document.createElement('canvas'); t.width = rw; t.height = rh;
+    const tx = t.getContext('2d'), img = tx.createImageData(rw, rh);
+    compositeRect(p, new Uint32Array(img.data.buffer), { x: x0, y: y0, w: rw, h: rh }, drafts, { export: true, out: { stride: rw, ox: x0, oy: y0 } });
+    tx.putImageData(img, 0, 0);
+    x.save(); x.beginPath(); x.rect(0, 0, c.width, c.height); x.rect(b, b, w, h); x.clip('evenodd');
+    x.drawImage(t, b + p.ex + x0, b + p.ey + y0);
+    x.restore();
+  }
+}   // fond perdu ; marge totale autour de la page coupée, traits de coupe compris
 
 export const COLOR_MODES = [
   { id: 'auto', name: 'Automatique', help: 'Noir et blanc 1 bit, ou couleur RVB si la planche a de la couleur ou des brouillons.' },
@@ -287,9 +307,9 @@ export async function buildPDF(project, { onProgress = () => {}, prepare = async
     onProgress(j, n);
     await prepare(pages[j]);
     let canvas = renderPage(project, pages[j], 1, { drafts, bubbles: bubbles && !letters });
+    if (bPx) { canvas = withBleed(canvas, bPx); bleedArt(canvas, project, pages[j], bPx, drafts); }
     release(pages[j]);
     if (checkDots && fineDotShare(canvas) > FINE_DOT_LIMIT) onFine(pageIdx[j]);
-    if (bPx) canvas = withBleed(canvas, bPx);
     const raw = mode === 'blue' || mode === 'gray' ? packGray(canvas) : mode === 'rgb' ? packRGB(canvas) : mode === 'cmyk' ? packCMYK(canvas) : packBits(canvas, colored);
     const space = mode === 'blue' ? '/ColorSpace [/Indexed /DeviceRGB 255 ' + BLUE_PALETTE + '] /BitsPerComponent 8'
       : mode === 'gray' ? '/ColorSpace /DeviceGray /BitsPerComponent 8'

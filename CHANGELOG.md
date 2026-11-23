@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.60.0 — 2026-11-23
+- Fond perdu dessiné : une case qui touche le bord de la page (la couverture, par exemple) se dessine jusqu'à 3 mm au-delà, bord de coupe en pointillés
+- PDF pour l'imprimeur : ce dessin remplit le fond perdu (les bords étirés ne servent plus que là où rien n'est dessiné)
+
 ## 1.59.1 — 2026-11-23
 - Sélection : le contenu se déplace sans limite, jusqu'à sortir entièrement de la page ; il reste visible, estompé, et se reprend pour le ramener
 - Agrandir avec les poignées ou faire un quart de tour ne coupe plus rien au bord de la case

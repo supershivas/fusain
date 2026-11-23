@@ -1,14 +1,14 @@
 // Outils au pointeur : crayon, pinceau trame, gomme, remplissage, formes, masque, bulles.
 // `down/move/up` reçoivent des points en coordonnées de page : { x, y, pressure, type }.
 import {
-  ed, page, activeLayer, toRGBA, fillLayer, moveStrokeBelow, snapNarration, resizeBubbleWidth, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
+  ed, page, activeLayer, growExtent, toRGBA, fillLayer, moveStrokeBelow, snapNarration, resizeBubbleWidth, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
 } from './editor.js';
 import {
   stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
 } from './raster.js';
 import { tramaById } from './tramas.js';
 import { invalidate, setOverlay, requestRender, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
-import { mmToPx } from './model.js';
+import { mmToPx, paintRect, hasBleed } from './model.js';
 import { hitBubble, tailOrigin, bubbleToLocal } from './bubbles.js';
 import { toast } from './toast.js';
 import { guideMode, hitHandle, dragHandle, snapStart, guidedPoint } from './guides.js';
@@ -21,7 +21,20 @@ export const wantsModifier = () => !!session && session.kind === 'selscale';
 export function remodify(held) { if (wantsModifier() && session.last) scaleMove(session, session.last, !!session.last.shift || held > 0); }
 
 // En mode case, seule la case ouverte reçoit les gestes.
-const panelAt = (x, y) => page().panels.find(p => (!ed.focus || p.id === ed.panelId) && x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) || null;
+// Zone de dessin : le cadre, prolongé du fond perdu là où la case touche le bord de la page.
+const panelAt = (x, y) => page().panels.find(p => { if (ed.focus && p.id !== ed.panelId) return false; const r = paintRect(ed.project, p); return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h; }) || null;
+// Zone de dessin en coordonnées de calque, bornée à l'étendue des calques.
+function paintClip(p) {
+  const r = paintRect(ed.project, p);
+  return { x0: Math.max(0, r.x - p.ex), y0: Math.max(0, r.y - p.ey), x1: Math.min(p.ew, r.x + r.w - p.ex), y1: Math.min(p.eh, r.y + r.h - p.ey) };
+}
+const insideOf = p => { const c = paintClip(p); return { x: c.x0, y: c.y0, w: c.x1 - c.x0, h: c.y1 - c.y0 }; };
+// Une case à fond perdu doit avoir sa réserve sur le fond perdu avant le premier trait (agrandie une fois, annulable).
+function withBleedRoom(p) {
+  if (!hasBleed(ed.project, p)) return p;
+  const r = paintRect(ed.project, p);
+  return growExtent(p, r);
+}
 
 // Motif courant : null = encre pleine, sinon la tuile de trame.
 const currentTrama = () => { const t = tramaById(ed.project, ed.tramaId); return t.solid ? null : t; };
@@ -31,7 +44,7 @@ function maskFor(p) {
 }
 
 function makeCtx(p, layer, paint, useMask = true) {
-  const clip = { x0: p.x - p.ex, y0: p.y - p.ey, x1: p.x - p.ex + p.w, y1: p.y - p.ey + p.h };
+  const clip = paintClip(p);
   const ctx = { layer, undo: ed.undo, ox: p.ex, oy: p.ey, clip, paint, mask: useMask ? maskFor(p) : null, dirty: null, alphaLock: !!(layer && layer.alphaLock) };
   if (layer && (layer.kind === 'color' || layer.rgba)) {   // calque RVBA : vraie opacité (chaque pixel mélangé une fois par trait)
     ctx.rgba = true;
@@ -113,6 +126,7 @@ export function down(pt) {
 }
 
 function begin(p, pt) {
+  p = withBleedRoom(p);
   selectPanel(p.id);
   // Calques tous pareils : chaque outil dessine dans le calque actif. Seul le remplissage évite un calque de référence
   // (il pose l'aplat dans un autre calque, créé au besoin sous la référence).
@@ -146,7 +160,7 @@ function begin(p, pt) {
     for (const f of session.mir) stampBrush(session.ctx, ...f(lx, ly), d);
     flush(session);
   } else if (tool === 'fill') {
-    const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
+    const region = floodRegion(compositeValues(p, false, insideOf(p)), p.ew, p.eh, lx, ly, fillGapPx());
     if (!region) return;
     ed.undo.begin('Remplir');
     const ctx = makeCtx(p, layer, { v: inkV(), trame, scale: ed.tramaScale, opaque: ed.tramaOpaque });
@@ -163,10 +177,11 @@ function begin(p, pt) {
 // Glisser-déposer de la couleur (ColorDrop) : la couleur principale lâchée sur le dessin remplit la zone
 // fermée sous le point, guidée par les calques de référence, dans un calque qui n'est pas une référence.
 export function colorDrop(pt) {
-  const p = panelAt(pt.x, pt.y);
+  let p = panelAt(pt.x, pt.y);
   if (!p) return false;
+  p = withBleedRoom(p);
   const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey);
-  const region = floodRegion(compositeValues(p, false), p.ew, p.eh, lx, ly, fillGapPx());
+  const region = floodRegion(compositeValues(p, false, insideOf(p)), p.ew, p.eh, lx, ly, fillGapPx());
   if (!region) return false;
   selectPanel(p.id);
   const layer = fillLayer(p);

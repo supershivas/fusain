@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.59.1).
+Dernière mise à jour : 2026-11-23 (v1.60.0).
 
-## Fait (v1.29.0 → v1.59.1, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.60.0, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -101,6 +101,7 @@ Dernière mise à jour : 2026-11-23 (v1.59.1).
 - [x] Couleur au choix : automatique, noir et blanc 1 bit (gris et couleurs tramés), niveaux de gris 8 bits, RVB, CMJN (gris et noir en K seul)
 - [x] Alerte sur les trames trop fines (points isolés d'un pixel à plus de 254 dpi), avec les pages concernées
 - [x] Fond perdu 3 mm (bords étirés), TrimBox / BleedBox, traits de coupe (une page par feuille)
+- [x] Fond perdu dessiné (v1.60) : une case qui touche un bord de la page se dessine 3 mm au-delà (pinceau, gomme, formes, remplissage, ColorDrop), bord de coupe en pointillés ; le PDF imprimeur l'utilise par-dessus les bords étirés
 - [x] Lettrage net (v1.56) : bulles et textes en deux masques 1 bit à 1200 dpi (fond blanc, encre) au-dessus de l'image de la page
 - [x] Lettrage net aussi en impression directe (v1.57) : une image PNG par bulle, 1200 dpi (au plus 16 Mpx), posée sur la page
 - [x] CMJN visé PDF/X-1a (v1.56) : intention de sortie FOGRA39 (condition enregistrée, sans profil ICC joint), TrimBox sur chaque feuille, identifiant, Trapped
@@ -108,6 +109,7 @@ Dernière mise à jour : 2026-11-23 (v1.59.1).
 ## Reste à faire
 
 ### À vérifier sur iPad
+- [ ] Fond perdu au stylet : dessiner depuis la marge grise sur la couverture
 - [ ] Symétrie au stylet (pinceaux à grain, gomme) et numéros de page à l'impression
 - [ ] Copier sur iPad : l'image arrive-t-elle dans le presse-papiers (Notes, Mac par Handoff) ?
 - [ ] Règle et perspective au stylet : poignées faciles à attraper, trait qui part dans la bonne direction ; chemin de fer : glisser à la poignée au doigt
@@ -124,7 +126,7 @@ Dernière mise à jour : 2026-11-23 (v1.59.1).
 
 ### Impression (suite)
 - [ ] PDF/X-1a : choisir le profil de l'imprimeur (aujourd'hui FOGRA39 fixe) ; conversion CMJN simple, sans profil ICC
-- [ ] Fond perdu dessiné : laisser dessiner jusqu'à 3 mm hors de la page dans les cases qui touchent le bord (aujourd'hui les bords sont étirés)
+- [ ] Fond perdu : les bulles et le cadre ne débordent pas encore dans le fond perdu ; impression directe (AirPrint) sans fond perdu
 
 ### À vérifier sur iPad (impression)
 - [ ] Imprimer par AirPrint depuis Safari et depuis l'app installée : format de page respecté, une page par feuille

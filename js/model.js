@@ -82,6 +82,17 @@ export function folioOf(project, idx) {
   return { n: (Number.isFinite(f.start) ? f.start : 1) + idx, pos: f.pos || 'bottom-center', right: idx % 2 === 0 };
 }
 
+// Fond perdu : une case qui touche un bord de la page se dessine jusqu'à BLEED_MM au-delà (pour l'imprimeur, qui coupe dans le dessin).
+export const BLEED_MM = 3;
+// Zone où l'on dessine dans la case, en pixels de page : le cadre, prolongé du fond perdu sur les bords qui touchent la page.
+export function paintRect(project, p) {
+  const { w, h } = pageSize(project), b = mmToPx(BLEED_MM, project.dpi), tol = 2;
+  const x0 = p.x <= tol ? -b : p.x, y0 = p.y <= tol ? -b : p.y;
+  const x1 = p.x + p.w >= w - tol ? w + b : p.x + p.w, y1 = p.y + p.h >= h - tol ? h + b : p.y + p.h;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+export const hasBleed = (project, p) => { const r = paintRect(project, p); return r.w !== p.w || r.h !== p.h; };
+
 export function pageSize(project) {
   return {
     w: mmToPx(project.format.wmm, project.dpi),

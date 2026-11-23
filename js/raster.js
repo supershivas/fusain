@@ -517,7 +517,8 @@ const C_MASK = 0x802B39C0;
 
 // Valeurs composées (0/1/2) d'une case, sans les brouillons : sert au remplissage et à l'export.
 // Hors du cadre visible, la valeur est 1 (encre) : un remplissage s'arrête au bord de la case.
-export function compositeValues(panel, includeDraft = false) {
+// inside : zone où l'on peut remplir, en coordonnées de calque (le cadre par défaut ; avec le fond perdu, un peu plus).
+export function compositeValues(panel, includeDraft = false, inside = null) {
   const out = new Uint8Array(panel.ew * panel.eh);
   // calques « référence » visibles : eux seuls guident le remplissage (le dessin de l'auteur reste séparé des aplats)
   const refs = panel.layers.filter(l => l.reference && l.visible && l.data);
@@ -530,9 +531,9 @@ export function compositeValues(panel, includeDraft = false) {
     }
     for (let i = 0; i < d.length; i++) if (d[i]) out[i] = d[i];
   }
-  const x0 = panel.x - panel.ex, y0 = panel.y - panel.ey;
+  const f = inside || { x: panel.x - panel.ex, y: panel.y - panel.ey, w: panel.w, h: panel.h }, x0 = f.x, y0 = f.y;
   for (let y = 0; y < panel.eh; y++) for (let x = 0; x < panel.ew; x++) {
-    if (x < x0 || y < y0 || x >= x0 + panel.w || y >= y0 + panel.h) out[y * panel.ew + x] = INK;
+    if (x < x0 || y < y0 || x >= x0 + f.w || y >= y0 + f.h) out[y * panel.ew + x] = INK;
   }
   return out;
 }
