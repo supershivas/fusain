@@ -212,19 +212,22 @@ export function newBubble(kind, x, y) {
 }
 
 // Description du projet sans pixels : ce qui part dans la table et dans l'export JSON.
+// Copie GÉNÉRIQUE : toute propriété d'un projet, d'une page, d'une case ou d'un calque voyage (nouveaux types de calques,
+// nouveaux réglages…), sauf l'état de travail ci-dessous et les clés en « _ ». Rien n'est à ajouter ici pour une nouveauté.
+const LAYER_RUNTIME = new Set(['data', 'loaded', 'dirty', 'w', 'h']);
+const metaOf = (o, skip) => {
+  const out = {};
+  for (const [k, v] of Object.entries(o)) if (!skip.has(k) && k[0] !== '_' && v !== undefined && typeof v !== 'function') out[k] = v;
+  return out;
+};
+const layerMeta = l => metaOf(l, LAYER_RUNTIME);
 export function projectMeta(project) {
-  const layerMeta = l => ({ id: l.id, name: l.name, visible: l.visible, kind: l.kind, draft: l.draft, opacity: l.opacity, locked: l.locked, color: l.color, rgba: l.rgba || undefined, reference: l.reference || undefined, alphaLock: l.alphaLock || undefined, noInkHint: l.noInkHint || undefined, gradient: l.kind === 'gradmap' ? l.gradient : undefined, blend: l.blend && l.blend !== 'normal' ? l.blend : undefined, rev: l.rev });
   return {
+    ...metaOf(project, new Set(['pages'])),
     schemaVersion: PROJECT_SCHEMA,
-    id: project.id, title: project.title, createdAt: project.createdAt, updatedAt: project.updatedAt,
-    deleted: project.deleted, format: project.format, dpi: project.dpi,
-    margin: project.margin, gutter: project.gutter, tramas: project.tramas, brushSet: project.brushSet, palettes: project.palettes, paletteId: project.paletteId, folio: project.folio,
     pages: project.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles, bubblesHidden: p.bubblesHidden, guide: p.guide, cover: p.cover || undefined,
-      panels: p.panels.map(c => ({
-        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, ex: c.ex, ey: c.ey, ew: c.ew, eh: c.eh, stroke: c.stroke, active: c.active, note: c.note,
-        layers: c.layers.map(layerMeta), mask: c.mask ? layerMeta(c.mask) : null,
-      })),
+      ...metaOf(p, new Set(['panels'])),
+      panels: p.panels.map(c => ({ ...metaOf(c, new Set(['layers', 'mask'])), layers: c.layers.map(layerMeta), mask: c.mask ? layerMeta(c.mask) : null })),
     })),
   };
 }
@@ -232,16 +235,17 @@ export function projectMeta(project) {
 // Reconstruit un projet depuis ses métadonnées ; les pixels restent à charger (`loaded: false`).
 // Migration du schéma 1 : étendue des calques (ex, ey, ew, eh) = cadre, type de calque déduit du nom, notes vides.
 export function projectFromMeta(meta) {
-  const layer = (l, w, h) => ({ id: l.id, name: l.name, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal', gradient: kindOf(l) === 'gradmap' ? { stops: cloneStops((l.gradient && l.gradient.stops) || GRADIENT_PRESETS[0].stops) } : undefined,
+  // tout ce que porte le calque est gardé (générique) ; seuls les réglages connus reçoivent une valeur par défaut
+  const layer = (l, w, h) => ({ ...l, visible: l.visible !== false, kind: kindOf(l), draft: kindOf(l) === 'draft', opacity: l.opacity ?? 100, locked: !!l.locked, color: kindOf(l) === 'draft' ? (l.color || 'blue') : l.color, rgba: !!l.rgba, reference: !!l.reference, alphaLock: !!l.alphaLock, noInkHint: !!l.noInkHint, blend: l.blend || 'normal', gradient: kindOf(l) === 'gradmap' ? { stops: cloneStops((l.gradient && l.gradient.stops) || GRADIENT_PRESETS[0].stops) } : undefined,
     w, h, data: null, loaded: false, dirty: false, rev: l.rev || null });
   return {
     ...meta,
     schemaVersion: PROJECT_SCHEMA,
     tramas: meta.tramas || [],
     pages: meta.pages.map(p => ({
-      id: p.id, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden, guide: p.guide, cover: !!p.cover,
+      ...p, bubbles: p.bubbles || [], bubblesHidden: !!p.bubblesHidden, cover: !!p.cover,
       panels: p.panels.map(c => ({
-        id: c.id, x: c.x, y: c.y, w: c.w, h: c.h, stroke: c.stroke, active: c.active, note: c.note || { plan: '', description: '' },
+        ...c, note: c.note || { plan: '', description: '' },
         ex: c.ex ?? c.x, ey: c.ey ?? c.y, ew: c.ew ?? c.w, eh: c.eh ?? c.h,
         layers: c.layers.map(l => layer(l, c.ew ?? c.w, c.eh ?? c.h)),
         mask: c.mask ? layer(c.mask, c.ew ?? c.w, c.eh ?? c.h) : null,

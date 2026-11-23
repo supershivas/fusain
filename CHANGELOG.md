@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.61.6 — 2026-11-23
+- Synchronisation : toute la description des calques, cases et pages voyage, y compris les nouveaux types de calques (cartes de dégradé) et leurs futurs réglages
+
 ## 1.61.5 — 2026-11-23
 - Synchronisation : une modification reçue d'un autre appareil pendant que le projet est ouvert n'est plus écrasée par la copie locale (les cartes de dégradé et tout le reste se synchronisent)
 - Réglages en trois onglets, Stylet, Compte, App : textes raccourcis, serveur Supabase et nouveautés repliés

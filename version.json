@@ -1,9 +1,7 @@
 {
-  "version": "1.61.5",
+  "version": "1.61.6",
   "date": "2026-11-23",
   "changes": [
-    "Synchronisation : une modification reçue d'un autre appareil pendant que le projet est ouvert n'est plus écrasée par la copie locale (les cartes de dégradé et tout le reste se synchronisent)",
-    "Réglages en trois onglets, Stylet, Compte, App : textes raccourcis, serveur Supabase et nouveautés repliés",
-    "Volet réduit (iPad) : bouton pour ajouter une carte de dégradé"
+    "Synchronisation : toute la description des calques, cases et pages voyage, y compris les nouveaux types de calques (cartes de dégradé) et leurs futurs réglages"
   ]
 }
