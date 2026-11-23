@@ -315,8 +315,10 @@ export function saveNow(withThumb = false) {
   return saving;
 }
 
-export async function closeEditor() {
-  await saveNow(true);
+// save = false : la version enregistrée vient d'être remplacée (synchronisation, autre onglet) et rien n'est en attente ici ;
+// réenregistrer la copie en mémoire écraserait la version reçue.
+export async function closeEditor({ save = true } = {}) {
+  if (save) await saveNow(true);
   if (ed.project) { for (const p of ed.project.pages) { dropCaches(p); unloadPage(p); } }
   ed.project = null; ed.panelId = null; ed.bubbleId = null; ed.undo.clear();
 }

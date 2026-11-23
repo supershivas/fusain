@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.61.5 — 2026-11-23
+- Synchronisation : une modification reçue d'un autre appareil pendant que le projet est ouvert n'est plus écrasée par la copie locale (les cartes de dégradé et tout le reste se synchronisent)
+- Réglages en trois onglets, Stylet, Compte, App : textes raccourcis, serveur Supabase et nouveautés repliés
+
 ## 1.61.4 — 2026-11-23
 - Volet réduit (iPad) : un bouton ajoute une carte de dégradé, à côté du « + » des calques
 

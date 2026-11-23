@@ -50,12 +50,12 @@ sync.onStatus(renderSyncDot);
 
 setOpenProject(id => { location.hash = '#/p/' + id; });
 
-async function leaveEditor() {
+async function leaveEditor({ save = true } = {}) {
   if (!inEditor) return;
   inEditor = false;
   setMenus(false);
   unmountEditor();
-  await closeEditor();
+  await closeEditor({ save });
 }
 
 async function showHome() {
@@ -65,8 +65,9 @@ async function showHome() {
   await renderHome(root);
 }
 
-async function showEditor(id) {
-  await leaveEditor();
+// reload : la version enregistrée a changé ailleurs (autre appareil, autre onglet) ; on la relit sans réenregistrer la nôtre.
+async function showEditor(id, { reload = false } = {}) {
+  await leaveEditor({ save: !(reload && !hasPendingSave()) });
   const opened = await loadProjectRecord(id);
   if (!opened) { toast('Projet introuvable.', { type: 'error' }); location.hash = ''; return; }
   await openInEditor(opened.project, 0);
@@ -95,7 +96,7 @@ onBroadcast(msg => {
   if (msg.type !== 'saved') return;
   if (!inEditor) { renderHome(root); return; }
   if (ed.project && msg.id === ed.project.id) {
-    toast('Ce projet a été modifié dans un autre onglet.', { actionLabel: 'Recharger', duration: 10000, onAction: () => showEditor(ed.project.id) });
+    toast('Ce projet a été modifié dans un autre onglet.', { actionLabel: 'Recharger', duration: 10000, onAction: () => showEditor(ed.project.id, { reload: true }) });
   }
 });
 
@@ -104,7 +105,7 @@ window.addEventListener('fusain:remote-updated', e => {
   if (!inEditor) { renderHome(root); return; }
   if (ed.project && id === ed.project.id) {
     if (gone) { toast('Ce projet a été supprimé sur un autre appareil.'); location.hash = ''; }
-    else if (!hasPendingSave()) { toast('Mis à jour depuis un autre appareil.'); showEditor(id); }
+    else if (!hasPendingSave()) { toast('Mis à jour depuis un autre appareil.'); showEditor(id, { reload: true }); }
   }
 });
 window.addEventListener('fusain:thumbs', () => { if (!inEditor) renderHome(root); });

@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.61.4).
+Dernière mise à jour : 2026-11-23 (v1.61.5).
 
-## Fait (v1.29.0 → v1.61.4, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.61.5, 22-23 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -72,6 +72,8 @@ Dernière mise à jour : 2026-11-23 (v1.61.4).
 - [x] Adresse Supabase collée avec un chemin corrigée toute seule (v1.52.1)
 - [x] Connexion par le lien de l'email collé, ou par le code à 6 chiffres (v1.52.2)
 - [x] Aperçu des projets synchronisé : visible sur l'accueil de tous les appareils (v1.52.3)
+- [x] Modification reçue pendant que le projet est ouvert : relue sans réenregistrer la copie en mémoire par-dessus (v1.61.5)
+- [x] Réglages en trois onglets : Stylet, Compte, App (v1.61.5)
 - [x] Synchronisation pendant l'écran de chargement, avant l'accueil (au plus 12 s, puis en arrière-plan) (v1.61.3)
 
 ### Dessin, album, conventions (v1.53)
