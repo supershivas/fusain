@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-23 (v1.61.6).
+Dernière mise à jour : 2026-11-24 (v1.62.0).
 
-## Fait (v1.29.0 → v1.61.6, 22-23 novembre 2026)
+## Fait (v1.29.0 → v1.62.0, 22-24 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -15,6 +15,9 @@ Dernière mise à jour : 2026-11-23 (v1.61.6).
 - [x] Courbe du curseur de taille revue (petites tailles compactes, grandes fines) (v1.39.1)
 - [x] Pression par défaut 100 %, taille à pression nulle 10 % (v1.43.2)
 - [x] Bibliothèque personnelle synchronisée entre appareils : pinceaux, gommes, réglages de trame, modèles de bulles (v1.32)
+- [x] Palette : glisser un pinceau pour le ranger ; appui long = menu Renommer, Rétablir, Supprimer (v1.62)
+- [x] Nouveau projet : trois pinceaux seulement (Crayon HB, Plume G, Crayon de couleur) (v1.62)
+- [x] Pinceaux de peinture : trois aquarelles (ronde, lavis, granuleuse), gouache, acrylique (v1.62)
 
 ### Couleur
 - [x] Couleur : calques RVBA par case, PDF en couleur (v1.31)
@@ -58,6 +61,7 @@ Dernière mise à jour : 2026-11-23 (v1.61.6).
 - [x] Curseurs redessinés dans toute l'app (bouton aux deux bouts) ; boutons longs à la ligne (v1.47.2)
 - [x] Info-bulles au long appui : titre, raccourci, description (v1.50)
 - [x] Traits hachés au stylet rapide : points en retard ignorés (v1.50.1)
+- [x] Messages en bas à droite, hors de la barre des pinceaux ; clavier ouvert tout seul pour renommer (v1.62)
 
 ### Labo
 - [x] Groupes Dessin, Couleur, Planche (v1.40) et Calques, sujets Curseurs, Taille des bulles, Narration au bord (v1.48)
@@ -123,6 +127,8 @@ Dernière mise à jour : 2026-11-23 (v1.61.6).
 - [ ] Règle et perspective au stylet : poignées faciles à attraper, trait qui part dans la bonne direction ; chemin de fer : glisser à la poignée au doigt
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
+- [ ] Palette (v1.62) : appui long puis glisser au doigt et au stylet, sans faire défiler la barre ; clavier ouvert en renommant un calque, un pinceau, une palette, un projet
+- [ ] Aquarelle, lavis, gouache, acrylique : fluidité du trait en grande taille sur une page A4 à 300 dpi
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet
 - [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 
@@ -145,6 +151,6 @@ Dernière mise à jour : 2026-11-23 (v1.61.6).
 ### Améliorations possibles
 - [ ] Carte de dégradé : la limiter au calque juste dessous (masque d'écrêtage) ; l'appliquer définitivement (pixellisation)
 - [ ] Guides : ellipses en perspective ; rectangles de l'outil Forme en perspective
-- [ ] Labo : ajouter la carte de dégradé, les options de sélection, les info-bulles et la navigation dans le volet
+- [ ] Labo : ajouter les pinceaux de peinture et la palette glissable (v1.62), la carte de dégradé, les options de sélection, les info-bulles et la navigation dans le volet
 - [ ] Sélection : coller une image venue du presse-papiers du système (autre app, autre appareil) ; rotation libre à la poignée
 - [ ] Info-bulles : couvrir les curseurs de taille et d'opacité (leur appui long pose déjà un repère) et compléter les explications des éléments qui n'ont que leur libellé
