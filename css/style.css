@@ -86,6 +86,17 @@ a { color: inherit; }
   background: var(--bar-bg); color: var(--bar-fg);
   border-bottom: 1px solid var(--bar-border);
 }
+/* App installée sur iPad / iPhone : la barre d'état d'iOS (heure, wifi, batterie) est dessinée par-dessus la page,
+   dans la marge `safe-top` de l'en-tête. On lui donne sa propre bande, plus sombre et séparée par un filet,
+   pour qu'elle ne semble plus posée sur l'en-tête (rien ne change hors app installée : la marge vaut 0). */
+.topbar.safe-top {
+  --sat: env(safe-area-inset-top, 0px);
+  padding-top: calc(var(--sat) * 1.15);
+  background:
+    linear-gradient(#000, #000) top / 100% var(--sat) no-repeat,
+    linear-gradient(var(--bar-border), var(--bar-border)) 0 var(--sat) / 100% min(1px, var(--sat)) no-repeat,
+    var(--bar-bg);
+}
 .brand { display: flex; align-items: center; gap: 10px; min-height: var(--tap); text-decoration: none; flex: none; }
 .brand-mark { width: 28px; height: 28px; border-radius: 7px; overflow: hidden; display: block; }
 .brand-mark img { width: 100%; height: 100%; display: block; }

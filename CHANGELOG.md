@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.62.1 — 2026-11-24
+- App installée sur iPad : la barre d'état (heure, wifi, batterie) a sa propre bande au-dessus de l'en-tête, au lieu d'empiéter dessus
+
 ## 1.62.0 — 2026-11-24
 - Palette de pinceaux : on les range en les faisant glisser ; un appui long ouvre un petit menu Renommer, Rétablir, Supprimer
 - Nouveaux pinceaux de peinture : trois aquarelles, gouache, acrylique ; un nouveau projet démarre avec trois pinceaux (crayon HB, plume G, crayon de couleur)

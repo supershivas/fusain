@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-24 (v1.62.0).
+Dernière mise à jour : 2026-11-24 (v1.62.1).
 
-## Fait (v1.29.0 → v1.62.0, 22-24 novembre 2026)
+## Fait (v1.29.0 → v1.62.1, 22-24 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -62,6 +62,7 @@ Dernière mise à jour : 2026-11-24 (v1.62.0).
 - [x] Info-bulles au long appui : titre, raccourci, description (v1.50)
 - [x] Traits hachés au stylet rapide : points en retard ignorés (v1.50.1)
 - [x] Messages en bas à droite, hors de la barre des pinceaux ; clavier ouvert tout seul pour renommer (v1.62)
+- [x] App installée : la barre d'état d'iOS a sa propre bande au-dessus de l'en-tête (v1.62.1)
 
 ### Labo
 - [x] Groupes Dessin, Couleur, Planche (v1.40) et Calques, sujets Curseurs, Taille des bulles, Narration au bord (v1.48)
@@ -133,7 +134,7 @@ Dernière mise à jour : 2026-11-24 (v1.62.0).
 - [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 
 ### À faire par toi
-- [ ] Exécuter `supabase/fusain.sql` dans l'éditeur SQL de Supabase (crée la table `fusain_library`, absente : partage de la bibliothèque de pinceaux, trames et modèles de bulles entre appareils). Le fichier est ré-exécutable sans erreur.
+- [x] Exécuter `supabase/fusain.sql` dans l'éditeur SQL de Supabase — table `fusain_library` présente, vérifiée le 24 novembre ( partage de la bibliothèque de pinceaux, trames et modèles de bulles entre appareils). Le fichier est ré-exécutable sans erreur.
 - Pour un nouvel appareil : Réglages → URL et clé anon du projet Supabase, puis email et code.
 
 ### À vérifier de bout en bout
