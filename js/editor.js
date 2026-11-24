@@ -116,6 +116,14 @@ export function brushSlots(tool = ed.tool) {
     }
     set.pressV = 2;
   }
+  // v1.63.1 : les pinceaux de peinture livrés posent leurs tampons deux fois moins serrés (même rendu, plus rapide)
+  if ((set.spaceV || 1) < 2) {
+    const OLD = { aquarelle: 0.12, lavis: 0.12, aquagrain: 0.12, gouache: 0.12, acrylique: 0.1 };
+    for (const list of [set.pencil, set.eraser]) for (const sl of list || []) {
+      if (OLD[sl.base] !== undefined && sl.spec && sl.spec.spacing === OLD[sl.base]) sl.spec.spacing = brushSpec(sl.base).spacing;
+    }
+    set.spaceV = 2;
+  }
   // anciens projets : la palette du « pinceau trame » rejoint celle du pinceau (ses pinceaux gardent leur trame)
   if (tool === 'pencil' && Array.isArray(set.texture)) {
     for (const s of set.texture) if (set.pencil.length < SLOT_MAX && !set.pencil.some(x => x.id === s.id)) set.pencil.push({ ...s, tramaId: s.tramaId || 'g25' });

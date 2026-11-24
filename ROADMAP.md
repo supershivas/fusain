@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-24 (v1.63.0).
+Dernière mise à jour : 2026-11-24 (v1.63.1).
 
-## Fait (v1.29.0 → v1.63.0, 22-24 novembre 2026)
+## Fait (v1.29.0 → v1.63.1, 22-24 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -18,6 +18,7 @@ Dernière mise à jour : 2026-11-24 (v1.63.0).
 - [x] Palette : glisser un pinceau pour le ranger ; appui long = menu Renommer, Rétablir, Supprimer (v1.62)
 - [x] Nouveau projet : trois pinceaux seulement (Crayon HB, Plume G, Crayon de couleur) (v1.62)
 - [x] Pinceaux de peinture : trois aquarelles (ronde, lavis, granuleuse), gouache, acrylique (v1.62)
+- [x] Pinceaux à grain 2 à 5 fois plus rapides : grain lu dans des tables, cœur du tampon précédent sauté, pixels déjà peints ignorés, tampons de peinture moins serrés (v1.63.1)
 - [x] Vignettes de la palette lisibles : trait net, épaisseur selon la taille, nom du pinceau dessous (v1.63)
 - [x] Outil Estompe (touche U) : étire et fond la peinture du calque actif, taille et force aux curseurs (v1.63)
 - [x] Images pour le web : carré, portrait 4:5, bande verticale (cases une à une ou pages, en une image ou en morceaux de 1280 px), partage vers Photos (v1.63)
@@ -133,7 +134,7 @@ Dernière mise à jour : 2026-11-24 (v1.63.0).
 - [ ] Traits hachés et dédoublés au stylet rapide : confirmer que le correctif v1.50.1 suffit (sinon : noter pinceau, zoom, rotation)
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
 - [ ] Palette (v1.62) : appui long puis glisser au doigt et au stylet, sans faire défiler la barre ; clavier ouvert en renommant un calque, un pinceau, une palette, un projet
-- [ ] Aquarelle, lavis, gouache, acrylique : fluidité du trait en grande taille sur une page A4 à 300 dpi
+- [ ] Aquarelle, lavis, gouache, acrylique, estompe : fluidité du trait en grande taille sur l'iPad Pro 2020 après la v1.63.1 (sinon : noter pinceau, taille, calque noir et blanc ou couleur)
 - [ ] Estompe au stylet : force ressentie, fluidité en grande taille
 - [ ] Images pour le web : bouton « Partager » vers Photos et Instagram depuis l'app installée
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet

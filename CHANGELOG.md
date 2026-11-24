@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.63.1 — 2026-11-24
+- Pinceaux à grain plus rapides : aquarelle et gouache 3 à 5 fois, lavis 4 fois, acrylique, craie, fusain et estompe 2 fois
+
 ## 1.63.0 — 2026-11-24
 - Nouvel outil Estompe (U) : étire et fond la peinture comme un doigt ; curseurs taille et force
 - Images pour le web (menu Fichier) : carré ou portrait 4:5 pour Instagram, bande verticale façon webtoon, partage direct vers Photos

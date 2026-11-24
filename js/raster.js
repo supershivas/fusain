@@ -263,11 +263,11 @@ export const BUILTIN_BRUSHES = [
   B('plat', 'Pinceau plat', 'Pinceaux', { sizeMm: 4, shape: 'rect', ratio: 0.35, follow: true }),
   B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, smooth: 0.2 }),
   B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square' }),
-  B('aquarelle', 'Aquarelle ronde', 'Peinture', { sizeMm: 6, grainType: 'wash', grain: 0.5, grainScale: 2, spacing: 0.12, smooth: 0.3, pressMin: 0.3 }),
-  B('lavis', 'Lavis (aquarelle large)', 'Peinture', { sizeMm: 14, grainType: 'wash', grain: 0.32, grainScale: 4, spacing: 0.12, smooth: 0.35, pressMin: 0.5 }),
-  B('aquagrain', 'Aquarelle granuleuse', 'Peinture', { sizeMm: 8, grainType: 'wash', grain: 0.55, grainScale: 1, spacing: 0.12, scatter: 0.06, smooth: 0.25, pressMin: 0.35 }),
-  B('gouache', 'Gouache', 'Peinture', { sizeMm: 5, grainType: 'gouache', grain: 0.95, grainScale: 2, spacing: 0.12, speed: 0.2, smooth: 0.3, pressMin: 0.35 }),
-  B('acrylique', 'Acrylique', 'Peinture', { sizeMm: 7, shape: 'rect', ratio: 0.45, follow: true, grainType: 'acrylic', grain: 0.85, grainScale: 1.5, spacing: 0.1, smooth: 0.25, pressMin: 0.4 }),
+  B('aquarelle', 'Aquarelle ronde', 'Peinture', { sizeMm: 6, grainType: 'wash', grain: 0.5, grainScale: 2, spacing: 0.25, smooth: 0.3, pressMin: 0.3 }),
+  B('lavis', 'Lavis (aquarelle large)', 'Peinture', { sizeMm: 14, grainType: 'wash', grain: 0.32, grainScale: 4, spacing: 0.25, smooth: 0.35, pressMin: 0.5 }),
+  B('aquagrain', 'Aquarelle granuleuse', 'Peinture', { sizeMm: 8, grainType: 'wash', grain: 0.55, grainScale: 1, spacing: 0.25, scatter: 0.06, smooth: 0.25, pressMin: 0.35 }),
+  B('gouache', 'Gouache', 'Peinture', { sizeMm: 5, grainType: 'gouache', grain: 0.95, grainScale: 2, spacing: 0.25, speed: 0.2, smooth: 0.3, pressMin: 0.35 }),
+  B('acrylique', 'Acrylique', 'Peinture', { sizeMm: 7, shape: 'rect', ratio: 0.45, follow: true, grainType: 'acrylic', grain: 0.85, grainScale: 1.5, spacing: 0.2, smooth: 0.25, pressMin: 0.4 }),
   B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40 }),
   B('plate2', 'Plume plate suivie', 'Calligraphie', { sizeMm: 2.5, shape: 'nib', ratio: 0.2, follow: true }),
   B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15 }),
@@ -290,6 +290,40 @@ function vnoise(x, y) {
   const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
   return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
 }
+
+// Grain en tables : le bruit d'un pixel ne dépend que de sa place sur la page, on le lit donc dans une tuile
+// de 1024 × 1024 calculée une fois (bruit de valeur périodique, sans raccord visible), au lieu de le recalculer
+// à chaque tampon (un pixel est touché par 5 à 10 tampons successifs). Indice : ((py & 1023) << 10) | (px & 1023).
+const NT = 1024, NM = NT - 1;
+const noiseTabs = new Map();
+function noiseTab(scale) {
+  const P = Math.max(1, Math.min(NT, Math.round(NT / scale)));   // nombre de mailles sur la tuile : la période tombe juste
+  let t = noiseTabs.get(P);
+  if (t) return t;
+  const lat = new Float32Array(P * P);
+  for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) lat[j * P + i] = hash2(i + 131, j + 977);
+  t = new Uint8Array(NT * NT);
+  const k = P / NT;
+  for (let y = 0; y < NT; y++) {
+    const fy0 = y * k, yi = fy0 | 0, fy = smooth01(fy0 - yi), r0 = (yi % P) * P, r1 = ((yi + 1) % P) * P;
+    for (let x = 0; x < NT; x++) {
+      const fx0 = x * k, xi = fx0 | 0, fx = smooth01(fx0 - xi), c0 = xi % P, c1 = (xi + 1) % P;
+      const a = lat[r0 + c0], b = lat[r0 + c1], c = lat[r1 + c0], d = lat[r1 + c1];
+      t[y * NT + x] = Math.round(255 * ((a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy));
+    }
+  }
+  noiseTabs.set(P, t);
+  if (noiseTabs.size > 16) noiseTabs.delete(noiseTabs.keys().next().value);
+  return t;
+}
+let whiteTabCache = null;
+function whiteTab() {
+  if (whiteTabCache) return whiteTabCache;
+  const t = new Uint8Array(NT * NT);
+  for (let y = 0; y < NT; y++) for (let x = 0; x < NT; x++) t[y * NT + x] = Math.round(255 * hash2(x, y));
+  return (whiteTabCache = t);
+}
+const I255 = 1 / 255;
 
 const isPlain = sp => sp.shape === 'round' && sp.grainType === 'none' && sp.grain >= 1 && !sp.scatter;
 
@@ -321,51 +355,81 @@ export function stampBrush(ctx, cx, cy, d, dir) {
     grow(ctx, cx - half, cy - half, cx + half + 1, cy + half + 1);
     return;
   }
-  const dx = dir ? dir.x : 1, dy = dir ? dir.y : 0;
-  for (let y = -half; y <= half; y++) for (let x = -half; x <= half; x++) {
-    // forme
-    let inside, rr = 0;   // rr : distance au centre rapportée au bord (0 au centre, 1 au bord)
-    if (sp.shape === 'round') { inside = x * x + y * y <= ra * ra + 0.25; rr = Math.sqrt(x * x + y * y) / ra; }
-    else if (sp.shape === 'square') { inside = Math.abs(x) <= ra && Math.abs(y) <= ra; rr = Math.max(Math.abs(x), Math.abs(y)) / ra; }
-    else {
-      const u = x * ca + y * sa, v = -x * sa + y * ca;
-      inside = sp.shape === 'rect' ? Math.abs(u) <= ra && Math.abs(v) <= rb : (u * u) / (ra * ra) + (v * v) / (rb * rb) <= 1;
-      rr = sp.shape === 'rect' ? Math.max(Math.abs(u) / ra, Math.abs(v) / rb) : Math.sqrt((u * u) / (ra * ra) + (v * v) / (rb * rb));
+  const dx = dir ? dir.x : 1, dy = dir ? dir.y : 0, gt = sp.grainType, ox = ctx.ox, oy = ctx.oy;
+  // tables du grain de ce pinceau (lues par indice, voir noiseTab)
+  const WT = gt === 'none' || gt === 'bristle' ? null : whiteTab();
+  const TA = gt === 'paper' || gt === 'gouache' ? noiseTab(gs * 2.5) : gt === 'wash' ? noiseTab(gs * 4) : gt === 'acrylic' ? noiseTab(gs * 3) : null;
+  const TB = gt === 'wash' ? noiseTab(gs * 12) : gt === 'gouache' ? noiseTab(gs * 2) : null;
+  const TC = gt === 'gouache' ? noiseTab(gs * 8) : null;
+  // pixels déjà au plus fort pendant ce trait : on ne recalcule pas leur grain
+  const L = ctx.layer, W = L.w, rgba = !!ctx.rgba, seen = rgba ? ctx.seen : null;
+  const plainInk = !rgba && ctx.paint.v === 1 && !ctx.paint.trame && (ctx.paint.alpha ?? 1) >= 1;
+  // calque RVBA, trait opaque sans trame à grain tout-ou-rien : un pixel déjà de cette couleur, opaque, ne changerait pas
+  const rgb = ctx.paint.rgb || [0, 0, 0];
+  const plainRGBA = rgba && !ctx.alphaLock && ctx.paint.v === 1 && !ctx.paint.trame && (ctx.paint.alpha ?? 1) >= 1 && (gt === 'none' || gt === 'noise' || gt === 'paper' || gt === 'bristle');
+  const top = Math.round(255 * Math.min(1, (ctx.paint.alpha ?? 1) * (gt === 'wash' ? cov : gt === 'gouache' ? cov + 0.05 : 1)));
+  const round = sp.shape === 'round', square = sp.shape === 'square', rect = sp.shape === 'rect', needRR = gt === 'wash' || gt === 'gouache';
+  // Aquarelle et gouache : la valeur d'un pixel ne dépend que de sa place et de la pression ; à pression égale ou
+  // moindre, le cœur du tampon précédent (en deçà du bord irrégulier) est déjà peint au moins aussi fort : on le saute.
+  const pv = br.prev, inner = (gt === 'wash' ? 0.7 : gt === 'gouache' ? 0.86 : 0) * (pv ? pv.r : 0);
+  const skip2 = round && pv && pv.round && pv.layer === L && cov <= pv.cov + 1e-6 ? inner * inner : 0;
+  br.prev = { x: cx, y: cy, r: ra, cov, round, layer: L };
+  const ra2 = ra * ra, ira = 1 / ra, ira2 = 1 / (ra * ra), irb2 = 1 / (rb * rb), irb = 1 / rb;
+  for (let y = -half; y <= half; y++) {
+    let xa = -half, xb = half;
+    if (round) { const w2 = ra2 + 0.25 - y * y; if (w2 < 0) continue; const w = Math.floor(Math.sqrt(w2)); xa = -w; xb = w; }   // le disque, ligne par ligne
+    const ly = cy + y, py = ly + oy;
+    if (ly < 0 || ly >= L.h) continue;
+    for (let x = xa; x <= xb; x++) {
+      const lx = cx + x;
+      if (lx < 0 || lx >= W) continue;
+      // forme
+      let rr = 0;   // distance au centre rapportée au bord (0 au centre, 1 au bord)
+      if (round) { if (needRR) rr = Math.sqrt(x * x + y * y) * ira; }
+      else if (square) { if (Math.abs(x) > ra || Math.abs(y) > ra) continue; rr = Math.max(Math.abs(x), Math.abs(y)) * ira; }
+      else {
+        const u = x * ca + y * sa, v = -x * sa + y * ca;
+        if (rect ? Math.abs(u) > ra || Math.abs(v) > rb : u * u * ira2 + v * v * irb2 > 1) continue;
+        rr = rect ? Math.max(Math.abs(u) * ira, Math.abs(v) * irb) : Math.sqrt(u * u * ira2 + v * v * irb2);
+      }
+      if (skip2) { const ex = lx - pv.x, ey = ly - pv.y; if (ex * ex + ey * ey < skip2) continue; }
+      const k = ly * W + lx;
+      if (plainInk ? data[k] === 1 : plainRGBA ? data[k * 4 + 3] === 255 && data[k * 4] === rgb[0] && data[k * 4 + 1] === rgb[1] && data[k * 4 + 2] === rgb[2] : seen && seen[k] >= top) continue;   // rien ne changerait
+      // grain
+      const px = lx + ox;
+      if (gt === 'noise') {
+        const edge = (x * x + y * y) / (ra2 + 1), qx = Math.floor(px / gs), qy = Math.floor(py / gs);
+        if (WT[((qy & NM) << 10) | (qx & NM)] * I255 >= cov * (1 - 0.5 * edge)) continue;
+      } else if (gt === 'paper') {
+        const i = ((py & NM) << 10) | (px & NM);
+        if (TA[i] * I255 * 0.65 + WT[i] * I255 * 0.35 >= cov) continue;
+      } else if (gt === 'bristle') {
+        const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs));
+        if (hash2(bristle, br.seed) >= cov) continue;
+      } else if (gt === 'wash') {
+        // aquarelle : bord irrégulier et pigment en nappes, accrochés à la page (les traits se raccordent),
+        // granulation fine ; transparente, elle fonce en repassant (un pixel par trait, puis glacis)
+        if (rr > 0.7 + 0.3 * TA[((py & NM) << 10) | (px & NM)] * I255) continue;
+        const qx = Math.floor(px / gs), qy = Math.floor(py / gs);
+        const pig = TB[(((py + 211) & NM) << 10) | ((px + 389) & NM)] * I255, gran = WT[((qy & NM) << 10) | (qx & NM)] * I255;
+        put(ctx, data, lx, ly, Math.min(1, cov * (0.5 + 0.5 * pig) * (0.78 + 0.22 * gran)));
+        continue;
+      } else if (gt === 'gouache') {
+        // gouache : couvrante et mate, bord un peu sec, le papier transparaît quand on appuie peu
+        const i = ((py & NM) << 10) | (px & NM);
+        if (rr > 0.86 + 0.14 * TB[i] * I255) continue;
+        if (TA[i] * I255 * 0.65 + WT[i] * I255 * 0.35 > cov + 0.35) continue;
+        put(ctx, data, lx, ly, Math.min(1, cov * (0.93 + 0.07 * TC[i] * I255) + 0.05));
+        continue;
+      } else if (gt === 'acrylic') {
+        // acrylique : traces de poils dans le sens du geste, épaisseur inégale d'un poil à l'autre
+        const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs)), hb = hash2(bristle, br.seed);
+        if (hb > cov + 0.12 || rr > 0.9 + 0.1 * hash2(bristle * 3 + 1, br.seed)) continue;
+        put(ctx, data, lx, ly, Math.min(1, (0.62 + 0.38 * hash2(bristle * 7 + 2, br.seed + 3)) * (0.88 + 0.12 * TA[((py & NM) << 10) | (px & NM)] * I255)));
+        continue;
+      }
+      put(ctx, data, lx, ly);
     }
-    if (!inside) continue;
-    // grain
-    const px = cx + x + ctx.ox, py = cy + y + ctx.oy;
-    if (sp.grainType === 'noise') {
-      const edge = (x * x + y * y) / (ra * ra + 1);
-      if (hash2(Math.floor(px / gs), Math.floor(py / gs)) >= cov * (1 - 0.5 * edge)) continue;
-    } else if (sp.grainType === 'paper') {
-      const tooth = vnoise(px / (gs * 2.5), py / (gs * 2.5)) * 0.65 + hash2(px, py) * 0.35;
-      if (tooth >= cov) continue;
-    } else if (sp.grainType === 'bristle') {
-      const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs));
-      if (hash2(bristle, br.seed) >= cov) continue;
-    } else if (sp.grainType === 'wash') {
-      // aquarelle : bord irrégulier et pigment en nappes, accrochés à la page (les traits se raccordent),
-      // granulation fine ; transparente, elle fonce en repassant (un pixel par trait, puis glacis)
-      if (rr > 0.7 + 0.3 * vnoise(px / (gs * 4), py / (gs * 4))) continue;
-      const pig = vnoise(px / (gs * 12) + 17, py / (gs * 12) + 5), gran = hash2(Math.floor(px / gs), Math.floor(py / gs));
-      put(ctx, data, cx + x, cy + y, Math.min(1, cov * (0.5 + 0.5 * pig) * (0.78 + 0.22 * gran)));
-      continue;
-    } else if (sp.grainType === 'gouache') {
-      // gouache : couvrante et mate, bord un peu sec, le papier transparaît quand on appuie peu
-      if (rr > 0.86 + 0.14 * vnoise(px / (gs * 2), py / (gs * 2))) continue;
-      const tooth = vnoise(px / (gs * 2.5), py / (gs * 2.5)) * 0.65 + hash2(px, py) * 0.35;
-      if (tooth > cov + 0.35) continue;
-      put(ctx, data, cx + x, cy + y, Math.min(1, cov * (0.93 + 0.07 * vnoise(px / (gs * 8), py / (gs * 8))) + 0.05));
-      continue;
-    } else if (sp.grainType === 'acrylic') {
-      // acrylique : traces de poils dans le sens du geste, épaisseur inégale d'un poil à l'autre
-      const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs)), hb = hash2(bristle, br.seed);
-      if (hb > cov + 0.12 || rr > 0.9 + 0.1 * hash2(bristle * 3 + 1, br.seed)) continue;
-      put(ctx, data, cx + x, cy + y, Math.min(1, (0.62 + 0.38 * hash2(bristle * 7 + 2, br.seed + 3)) * (0.88 + 0.12 * vnoise(px / (gs * 3), py / (gs * 3)))));
-      continue;
-    }
-    put(ctx, data, cx + x, cy + y);
   }
   grow(ctx, cx - half, cy - half, cx + half + 1, cy + half + 1);
 }
@@ -373,7 +437,7 @@ export function stampBrush(ctx, cx, cy, d, dir) {
 // Segment avec diamètre interpolé (pression du stylet), tamponné avec ctx.brush s'il y en a un.
 export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
   const dist = Math.hypot(x1 - x0, y1 - y0);
-  const spacing = ctx.smudge ? 0.12 : ctx.brush ? Math.max(0.05, ctx.brush.spec.spacing) : 0.25;
+  const spacing = ctx.smudge ? 0.18 : ctx.brush ? Math.max(0.05, ctx.brush.spec.spacing) : 0.25;
   const step = Math.max(1, Math.min(d0, d1) * spacing);
   const n = Math.max(1, Math.ceil(dist / step));
   const dir = dist > 0 ? { x: (x1 - x0) / dist, y: (y1 - y0) / dist } : null;
@@ -395,7 +459,10 @@ export function smudgeStamp(ctx, cx, cy, d) {
   const sm = ctx.smudge, L = ctx.layer, data = ensureData(L), W = L.w;
   const r = Math.max(1, d / 2), R = Math.ceil(r), S = 2 * R + 1, r2 = r * r;
   ctx.undo.touch(L, cx - R, cy - R, cx + R + 1, cy + R + 1);
-  const nb = new Float32Array(S * S * 4), old = sm.buf, oR = sm.R, k = old ? oR / R : 0, oS = 2 * oR + 1;
+  // deux tampons de charge échangés d'un tampon au suivant (pas d'allocation à chaque tampon)
+  const old = sm.buf, oR = sm.R, k = old ? oR / R : 0, oS = 2 * oR + 1;
+  let nb = sm.spare;
+  if (!nb || nb.length < S * S * 4) nb = new Float32Array(S * S * 4); else nb.fill(0, 0, S * S * 4);
   for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
     const q2 = dx * dx + dy * dy;
     if (q2 > r2) continue;
@@ -418,7 +485,7 @@ export function smudgeStamp(ctx, cx, cy, d) {
     }
     nb[j] = c0; nb[j + 1] = c1; nb[j + 2] = c2; nb[j + 3] = c3;
   }
-  sm.buf = nb; sm.R = R;
+  sm.spare = old; sm.buf = nb; sm.R = R;
   grow(ctx, cx - R, cy - R, cx + R + 1, cy + R + 1);
 }
 
