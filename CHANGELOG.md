@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.62.0 — 2026-11-24
+- Palette de pinceaux : on les range en les faisant glisser ; un appui long ouvre un petit menu Renommer, Rétablir, Supprimer
+- Nouveaux pinceaux de peinture : trois aquarelles, gouache, acrylique ; un nouveau projet démarre avec trois pinceaux (crayon HB, plume G, crayon de couleur)
+- Les messages apparaissent en bas à droite, hors de la barre des pinceaux ; en renommant, le clavier s'ouvre tout seul
+
 ## 1.61.6 — 2026-11-23
 - Synchronisation : toute la description des calques, cases et pages voyage, y compris les nouveaux types de calques (cartes de dégradé) et leurs futurs réglages
 

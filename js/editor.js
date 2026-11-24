@@ -87,7 +87,7 @@ export const copyTicks = t => ({ size: [...((t && t.size) || [])], alpha: [...((
 export const ticksOf = () => (ed.ticks || (ed.ticks = copyTicks(null)));
 export const SLOT_MAX = 10;
 const SLOT_DEFAULTS = {
-  pencil: [['stylo'], ['plumeg'], ['brushpen'], ['hb'], ['fusain'], ['stylo', { name: 'Trame 25 %', tramaId: 'g25', sizeMm: 3 }], ['stylo', { name: 'Trame 50 %', tramaId: 'g50', sizeMm: 6 }], ['fusain', { name: 'Fusain tramé', tramaId: 'g25', sizeMm: 8 }]],
+  pencil: [['hb'], ['plumeg'], ['couleur']],   // trois pinceaux pour commencer ; « + » ouvre la bibliothèque
   eraser: [['stylo', { name: 'Gomme fine', sizeMm: 1 }], ['stylo', { name: 'Gomme ronde', sizeMm: 4 }], ['feutre', { name: 'Gomme carrée', sizeMm: 8 }], ['6b', { name: 'Gomme grain', sizeMm: 3 }]],
 };
 const slotId = () => 's' + Math.random().toString(36).slice(2, 8);
@@ -171,6 +171,35 @@ export function moveSlot(id, dir) {
   const list = brushSlots(), i = list.findIndex(s => s.id === id), j = i + dir;
   if (i < 0 || j < 0 || j >= list.length) return;
   [list[i], list[j]] = [list[j], list[i]]; markChanged();
+}
+// Glisser-déposer dans la palette : place l'emplacement à l'index donné.
+export function moveSlotTo(id, index) {
+  const list = brushSlots(), i = list.findIndex(s => s.id === id);
+  if (i < 0) return false;
+  const j = Math.max(0, Math.min(list.length - 1, index));
+  if (i === j) return false;
+  const [s] = list.splice(i, 1); list.splice(j, 0, s); markChanged();
+  return true;
+}
+// Rétablir : l'emplacement reprend les réglages d'origine de son pinceau (taille comprise, opacité 100 %, encre pleine).
+// Renvoie l'état d'avant pour « Annuler ».
+export function resetSlot(id) {
+  const s = brushSlots().find(x => x.id === id);
+  if (!s) return null;
+  const before = JSON.parse(JSON.stringify(s)), fresh = makeSlot(ed.tool, s.base, brushSpec(s.base, ed.customBrushes));
+  Object.assign(s, { spec: fresh.spec, sizeMm: fresh.sizeMm, alpha: 1, ticks: undefined });
+  if (ed.tool === 'pencil') Object.assign(s, { tramaId: 'plein', tramaScale: 2, tramaOpaque: false });
+  if (ed.slotId === id) applySlot(id);
+  markChanged();
+  return before;
+}
+export function restoreSlotState(state) {
+  const s = brushSlots().find(x => x.id === state.id);
+  if (!s) return;
+  for (const k of Object.keys(s)) delete s[k];
+  Object.assign(s, state);
+  if (ed.slotId === s.id) applySlot(s.id);
+  markChanged();
 }
 // Garde la palette et l'outil d'accord : à l'ouverture d'un projet ou d'un outil, l'emplacement actif est repris (ou le premier).
 export function syncSlot() {

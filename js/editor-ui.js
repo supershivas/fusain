@@ -3,7 +3,7 @@ import {
   ed, page, panel, selectPanel, linkBubbles, activeLayer, bubble, subscribe, notify, selectLayer, addLayer, deleteLayer, moveLayer, moveLayerTo, toggleLayer, renameLayer,
   clearLayer, mergeDown, clearMask, invertMask, addCase, confirmAdd, cancelAdd, setNote, addBubble, deleteBubble, duplicateBubble, allBubbleTemplates, currentTemplate, addTemplateBubble, saveBubbleTemplate, deleteBubbleTemplate, applyBubbleLines, selectBubble, commitBubbleEdit, refitBubble,
   snapshotBubble, goToPage, addPage, addCover, reorderPages, duplicatePage, deletePage, movePage, relayoutPage, markChanged, saveNow, addImageLayer,
-  copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, snapNarration, applyNarrationEdge, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
+  copyPanelTo, refitAutoBubbles, setBubbleProp, togglePageBubbles, allBrushes, currentBrush, selectBrush, resetBrush, saveBrushAs, updateBrush, deleteBrush, duplicateLayer, setLayerProp, brushSlots, activeSlot, applySlot, storeSlot, brushToPalette, removeSlot, restoreSlot, restoreBrush, renameSlot, moveSlot, moveSlotTo, resetSlot, restoreSlotState, setAlpha, SLOT_MAX, BRUSH_TOOLS, ticksOf, projectColors, projectPalettes, currentPalette, selectPalette, addPalette, renamePalette, removePalette, restorePalette, addProjectColor, removeProjectColor, restoreProjectColor, setColor, swapColors, resetColors, snapNarration, applyNarrationEdge, setSolo, storeToolSettings, applyToolSettings, setSizeMm, maxSizeMm, mergeCandidates, mergePanels, deletePanel, setPanelStroke,
 } from './editor.js';
 import { FONTS, loadFont, importFont, fontName } from './fonts.js';
 import { BRUSH_GROUPS, previewBrush, BLEND_MODES } from './raster.js';
@@ -729,9 +729,111 @@ function holdDown(e) {
   clearTimeout(hold && hold.timer);
   hold = { el, x: e.clientX, y: e.clientY, id: e.pointerId };
   el.classList.add('holding');
-  hold.timer = setTimeout(() => { const h = hold; hold = null; h.el.classList.remove('holding'); swallowClick = h.el; setTimeout(() => { swallowClick = null; }, 700); holdFire(h.el); }, 550);
+  hold.timer = setTimeout(() => {
+    const h = hold; hold = null; h.el.classList.remove('holding'); swallowClick = h.el; setTimeout(() => { swallowClick = null; }, 700);
+    if (h.el.dataset.slot) { openSlotMenu(h.el); startSlotDrag(h); } else holdFire(h.el);
+  }, 550);
 }
-function holdMove(e) { if (hold && e.pointerId === hold.id && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 8) holdCancel(); }
+function holdMove(e) {
+  if (!hold || e.pointerId !== hold.id || Math.hypot(e.clientX - hold.x, e.clientY - hold.y) <= 8) return;
+  const h = hold;
+  holdCancel();
+  if (h.el.dataset.slot && e.pointerType === 'mouse') { startSlotDrag(h); slotDragMove(e); }   // à la souris, on glisse tout de suite
+}
+
+// ── Palette : appui long sur un pinceau = petit menu (Renommer, Rétablir, Supprimer) ; glisser ensuite (ou glisser
+// à la souris) = le changer de place. Au doigt et au stylet, le glissement ne démarre qu'après l'appui long : un
+// balayage rapide fait toujours défiler la barre. ──
+let slotDrag = null;
+const blockScroll = e => { if (slotDrag && e.cancelable) e.preventDefault(); };
+function startSlotDrag(h) {
+  slotDrag = { el: h.el, id: h.el.dataset.slot, x: h.x, y: h.y, pid: h.id, moving: false };
+  window.addEventListener('pointermove', slotDragMove);
+  window.addEventListener('pointerup', slotDragEnd);
+  window.addEventListener('pointercancel', slotDragEnd);
+  window.addEventListener('touchmove', blockScroll, { passive: false });
+}
+function slotDragMove(e) {
+  const d = slotDrag;
+  if (!d || e.pointerId !== d.pid) return;
+  if (!d.moving) {
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) <= 8) return;
+    d.moving = true; closeSlotMenu(); d.el.classList.add('dragging');
+  }
+  e.preventDefault();
+  const pal = d.el.parentElement, slots = $$('.slot[data-slot]', pal).filter(x => x !== d.el);
+  const before = slots.find(x => { const r = x.getBoundingClientRect(); return e.clientX < r.left + r.width / 2; });
+  const ref = before || $('.slot.add', pal);
+  if (d.el.nextElementSibling !== ref) pal.insertBefore(d.el, ref);
+  const bar = $('#optbar', root), br = bar.getBoundingClientRect();   // près d'un bord, la barre défile
+  if (e.clientX < br.left + 40) bar.scrollLeft -= 10; else if (e.clientX > br.right - 40) bar.scrollLeft += 10;
+}
+function slotDragEnd(e) {
+  const d = slotDrag;
+  if (!d || e.pointerId !== d.pid) return;
+  slotDrag = null;
+  window.removeEventListener('pointermove', slotDragMove);
+  window.removeEventListener('pointerup', slotDragEnd);
+  window.removeEventListener('pointercancel', slotDragEnd);
+  window.removeEventListener('touchmove', blockScroll);
+  swallowClick = d.el; setTimeout(() => { if (swallowClick === d.el) swallowClick = null; }, 400);   // le clic du relâché n'agit pas
+  if (!d.moving) return;   // simple appui long : le menu reste ouvert
+  d.el.classList.remove('dragging');
+  const index = $$('.slot[data-slot]', d.el.parentElement).indexOf(d.el);
+  if (e.type === 'pointerup' && moveSlotTo(d.id, index)) savePrefs();
+  renderOptbar(); renderPop();
+}
+
+let slotMenu = null;
+function closeSlotMenu() {
+  if (!slotMenu) return;
+  slotMenu.remove(); slotMenu = null;
+  document.removeEventListener('pointerdown', slotMenuOutside, true);
+  document.removeEventListener('keydown', slotMenuKey, true);
+}
+const slotMenuOutside = e => { if (slotMenu && !slotMenu.contains(e.target)) closeSlotMenu(); };
+const slotMenuKey = e => { if (e.key === 'Escape') { e.stopPropagation(); closeSlotMenu(); } };
+function openSlotMenu(el) {
+  closeSlotMenu();
+  const s = brushSlots().find(x => x.id === el.dataset.slot);
+  if (!s) return;
+  const m = document.createElement('div');
+  m.className = 'menu-pop slot-menu'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', s.name);
+  const item = (k, ic, label, extra = '') => `<button type="button" class="menu-item${k === 'delete' ? ' danger' : ''}" role="menuitem" data-slotmenu="${k}" ${extra}>${icon(ic)}<span>${label}</span></button>`;
+  m.innerHTML = `<div class="slot-menu-title">${esc(s.name)}</div>${item('rename', 'pencil', 'Renommer')}${item('reset', 'restore', 'Rétablir')}${item('delete', 'trash', 'Supprimer', brushSlots().length <= 1 ? 'disabled' : '')}`;
+  document.body.appendChild(m);
+  const r = el.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(innerWidth - mw - 8, r.left + r.width / 2 - mw / 2)) + 'px';
+  m.style.top = (r.top - mh - 8 >= 8 ? r.top - mh - 8 : Math.min(innerHeight - mh - 8, r.bottom + 8)) + 'px';
+  m.addEventListener('click', e => { const b = e.target.closest('[data-slotmenu]'); if (b && !b.disabled) slotMenuAction(b.dataset.slotmenu, s.id); });
+  slotMenu = m;
+  document.addEventListener('pointerdown', slotMenuOutside, true);
+  document.addEventListener('keydown', slotMenuKey, true);
+}
+async function slotMenuAction(k, id) {
+  closeSlotMenu();
+  const slot = brushSlots().find(x => x.id === id);
+  if (!slot) return;
+  if (k === 'rename') {
+    const old = slot.name, name = await promptModal({ title: 'Renommer le pinceau', label: 'Nom', value: old });   // ouvert dans le geste : le clavier sort
+    if (name && name !== old) {
+      renameSlot(id, name); savePrefs(); renderOptbar(); renderPop();
+      toast(`« ${old} » renommé en « ${name} ».`, { actionLabel: 'Annuler', duration: 5000, onAction: () => { renameSlot(id, old); savePrefs(); renderOptbar(); renderPop(); } });
+    }
+  } else if (k === 'reset') {
+    const before = resetSlot(id);
+    if (!before) return;
+    savePrefs(); renderOptbar(); renderPop();
+    toast(`« ${slot.name} » rétabli.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreSlotState(before); savePrefs(); renderOptbar(); renderPop(); } });
+  } else if (k === 'delete') removeSlotWithUndo(id);
+}
+function removeSlotWithUndo(id) {
+  const list = brushSlots(), i = list.findIndex(x => x.id === id), slot = list[i];
+  if (!slot) return;
+  if (!removeSlot(slot.id)) { toast('La palette garde au moins un pinceau.'); return; }
+  savePrefs(); renderOptbar(); renderPop();
+  toast(`« ${slot.name} » retiré de la palette.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreSlot(slot, i); applySlot(slot.id); savePrefs(); renderOptbar(); renderPop(); } });
+}
 function holdCancel() { if (hold) { clearTimeout(hold.timer); hold.el.classList.remove('holding'); hold = null; } }
 function holdFire(el) {
   if (el.dataset.pal) {
@@ -741,13 +843,8 @@ function holdFire(el) {
     toast(`${hex} retiré de la palette.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreProjectColor(hex, i); const p2 = $('#pop', root); if (p2) p2._html = ''; renderPop(); } });
     return;
   }
-  if (el.dataset.slot) {
-    const list = brushSlots(), i = list.findIndex(s => s.id === el.dataset.slot), slot = list[i];
-    if (!slot) return;
-    if (!removeSlot(slot.id)) { toast('La palette garde au moins un pinceau.'); return; }
-    savePrefs(); renderOptbar(); renderPop();
-    toast(`« ${slot.name} » retiré de la palette.`, { actionLabel: 'Annuler', duration: 6000, onAction: () => { restoreSlot(slot, i); applySlot(slot.id); savePrefs(); renderOptbar(); renderPop(); } });
-  } else {
+  if (el.dataset.slot) removeSlotWithUndo(el.dataset.slot);
+  else {
     const i = ed.customBrushes.findIndex(x => x.id === el.dataset.brush), br = ed.customBrushes[i];
     if (!br) return;
     deleteBrush(br.id); savePrefs(); const pe = $('#pop', root); if (pe) pe._html = ''; renderPop(); renderDock(); renderOptbar(); window.dispatchEvent(new Event('fusain:brushes'));
@@ -1324,7 +1421,7 @@ const BPARAMS = [
   ['speed', 'Effilage selon la vitesse', 0, 1, 0.05, pct], ['start', 'Départ effilé', 0, 8, 0.5, v => `${v} Ø`],
   ['smooth', 'Stabilisation', 0, 1, 0.05, pct], ['scatter', 'Dispersion', 0, 1, 0.05, pct], ['spacing', 'Espacement', 0.05, 3, 0.05, v => `${v.toFixed(2)} Ø`],
 ];
-const GRAIN_TYPES = [['none', 'Aucun (plein)'], ['noise', 'Grain fin'], ['paper', 'Papier'], ['bristle', 'Poils'], ['spray', 'Aérographe']];
+const GRAIN_TYPES = [['none', 'Aucun (plein)'], ['noise', 'Grain fin'], ['paper', 'Papier'], ['bristle', 'Poils'], ['spray', 'Aérographe'], ['wash', 'Aquarelle'], ['gouache', 'Gouache'], ['acrylic', 'Acrylique']];
 
 function brushesTab() { return brushesParts().list; }
 function brushesParts() {

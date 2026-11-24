@@ -78,7 +78,11 @@ export function promptModal({ title, label, value = '', confirm = 'Enregistrer' 
       onClose: () => { if (!done) resolve(null); },
     });
     $('input', m.el).addEventListener('keydown', e => { if (e.key === 'Enter') { done = true; resolve($('input', m.el).value.trim()); m.close(); } });
-    setTimeout(() => $('input', m.el).select(), 40);
+    const inp = $('input', m.el);
+    // Focus synchrone, dans le geste de l'utilisateur : Safari iOS n'ouvre le clavier qu'à cette condition
+    // (un focus() différé par setTimeout laisse le champ actif, clavier fermé).
+    inp.focus(); inp.select();
+    setTimeout(() => { if (document.activeElement === inp) inp.select(); }, 40);
   });
 }
 

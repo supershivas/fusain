@@ -255,8 +255,10 @@ input[type=range]:disabled { opacity: .45; }
 .dither-prev { width: 100%; background: #fff; border: 1px solid var(--border); image-rendering: pixelated; display: block; max-height: 40dvh; object-fit: contain; }
 
 /* ── Toasts ── */
-#toasts { position: fixed; left: 0; right: 0; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 90; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 12px; }
-.toast { pointer-events: auto; background: var(--bar-bg); color: #fff; border-radius: var(--radius-lg); padding: 4px 4px 4px 16px; display: flex; align-items: center; gap: 4px; min-height: 48px; font-size: .9rem; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 520px; animation: toast-in .18s ease-out; }
+/* En bas à droite, hors de la palette de pinceaux (barre du bas de la zone de dessin). */
+#toasts { position: fixed; left: 12px; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+body:has(.optbar:not([hidden])) #toasts { bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
+.toast { pointer-events: auto; background: var(--bar-bg); color: #fff; border-radius: var(--radius-lg); padding: 4px 4px 4px 16px; display: flex; align-items: center; gap: 4px; min-height: 48px; font-size: .9rem; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: min(420px, 100%); animation: toast-in .18s ease-out; }
 .toast.out { opacity: 0; transition: opacity .18s; }
 .toast-error { background: var(--accent); }
 .toast-action { min-height: 44px; padding: 0 12px; font-weight: 600; color: #f4b9b2; border-radius: var(--radius-md); }
@@ -373,6 +375,10 @@ details.sec > summary span { flex: 1; min-width: 0; overflow: hidden; text-overf
 .menu-item kbd { font: 500 .72rem var(--font-mono); color: var(--text-muted); }
 .menu-item:disabled { opacity: .4; }
 @media (hover: hover) { .menu-item:not(:disabled):hover { background: var(--hover-bg); } }
+.menu-item.danger, .menu-item.danger i { color: var(--accent); }
+.slot-menu { min-width: 190px; }
+.slot-menu-title { padding: 6px 12px 4px; font-size: .75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.slot.dragging { opacity: .85; transform: translateY(-4px) scale(1.06); box-shadow: 0 6px 16px rgba(0,0,0,.25); z-index: 2; position: relative; }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 .menu-title { padding: 10px 12px 2px; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; }
 

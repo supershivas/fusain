@@ -140,9 +140,10 @@ function grow(ctx, x0, y0, x1, y1) {
 // Opacité d'un trait (paint.alpha < 1) : seuil de Bayer 8 × 8 accroché à la page, donc un gris tramé régulier
 // qui ne fonce pas quand les tampons se recouvrent ; le même rendu que l'opacité d'un calque à l'export.
 const bayerKeep = (alpha, px, py) => alpha * 64 > BAYER8[py & 7][px & 7];
-function put(ctx, data, x, y) {
+function put(ctx, data, x, y, m = 1) {
   if (!writable(ctx, x, y)) return;
-  const a = ctx.paint.alpha;
+  let a = ctx.paint.alpha;
+  if (m < 1) a = (a ?? 1) * m;   // m : opacité propre au pixel (aquarelle, gouache, acrylique)
   if (ctx.alphaLock) {   // verrouillage alpha : seuls les pixels déjà peints changent, et la gomme ne fait rien
     if (ctx.paint.v === 0) return;
     const k = y * ctx.layer.w + x;
@@ -155,14 +156,20 @@ function put(ctx, data, x, y) {
   data[y * ctx.layer.w + x] = v;
 }
 
-// Calque de couleur : vraie opacité. Un pixel n'est mélangé qu'une fois par trait (ctx.seen), pour qu'un trait
-// à 40 % reste à 40 % même là où ses tampons se recouvrent.
+// Calque de couleur : vraie opacité. Au cours d'un trait, un pixel garde l'opacité la plus forte qu'il a reçue
+// (ctx.seen, 0–255) : un trait à 40 % reste à 40 % là où ses tampons se recouvrent, et un pinceau dont
+// l'opacité varie d'un pixel à l'autre (aquarelle) ne fonce pas à chaque tampon.
 function putRGBA(ctx, data, x, y, a) {
   const k = y * ctx.layer.w + x;
-  if (ctx.seen) { if (ctx.seen[k]) return; }
   const v = paintValue(ctx.paint, x + ctx.ox, y + ctx.oy);
   if (v < 0) return;
-  if (ctx.seen) ctx.seen[k] = 1;
+  if (a < 1 && !ctx.seen) ctx.seen = new Uint8Array(ctx.layer.w * ctx.layer.h);
+  if (ctx.seen) {
+    const s = ctx.seen[k] / 255;
+    if (a <= s + 0.003) return;
+    ctx.seen[k] = Math.round(a * 255);
+    if (s > 0) a = 1 - (1 - a) / (1 - s);   // complément : le pixel atteint l'opacité a, pas a + s
+  }
   const i = k * 4, da = data[i + 3] / 255;
   if (v === 0) {   // gomme
     const na = da * (1 - a);
@@ -233,14 +240,14 @@ export const BRUSH_DEFAULTS = {
   speed: 0,            // 0 à 1 : le trait s'affine quand le geste va vite
   start: 0,            // départ effilé, en diamètres
   grain: 1,            // couverture 0 à 1 (1 = plein)
-  grainType: 'none',   // none | noise | paper | bristle | spray
+  grainType: 'none',   // none | noise | paper | bristle | spray | wash (aquarelle) | gouache | acrylic
   grainScale: 1,       // taille d'un grain, en pixels
   scatter: 0,          // dispersion du tampon, en fraction du diamètre
   spacing: 0.2,        // écart des tampons, en diamètres
   smooth: 0,           // stabilisation 0 à 1
 };
 
-export const BRUSH_GROUPS = ['Encrage', 'Esquisse', 'Pinceaux', 'Calligraphie', 'Texture'];
+export const BRUSH_GROUPS = ['Encrage', 'Esquisse', 'Pinceaux', 'Peinture', 'Calligraphie', 'Texture'];
 const B = (id, name, group, o) => ({ id, name, group, ...o });
 export const BUILTIN_BRUSHES = [
   B('stylo', 'Stylo rond', 'Encrage', { sizeMm: 0.5 }),
@@ -250,11 +257,17 @@ export const BUILTIN_BRUSHES = [
   B('brushpen', 'Brush pen', 'Encrage', { sizeMm: 1.5, speed: 0.8, start: 4, smooth: 0.4 }),
   B('hb', 'Crayon HB', 'Esquisse', { sizeMm: 0.6, grain: 0.75, grainType: 'paper', scatter: 0.12, spacing: 0.18 }),
   B('6b', 'Crayon 6B', 'Esquisse', { sizeMm: 1.6, grain: 0.6, grainType: 'paper', grainScale: 2, scatter: 0.2 }),
+  B('couleur', 'Crayon de couleur', 'Esquisse', { sizeMm: 1.2, grain: 0.7, grainType: 'paper', grainScale: 1.5, scatter: 0.08, spacing: 0.15, pressMin: 0.3 }),
   B('mine', 'Mine à plat', 'Esquisse', { sizeMm: 3.5, shape: 'rect', ratio: 0.25, angle: 20, grain: 0.55, grainType: 'paper' }),
   B('rond', 'Pinceau rond', 'Pinceaux', { sizeMm: 2.5, speed: 0.5, start: 2.5, smooth: 0.3 }),
   B('plat', 'Pinceau plat', 'Pinceaux', { sizeMm: 4, shape: 'rect', ratio: 0.35, follow: true }),
   B('sec', 'Pinceau sec', 'Pinceaux', { sizeMm: 4, grainType: 'bristle', grain: 0.55, smooth: 0.2 }),
   B('feutre', 'Feutre carré', 'Pinceaux', { sizeMm: 2, shape: 'square' }),
+  B('aquarelle', 'Aquarelle ronde', 'Peinture', { sizeMm: 6, grainType: 'wash', grain: 0.5, grainScale: 2, spacing: 0.12, smooth: 0.3, pressMin: 0.3 }),
+  B('lavis', 'Lavis (aquarelle large)', 'Peinture', { sizeMm: 14, grainType: 'wash', grain: 0.32, grainScale: 4, spacing: 0.12, smooth: 0.35, pressMin: 0.5 }),
+  B('aquagrain', 'Aquarelle granuleuse', 'Peinture', { sizeMm: 8, grainType: 'wash', grain: 0.55, grainScale: 1, spacing: 0.12, scatter: 0.06, smooth: 0.25, pressMin: 0.35 }),
+  B('gouache', 'Gouache', 'Peinture', { sizeMm: 5, grainType: 'gouache', grain: 0.95, grainScale: 2, spacing: 0.12, speed: 0.2, smooth: 0.3, pressMin: 0.35 }),
+  B('acrylique', 'Acrylique', 'Peinture', { sizeMm: 7, shape: 'rect', ratio: 0.45, follow: true, grainType: 'acrylic', grain: 0.85, grainScale: 1.5, spacing: 0.1, smooth: 0.25, pressMin: 0.4 }),
   B('plate', 'Plume plate 40°', 'Calligraphie', { sizeMm: 3, shape: 'nib', ratio: 0.16, angle: 40 }),
   B('plate2', 'Plume plate suivie', 'Calligraphie', { sizeMm: 2.5, shape: 'nib', ratio: 0.2, follow: true }),
   B('fusain', 'Fusain', 'Texture', { sizeMm: 5, grainType: 'noise', grain: 0.6, scatter: 0.15 }),
@@ -311,12 +324,13 @@ export function stampBrush(ctx, cx, cy, d, dir) {
   const dx = dir ? dir.x : 1, dy = dir ? dir.y : 0;
   for (let y = -half; y <= half; y++) for (let x = -half; x <= half; x++) {
     // forme
-    let inside;
-    if (sp.shape === 'round') inside = x * x + y * y <= ra * ra + 0.25;
-    else if (sp.shape === 'square') inside = Math.abs(x) <= ra && Math.abs(y) <= ra;
+    let inside, rr = 0;   // rr : distance au centre rapportée au bord (0 au centre, 1 au bord)
+    if (sp.shape === 'round') { inside = x * x + y * y <= ra * ra + 0.25; rr = Math.sqrt(x * x + y * y) / ra; }
+    else if (sp.shape === 'square') { inside = Math.abs(x) <= ra && Math.abs(y) <= ra; rr = Math.max(Math.abs(x), Math.abs(y)) / ra; }
     else {
       const u = x * ca + y * sa, v = -x * sa + y * ca;
       inside = sp.shape === 'rect' ? Math.abs(u) <= ra && Math.abs(v) <= rb : (u * u) / (ra * ra) + (v * v) / (rb * rb) <= 1;
+      rr = sp.shape === 'rect' ? Math.max(Math.abs(u) / ra, Math.abs(v) / rb) : Math.sqrt((u * u) / (ra * ra) + (v * v) / (rb * rb));
     }
     if (!inside) continue;
     // grain
@@ -330,6 +344,26 @@ export function stampBrush(ctx, cx, cy, d, dir) {
     } else if (sp.grainType === 'bristle') {
       const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs));
       if (hash2(bristle, br.seed) >= cov) continue;
+    } else if (sp.grainType === 'wash') {
+      // aquarelle : bord irrégulier et pigment en nappes, accrochés à la page (les traits se raccordent),
+      // granulation fine ; transparente, elle fonce en repassant (un pixel par trait, puis glacis)
+      if (rr > 0.7 + 0.3 * vnoise(px / (gs * 4), py / (gs * 4))) continue;
+      const pig = vnoise(px / (gs * 12) + 17, py / (gs * 12) + 5), gran = hash2(Math.floor(px / gs), Math.floor(py / gs));
+      put(ctx, data, cx + x, cy + y, Math.min(1, cov * (0.5 + 0.5 * pig) * (0.78 + 0.22 * gran)));
+      continue;
+    } else if (sp.grainType === 'gouache') {
+      // gouache : couvrante et mate, bord un peu sec, le papier transparaît quand on appuie peu
+      if (rr > 0.86 + 0.14 * vnoise(px / (gs * 2), py / (gs * 2))) continue;
+      const tooth = vnoise(px / (gs * 2.5), py / (gs * 2.5)) * 0.65 + hash2(px, py) * 0.35;
+      if (tooth > cov + 0.35) continue;
+      put(ctx, data, cx + x, cy + y, Math.min(1, cov * (0.93 + 0.07 * vnoise(px / (gs * 8), py / (gs * 8))) + 0.05));
+      continue;
+    } else if (sp.grainType === 'acrylic') {
+      // acrylique : traces de poils dans le sens du geste, épaisseur inégale d'un poil à l'autre
+      const bristle = Math.floor((x * -dy + y * dx) / (1.4 * gs)), hb = hash2(bristle, br.seed);
+      if (hb > cov + 0.12 || rr > 0.9 + 0.1 * hash2(bristle * 3 + 1, br.seed)) continue;
+      put(ctx, data, cx + x, cy + y, Math.min(1, (0.62 + 0.38 * hash2(bristle * 7 + 2, br.seed + 3)) * (0.88 + 0.12 * vnoise(px / (gs * 3), py / (gs * 3)))));
+      continue;
     }
     put(ctx, data, cx + x, cy + y);
   }
@@ -354,11 +388,14 @@ export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
 }
 
 // Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.
+export const PAINT_GRAINS = ['wash', 'gouache', 'acrylic'];   // grains à opacité variable : aperçu en vraie transparence
 export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scale = 1, color = null) {
-  const w = canvas.width, h = canvas.height, layer = { id: 'preview', w, h, data: new Uint8Array(w * h), dirty: false };
-  // une couleur (ni noir ni blanc) se peint en RVBA : vraie transparence, pas de gris tramé
-  const trueAlpha = !!color && /^#[0-9a-f]{6}$/i.test(color) && !/^#(000000|ffffff)$/i.test(color);
-  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha: trueAlpha ? 1 : alpha, trame, scale }, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
+  const w = canvas.width, h = canvas.height;
+  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16)) : null;
+  // une couleur (ni noir ni blanc) ou un pinceau de peinture se peint en RVBA : vraie transparence, pas de gris tramé
+  const soft = (!!c && !/^#(000000|ffffff)$/i.test(color)) || PAINT_GRAINS.includes(spec.grainType);
+  const layer = { id: 'preview', w, h, data: new Uint8Array(w * h * (soft ? 4 : 1)), dirty: false };
+  const ctx = { layer, undo: { touch() {} }, paint: { v: INK, alpha, trame, scale, rgb: c || [0x14, 0x17, 0x1A] }, rgba: soft, mask: null, ox: 0, oy: 0, clip: null, dirty: null, brush: { spec, seed: 11, n: 0, pr: 0.6 } };
   let last = null;
   for (let i = 0; i <= 60; i++) {
     const t = i / 60, x = 10 + t * (w - 20), y = h / 2 + Math.sin(t * Math.PI * 2) * h * 0.22, p = Math.pow(Math.sin(Math.PI * t), 0.6);
@@ -371,10 +408,16 @@ export function previewBrush(canvas, spec, sizePx, alpha = 1, trame = null, scal
     last = { x, y, d };
   }
   const cx = canvas.getContext('2d'), img = cx.createImageData(w, h), u = new Uint32Array(img.data.buffer);
-  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16)) : null;
-  const mix = v => Math.round(v * (trueAlpha ? alpha : 1) + 255 * (trueAlpha ? 1 - alpha : 0));
-  const ink = c ? (0xFF000000 | (mix(c[2]) << 16) | (mix(c[1]) << 8) | mix(c[0])) >>> 0 : 0xFF1A1714;
-  for (let i = 0; i < u.length; i++) u[i] = layer.data[i] === 1 ? ink : 0xFFFFFFFF;
+  if (soft) {
+    const o = img.data, dd = layer.data;
+    for (let i = 0; i < w * h; i++) {
+      const a = dd[i * 4 + 3] / 255, j = i * 4;
+      o[j] = Math.round(dd[j] * a + 255 * (1 - a)); o[j + 1] = Math.round(dd[j + 1] * a + 255 * (1 - a)); o[j + 2] = Math.round(dd[j + 2] * a + 255 * (1 - a)); o[j + 3] = 255;
+    }
+  } else {
+    const ink = c ? (0xFF000000 | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0 : 0xFF1A1714;
+    for (let i = 0; i < u.length; i++) u[i] = layer.data[i] === 1 ? ink : 0xFFFFFFFF;
+  }
   cx.putImageData(img, 0, 0);
 }
 
