@@ -33,6 +33,7 @@ export const TOOL_DEFAULTS = {
   fill: { fillGap: 100, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   shape: { sizeMm: 0.5, ticks: null, shapeKind: 'rect', shapeFilled: false, tramaId: 'plein', tramaScale: 2, tramaOpaque: false },
   mask: { sizeMm: 6, ticks: null, maskErase: false },
+  smudge: { sizeMm: 5, alpha: 0.7, ticks: null },   // alpha = force de l'estompe
 };
 export function storeToolSettings() {
   const d = TOOL_DEFAULTS[ed.tool];

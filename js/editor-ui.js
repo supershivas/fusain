@@ -17,9 +17,9 @@ import { openModal, esc, icon, $, $$, confirmModal, promptModal, modalOpen } fro
 import { toast } from './toast.js';
 import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from './shell.js';
 import { layoutSvg, newProjectModal, decoupageModal } from './home.js';
-import { COLOR_MODES, buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts, pageThumb } from './export.js';
+import { COLOR_MODES, buildPDF, printProject, parsePageRange, IMPOSITIONS, renderPage, canvasToBlob, download, safeName, ensureFonts, pageThumb, WEB_FORMATS, STRIP_SLICE, panelCrop, frameImage, stripPiece, stackStrip } from './export.js';
 import { loadPage, unloadPage } from './store.js';
-import { exportProject } from './portable.js';
+import { exportProject, validateDecoupage, placeDialogues, loadBubbleFonts } from './portable.js';
 import { GUIDE_MODES, guideMode, setGuideMode } from './guides.js';
 import { stampLibrary } from './library.js';
 import { syncSoon } from './sync.js';
@@ -28,6 +28,7 @@ import { clearSelection, selectAll, invertSelection, clearSelectionContent, poly
 export const TOOLS = [
   { id: 'pencil', icon: 'brush', label: 'Pinceaux et trames (B)', key: 'b' },
   { id: 'eraser', icon: 'eraser', label: 'Gomme (E)', key: 'e' },
+  { id: 'smudge', icon: 'hand-finger', label: 'Estompe (U)', key: 'u' },
   { id: 'fill', icon: 'bucket-droplet', label: 'Remplir (G)', key: 'g' },
   { id: 'shape', icon: 'square', label: 'Formes (S)', key: 's' },
   { id: 'mask', icon: 'mask', label: 'Masque (M)', key: 'm' },
@@ -37,7 +38,7 @@ export const TOOLS = [
   { id: 'pan', icon: 'hand-stop', label: 'Déplacer la vue (H)', key: 'h' },
 ];
 // Outils de la case (dessin) et de la planche (cases et pages) ; « Déplacer la vue » sert aux deux.
-const CASE_TOOLS = ['pencil', 'eraser', 'fill', 'shape', 'mask', 'select', 'bubble'];
+const CASE_TOOLS = ['pencil', 'eraser', 'smudge', 'fill', 'shape', 'mask', 'select', 'bubble'];
 const PAGE_TOOLS = ['layout', 'pan'];
 const toolsOfLevel = () => TOOLS.filter(t => (ed.focus ? t.id !== 'layout' : PAGE_TOOLS.includes(t.id)));
 const SHAPES = [{ id: 'line', icon: 'slash', label: 'Ligne' }, { id: 'rect', icon: 'square', label: 'Rectangle' }, { id: 'ellipse', icon: 'circle', label: 'Ellipse' }];
@@ -407,6 +408,7 @@ export function renderOptbar() {
   if (t === 'pencil') html = paletteControl() + tramaControl() + popBtn('brush') + symBtn() + guideBtn();
   else if (t === 'eraser') html = paletteControl() + popBtn('brush') + symBtn() + guideBtn();
   else if (t === 'fill') html = tramaControl() + gapControl() + popBtn('trama');
+  else if (t === 'smudge') html = `<span class="hint">Étire et fond la peinture du calque actif. Curseurs : taille et force. Un calque noir et blanc passe en couleur.</span>`;
   else if (t === 'shape') {
     html = `<span class="seg" role="group" aria-label="Forme">${SHAPES.map(s => `<button data-shape="${s.id}" class="${ed.shapeKind === s.id ? 'on' : ''}" aria-label="${s.label}" title="${s.label}">${icon(s.icon)}</button>`).join('')}</span>`
       + (ed.shapeKind !== 'line' ? `<label class="check" style="min-height:40px"><input type="checkbox" id="o-filled" ${ed.shapeFilled ? 'checked' : ''}> Plein</label>` : '')
@@ -454,7 +456,7 @@ export function renderOptbar() {
 function paletteControl() {
   const list = brushSlots(), libOn = popId === 'lib-brush';
   return `<span class="palette" role="group" aria-label="Palette de pinceaux du projet">${list.map(s =>
-    `<button class="slot ${s.id === ed.slotId ? 'on' : ''}" data-slot="${s.id}" aria-pressed="${s.id === ed.slotId}" title="${esc(s.name)}" aria-label="${esc(s.name)}${s.id === ed.slotId ? ' (actif : toucher pour ses réglages)' : ''}"><canvas width="56" height="28" data-slotprev="${s.id}"></canvas></button>`).join('')}<button class="slot add ${libOn ? 'on' : ''}" data-pop="lib-brush" aria-expanded="${libOn}" title="Ajouter un pinceau de la bibliothèque" aria-label="Ajouter un pinceau de la bibliothèque">${icon('plus')}</button></span>`;
+    `<button class="slot ${s.id === ed.slotId ? 'on' : ''}" data-slot="${s.id}" aria-pressed="${s.id === ed.slotId}" title="${esc(s.name)}" aria-label="${esc(s.name)}${s.id === ed.slotId ? ' (actif : toucher pour ses réglages)' : ''}"><canvas width="128" height="44" data-slotprev="${s.id}"></canvas><span class="slot-name">${esc(s.name)}</span></button>`).join('')}<button class="slot add ${libOn ? 'on' : ''}" data-pop="lib-brush" aria-expanded="${libOn}" title="Ajouter un pinceau de la bibliothèque" aria-label="Ajouter un pinceau de la bibliothèque">${icon('plus')}</button></span>`;
 }
 function paintSlots(scope) {
   if (!scope) return;
@@ -465,15 +467,21 @@ function paintSlots(scope) {
     const live = s.id === ed.slotId, spec = live ? ed.brushParams : { ...s.spec };
     const mm = live ? ed.sizeMm : s.sizeMm;
     const tid = ed.tool === 'pencil' ? (live ? ed.tramaId : s.tramaId) : null, t = tid ? tramaById(ed.project, tid) : null;
-    previewBrush(c, spec, Math.max(2, Math.min(mm / 25.4 * dpi, 10)), live ? ed.alpha : s.alpha ?? 1, t && !t.solid ? t : null, 1);
+    previewBrush(c, spec, slotThumbPx(mm), live ? ed.alpha : s.alpha ?? 1, t && !t.solid ? t : null, 1);
   });
 }
+// Épaisseur du trait dans la vignette (canevas 128 × 44, affiché à moitié : net sur écran Retina) : échelle logarithmique
+// de 0,2 à 20 mm, pour qu'un crayon fin, une plume et un lavis se distinguent d'un coup d'œil, grain compris.
+const slotThumbPx = mm => {
+  const t = Math.max(0, Math.min(1, (Math.log(Math.max(0.05, mm)) - Math.log(0.2)) / (Math.log(20) - Math.log(0.2))));
+  return Math.round(3 + 17 * t);
+};
 
 // ── Réglages rapides : taille et opacité en curseurs verticaux au bord du canevas, à portée du pouce ──
 const QUICK = {
   size: { label: 'Taille', get: () => sizeToV(ed.sizeMm) / 100, set: v => setSizeMm(vToSize(v * 100)), fmt: () => fmtMm(ed.sizeMm) + ' mm',
     val: () => ed.sizeMm, toV: mm => sizeToV(mm) / 100, setVal: mm => setSizeMm(mm), say: mm => fmtMm(mm) + ' mm' },
-  alpha: { label: 'Opacité', get: () => (ed.alpha - 0.05) / 0.95, set: v => setAlpha(0.05 + 0.95 * v), fmt: () => Math.round(ed.alpha * 100) + ' %',
+  alpha: { get label() { return ed.tool === 'smudge' ? 'Force' : 'Opacité'; }, get: () => (ed.alpha - 0.05) / 0.95, set: v => setAlpha(0.05 + 0.95 * v), fmt: () => Math.round(ed.alpha * 100) + ' %',
     val: () => ed.alpha, toV: a => (a - 0.05) / 0.95, setVal: a => setAlpha(a), say: a => Math.round(a * 100) + ' %' },
 };
 // Aimant des repères, en pixels d'écran (pas en part de la course : un doigt est large quelle que soit la taille du curseur).
@@ -504,10 +512,10 @@ function toggleTick(k) {
 function renderQuick() {
   const q = $('#quick', root);
   if (!q) return;
-  const sized = BRUSH_TOOLS.includes(ed.tool) || ed.tool === 'mask' || ed.tool === 'shape', colored = TOOL_COLOR.includes(ed.tool);
+  const sized = BRUSH_TOOLS.includes(ed.tool) || ed.tool === 'mask' || ed.tool === 'shape' || ed.tool === 'smudge', colored = TOOL_COLOR.includes(ed.tool);
   q.hidden = !sized && !colored;
   if (q.hidden) { q.innerHTML = ''; return; }
-  const keys = [sized ? 'size' : null, colored ? 'color' : null, BRUSH_TOOLS.includes(ed.tool) ? 'alpha' : null].filter(Boolean);
+  const keys = [sized ? 'size' : null, colored ? 'color' : null, BRUSH_TOOLS.includes(ed.tool) || ed.tool === 'smudge' ? 'alpha' : null].filter(Boolean);
   q.innerHTML = keys.map(k => k === 'color' ? colorWidget() : `<div class="qs" data-quick="${k}" role="slider" tabindex="0" aria-label="${QUICK[k].label}" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(QUICK[k].get() * 100)}" aria-valuetext="${QUICK[k].fmt()}">
       <div class="qs-track"><div class="qs-fill" style="height:${QUICK[k].get() * 100}%"></div>${tickHtml(k)}<div class="qs-thumb" style="bottom:${QUICK[k].get() * 100}%"></div></div>
       <span class="qs-val">${QUICK[k].fmt()}</span></div>`).join('');
@@ -2283,13 +2291,14 @@ function exportMenu() {
       <button class="btn primary" data-m="pdf">${icon('file-type-pdf')} PDF · ${ed.project.pages.length} page${ed.project.pages.length > 1 ? 's' : ''}, ${ed.project.dpi} dpi</button>
       <button class="btn" data-m="print">${icon('printer')} Imprimer</button>
       <button class="btn" data-m="png">${icon('photo')} PNG · page ${ed.pageIdx + 1}</button>
+      <button class="btn" data-m="web">${icon('photo-share')} Images pour le web (carré, 4:5, bande)</button>
       <button class="btn" data-m="json">${icon('file-export')} Sauvegarde JSON du projet</button></div>
       <p style="margin-top:12px;color:var(--text-muted);font-size:.82rem">Le PDF contient les cases, leurs cadres et les bulles ; les notes ne sont jamais imprimées, les brouillons seulement si on le demande.</p>`,
   });
   m.el.onclick = e => {
     const b = e.target.closest('[data-m]'); if (!b) return;
     m.close();
-    if (b.dataset.m === 'pdf') exportPdf(); else if (b.dataset.m === 'print') printModal('print'); else if (b.dataset.m === 'png') exportPng(); else exportJson();
+    if (b.dataset.m === 'pdf') exportPdf(); else if (b.dataset.m === 'print') printModal('print'); else if (b.dataset.m === 'png') exportPng(); else if (b.dataset.m === 'web') webModal(); else exportJson();
   };
 }
 
@@ -2409,6 +2418,147 @@ async function runPrint(how, opts) {
 }
 const exportPdf = () => printModal('pdf');
 
+// ── Images pour le web : carré, portrait 4:5, bande verticale. Derniers choix gardés sur l'appareil (`fusain:web`). ──
+const WEB_KEY = 'fusain:web';
+const WEB_DEFAULTS = { format: 'square', what: 'page', fit: 'fit', strip: 'cases', slice: 'one', pages: 'all', range: '' };
+const webPrefs = () => { try { return { ...WEB_DEFAULTS, ...JSON.parse(localStorage.getItem(WEB_KEY) || '{}') }; } catch { return { ...WEB_DEFAULTS }; } };
+function webModal() {
+  const o = webPrefs(), count = ed.project.pages.length, idx = page().panels.indexOf(panel()) + 1;
+  const seg = (name, items) => `<div class="seg" role="group" data-seg="${name}" style="display:flex;flex-wrap:wrap">${items.map(([v, label, ic]) =>
+    `<button type="button" data-v="${v}" class="${String(o[name]) === String(v) ? 'on' : ''}" style="flex:1">${ic ? icon(ic) : ''} ${label}</button>`).join('')}</div>`;
+  const m = openModal({
+    title: 'Images pour le web', narrow: true, noFocus: true,
+    body: `<div class="field"><span>Format</span>${seg('format', WEB_FORMATS.map(f => [f.id, f.name, { square: 'square', portrait: 'rectangle-vertical', strip: 'arrows-vertical' }[f.id]]))}
+        <small id="wb-help">${esc(WEB_FORMATS.find(f => f.id === o.format).help)}</small></div>
+      <div data-for="post"><div class="field"><span>Contenu</span>${seg('what', [['page', `Page ${ed.pageIdx + 1}`], ['pages', `Toutes les pages (${count})`], ['case', `Case ${idx}`], ['cases', 'Chaque case de la page']])}</div>
+        <div class="field"><span>Cadrage</span>${seg('fit', [['fit', 'Entière, fond blanc'], ['fill', 'Remplir (rognée)']])}</div></div>
+      <div data-for="strip"><div class="field"><span>Contenu</span>${seg('strip', [['cases', 'Cases une à une'], ['pages', 'Pages entières']])}
+          <small>Une à une : chaque case pleine largeur, dans l'ordre de lecture, comme un webtoon.</small></div>
+        <div class="field"><span>Pages</span>${seg('pages', [['all', `Toutes (${count})`], ['current', `Page ${ed.pageIdx + 1}`], ['range', 'Choisir']])}
+          <input type="text" id="wb-range" placeholder="Ex. : 1-3, 5" value="${esc(o.range)}" autocomplete="off" ${o.pages === 'range' ? '' : 'hidden'}></div>
+        <div class="field"><span>Fichiers</span>${seg('slice', [['one', 'Une seule image'], ['parts', `Morceaux de ${STRIP_SLICE} px`]])}</div></div>
+      <small class="note">Bulles et textes compris, brouillons et notes jamais.</small>
+      <button type="button" class="btn primary" data-go="1" style="margin-top:12px;width:100%">${icon('photo-down')} Créer les images</button>`,
+  });
+  const box = m.el, range = $('#wb-range', box);
+  const sync = () => { $('[data-for="post"]', box).hidden = o.format === 'strip'; $('[data-for="strip"]', box).hidden = o.format !== 'strip'; $('#wb-help', box).textContent = WEB_FORMATS.find(f => f.id === o.format).help; };
+  sync();
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-seg] button');
+    if (b) {
+      const name = b.parentElement.dataset.seg; o[name] = b.dataset.v;
+      $$('button', b.parentElement).forEach(x => x.classList.toggle('on', x === b));
+      if (name === 'pages') { range.hidden = o.pages !== 'range'; if (!range.hidden) range.focus(); }
+      sync(); return;
+    }
+    if (!e.target.closest('[data-go]')) return;
+    o.range = range.value.trim();
+    let pages = null;
+    if (o.format === 'strip') {
+      pages = o.pages === 'current' ? [ed.pageIdx] : o.pages === 'range' ? parsePageRange(o.range, count) : ed.project.pages.map((_, i) => i);
+      if (!pages) { toast(`Pages à choisir entre 1 et ${count}, par exemple « 1-3, 5 ».`, { type: 'error' }); range.focus(); return; }
+    } else pages = o.what === 'pages' ? ed.project.pages.map((_, i) => i) : [ed.pageIdx];
+    try { localStorage.setItem(WEB_KEY, JSON.stringify(o)); } catch {}
+    m.close();
+    runWebExport(o, pages);
+  });
+}
+async function runWebExport(o, pageIdx) {
+  await saveNow();
+  const close = toast('Création des images…', { duration: 600000 });
+  const fmt = WEB_FORMATS.find(f => f.id === o.format), base = safeName(ed.project.title), files = [], pieces = [];
+  try {
+    for (const i of pageIdx) {
+      const pg = ed.project.pages[i];
+      await loadPage(ed.project, pg);
+      await ensureFonts(ed.project, [pg]);
+      const src = renderPage(ed.project, pg, 1), full = { x: 0, y: 0, w: src.width, h: src.height };
+      const cases = o.format === 'strip' ? o.strip === 'cases' : o.what === 'case' || o.what === 'cases';
+      const list = !cases ? [{ r: full, n: '' }] : (o.format !== 'strip' && o.what === 'case' ? [panel()] : pg.panels).map(p => ({ r: panelCrop(ed.project, p), n: `-case-${pg.panels.indexOf(p) + 1}` }));
+      for (const it of list) {
+        if (fmt.id === 'strip') pieces.push(stripPiece(src, it.r, fmt.w));
+        else files.push({ c: frameImage(src, it.r, fmt.w, fmt.h, o.fit), name: `${base}-page-${i + 1}${it.n}-${fmt.id === 'square' ? 'carre' : '4x5'}.png` });
+      }
+      if (pg !== page()) unloadPage(pg);
+    }
+    if (fmt.id === 'strip') stackStrip(pieces, fmt.w, Math.round(fmt.w * 0.08), o.slice === 'parts' ? STRIP_SLICE : undefined)
+      .forEach((c, k, all) => files.push({ c, name: `${base}-bande${all.length > 1 ? '-' + String(k + 1).padStart(2, '0') : ''}.png` }));
+    const out = [];
+    for (const f of files) out.push(new File([await canvasToBlob(f.c)], f.name, { type: 'image/png' }));
+    close();
+    webResult(out);
+  } catch (err) { console.error(err); close(); toast('Les images n\'ont pas pu être créées.', { type: 'error' }); }
+}
+// Partager demande un toucher récent (Safari) : les images prêtes, on propose de les partager (Photos, Instagram…) ou de les télécharger.
+function webResult(files) {
+  const n = files.length, share = !!(navigator.canShare && navigator.canShare({ files }));
+  const m = openModal({
+    title: `${n} image${n > 1 ? 's' : ''} prête${n > 1 ? 's' : ''}`, narrow: true, noFocus: true,
+    body: `<p style="color:var(--text-secondary);font-size:.88rem">${files.slice(0, 6).map(f => esc(f.name)).join('<br>')}${n > 6 ? `<br>… et ${n - 6} autre${n - 6 > 1 ? 's' : ''}` : ''}</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        ${share ? `<button type="button" class="btn primary" data-w="share">${icon('share')} Partager (Photos, Instagram…)</button>` : ''}
+        <button type="button" class="btn ${share ? '' : 'primary'}" data-w="dl">${icon('download')} Télécharger</button></div>`,
+  });
+  m.el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-w]'); if (!b) return;
+    if (b.dataset.w === 'share') { try { await navigator.share({ files }); m.close(); } catch (err) { if (err.name !== 'AbortError') toast('Le partage n\'a pas abouti : télécharge les images.', { type: 'error' }); } }
+    else { files.forEach((f, k) => setTimeout(() => download(f, f.name), k * 400)); m.close(); }
+  });
+}
+
+// ── Dialogues d'un découpage posés dans les cases du projet ouvert, à partir de la page affichée ──
+function dialoguesModal() {
+  const m = openModal({
+    title: 'Placer les dialogues d\'un découpage', narrow: false,
+    body: `<p>Les dialogues de la page 1 du découpage vont dans la page ${ed.pageIdx + 1}, ceux de sa page 2 dans la suivante, et ainsi de suite ; case par case, dans l'ordre. Les notes vides (plan, description) sont remplies.</p>
+      <label class="field" style="margin-top:12px"><span>Fichier JSON</span><input type="file" id="dl-file" accept=".json,application/json"></label>
+      <label class="field"><span>… ou colle le contenu ici</span><textarea id="dl-text" placeholder='{ "pages": [ { "cases": [ { "dialogues": [ … ] } ] } ] }' style="font-family:var(--font-mono)"></textarea></label>
+      <label class="check"><input type="checkbox" id="dl-replace"> Retirer d'abord les bulles déjà posées dans ces cases</label>
+      <p id="dl-errors" style="color:var(--accent)"></p>`,
+    actions: [
+      { label: 'Annuler' },
+      { label: 'Placer', kind: 'primary', onClick: async (close, box) => {
+        const err = $('#dl-errors', box);
+        let data;
+        try { data = JSON.parse($('#dl-text', box).value); } catch { err.textContent = 'Ce texte n\'est pas du JSON valide.'; return false; }
+        const errors = validateDecoupage(data);
+        if (errors.length) { err.innerHTML = errors.slice(0, 6).map(esc).join('<br>'); return false; }
+        const r = await placeDecoupage(data, $('#dl-replace', box).checked);
+        if (!r.bubbles && !r.notes) { err.textContent = 'Rien à placer : pas de page du projet en face du découpage.'; return false; }
+        const skip = r.skipped ? ` ${r.skipped} case${r.skipped > 1 ? 's' : ''} du découpage sans case en face.` : '';
+        toast(`${r.bubbles} bulle${r.bubbles > 1 ? 's' : ''} posée${r.bubbles > 1 ? 's' : ''} sur ${r.pages} page${r.pages > 1 ? 's' : ''}.${skip}`, { actionLabel: 'Annuler', duration: 9000, onAction: undo });
+      } },
+    ],
+  });
+  $('#dl-file', m.el).addEventListener('change', async e => { const f = e.target.files[0]; if (f) $('#dl-text', m.el).value = await f.text(); });
+}
+async function placeDecoupage(data, replace) {
+  await loadBubbleFonts(ed.bubbleDefaults);
+  const pr = ed.project, dpi = pr.dpi, measure = document.createElement('canvas').getContext('2d');
+  const before = [], after = [];
+  let bubbles = 0, notes = 0, skipped = 0, pages = 0;
+  data.pages.forEach((pd, k) => {
+    const pg = pr.pages[ed.pageIdx + k];
+    if (!pg) { skipped += pd.cases.length; return; }
+    pages++;
+    const snap = () => ({ pg, bubbles: pg.bubbles.slice(), notes: pg.panels.map(p => p.note && { ...p.note }) });
+    before.push(snap());
+    pd.cases.forEach((cd, j) => {
+      const p = pg.panels[j];
+      if (!p) { skipped++; return; }
+      if (replace) pg.bubbles = pg.bubbles.filter(b => b.panel !== p.id);
+      const n = p.note || {};
+      if ((cd.plan && !n.plan) || (cd.description && !n.description)) { p.note = { ...n, plan: n.plan || String(cd.plan || ''), description: n.description || String(cd.description || '') }; notes++; }
+      const list = placeDialogues(p, cd.dialogues, dpi, ed.bubbleDefaults, measure);
+      pg.bubbles.push(...list); bubbles += list.length;
+    });
+    after.push(snap());
+  });
+  const put = states => { for (const st of states) { st.pg.bubbles = st.bubbles.slice(); st.pg.panels.forEach((p, i) => { if (st.notes[i]) p.note = { ...st.notes[i] }; else delete p.note; }); } ed.bubbleId = null; notify('bubbles'); requestRender(); markChanged(); };
+  if (bubbles || notes) { put(after); ed.undo.pushAction('Dialogues du découpage', () => put(before), () => put(after)); }
+  return { bubbles, notes, skipped, pages };
+}
+
 async function exportPng() {
   await ensureFonts(ed.project, [page()]);
   const blob = await canvasToBlob(renderPage(ed.project, page(), 1));
@@ -2462,7 +2612,7 @@ const needLayer = () => { if (!deleteLayer()) toast('Une case garde au moins un 
 const COMMANDS = {
   'new-project': () => newProjectModal(), 'import-decoupage': () => decoupageModal(),
   rename: async () => { const name = await promptModal({ title: 'Renommer le projet', label: 'Titre', value: ed.project.title }); if (name) { ed.project.title = name; markChanged(); notify('title'); } },
-  'export-pdf': exportPdf, print: () => printModal('print'), 'export-png': exportPng, 'export-json': exportJson,
+  'export-pdf': exportPdf, print: () => printModal('print'), 'export-png': exportPng, 'export-json': exportJson, 'export-web': webModal, 'place-dialogues': dialoguesModal,
   undo, redo, 'clear-layer': clearActiveLayer, 'copy-case': copyModal,
   'del-case': () => { if (page().panels.length > 1) { if (deletePanel()) toast('Case supprimée.', { actionLabel: 'Annuler', duration: 8000, onAction: undo }); } else toast('Une page garde au moins une case.'); },
   'del-bubble': () => { const b = bubble(); if (b) deleteBubble(b); else toast('Aucune bulle sélectionnée.'); },

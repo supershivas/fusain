@@ -165,7 +165,9 @@ export function decoupageModal() {
         try { data = JSON.parse($('#dc-text', box).value); } catch { err.textContent = 'Ce texte n\'est pas du JSON valide.'; return false; }
         const errors = validateDecoupage(data);
         if (errors.length) { err.innerHTML = errors.slice(0, 6).map(esc).join('<br>'); return false; }
-        const project = projectFromDecoupage(data);
+        let styles = {};
+        try { styles = (JSON.parse(localStorage.getItem('fusain:prefs')) || {}).bubbleDefaults || {}; } catch { /* préférences illisibles : styles par défaut */ }
+        const project = await projectFromDecoupage(data, { styles });
         await saveProject(project, { changed: true });
         toast(`« ${project.title} » importé : ${project.pages.length} page${project.pages.length > 1 ? 's' : ''}.`);
         openProjectCb(project.id);

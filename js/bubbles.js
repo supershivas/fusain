@@ -74,7 +74,14 @@ export function wrapText(ctx, text, maxW) {
   const lines = [];
   for (const para of text.split('\n')) {
     let line = '';
-    for (const word of para.split(/\s+/).filter(Boolean)) {
+    // typographie française : « ? ! : ; » restent avec le mot d'avant, « avec le mot d'après (jamais seuls en début de ligne)
+    const words = [];
+    for (const w of para.split(/\s+/).filter(Boolean)) {
+      if (words.length && /^[?!:;»…]+$/.test(w)) words[words.length - 1] += ' ' + w;
+      else if (words.length && words[words.length - 1] === '«') words[words.length - 1] += ' ' + w;
+      else words.push(w);
+    }
+    for (const word of words) {
       const test = line ? line + ' ' + word : word;
       if (line && ctx.measureText(test).width > maxW) { lines.push(line); line = word; } else line = test;
     }

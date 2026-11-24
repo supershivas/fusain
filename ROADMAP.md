@@ -1,8 +1,8 @@
 # Feuille de route — Fusain
 
-Dernière mise à jour : 2026-11-24 (v1.62.1).
+Dernière mise à jour : 2026-11-24 (v1.63.0).
 
-## Fait (v1.29.0 → v1.62.1, 22-24 novembre 2026)
+## Fait (v1.29.0 → v1.63.0, 22-24 novembre 2026)
 
 ### Pinceaux et trames
 - [x] Palette de pinceaux du projet dans la barre du bas, synchronisée avec le projet (v1.29)
@@ -18,6 +18,10 @@ Dernière mise à jour : 2026-11-24 (v1.62.1).
 - [x] Palette : glisser un pinceau pour le ranger ; appui long = menu Renommer, Rétablir, Supprimer (v1.62)
 - [x] Nouveau projet : trois pinceaux seulement (Crayon HB, Plume G, Crayon de couleur) (v1.62)
 - [x] Pinceaux de peinture : trois aquarelles (ronde, lavis, granuleuse), gouache, acrylique (v1.62)
+- [x] Vignettes de la palette lisibles : trait net, épaisseur selon la taille, nom du pinceau dessous (v1.63)
+- [x] Outil Estompe (touche U) : étire et fond la peinture du calque actif, taille et force aux curseurs (v1.63)
+- [x] Images pour le web : carré, portrait 4:5, bande verticale (cases une à une ou pages, en une image ou en morceaux de 1280 px), partage vers Photos (v1.63)
+- [x] Découpage : dialogues placés dans l'ordre de lecture (narration calée au bord, répliques en alternance, style de bulle de l'auteur) ; « Placer les dialogues d'un découpage » dans un projet ouvert, annulable (v1.63)
 
 ### Couleur
 - [x] Couleur : calques RVBA par case, PDF en couleur (v1.31)
@@ -130,6 +134,8 @@ Dernière mise à jour : 2026-11-24 (v1.62.1).
 - [ ] Info-bulles au long appui : pas de conflit avec le menu de Safari ni avec les gestes existants
 - [ ] Palette (v1.62) : appui long puis glisser au doigt et au stylet, sans faire défiler la barre ; clavier ouvert en renommant un calque, un pinceau, une palette, un projet
 - [ ] Aquarelle, lavis, gouache, acrylique : fluidité du trait en grande taille sur une page A4 à 300 dpi
+- [ ] Estompe au stylet : force ressentie, fluidité en grande taille
+- [ ] Images pour le web : bouton « Partager » vers Photos et Instagram depuis l'app installée
 - [ ] Bulles et Taille des cases au doigt pendant qu'on dessine au stylet
 - [ ] Sélection : transformations, couper / copier / coller, remplir ; poignées au stylet et au doigt, second doigt pour déformer (une paume posée en cours de geste déforme aussi)
 

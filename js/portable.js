@@ -1,7 +1,8 @@
 // Export et import JSON (secours : tous les projets, calques en PNG), et import d'un découpage généré hors de l'app.
 import { listRecords, getLayerRec, putImportedProject, getRecord } from './store.js';
 import { uid, newProject, newPanel, newBubble, FORMATS, pageSize, layoutRects, mmToPx, autoLayout, LAYOUTS } from './model.js';
-import { autoSize } from './bubbles.js';
+import { autoSize, props, wrapForWidth } from './bubbles.js';
+import { loadFont } from './fonts.js';
 
 const toDataURL = buf => new Promise((res, rej) => {
   const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej;
@@ -101,10 +102,49 @@ export function validateDecoupage(d) {
   return errors;
 }
 
+// Place les dialogues d'une case du découpage, dans l'ordre de lecture : une narration en haut à gauche, calée au bord
+// de la case (sa marge `edge`) ; les répliques alternent à gauche et à droite, chacune un peu plus bas que la précédente
+// (elles se chevauchent en hauteur quand elles tiennent côte à côte), queue vers le bas, vers l'intérieur de la case.
+// `styles` : le dernier style réglé pour chaque type de bulle (préférences), pour que les bulles importées ressemblent aux autres.
+export function placeDialogues(panel, dialogues, dpi, styles = {}, measure = document.createElement('canvas').getContext('2d')) {
+  const out = [], mm = v => mmToPx(v, dpi), gap = mm(2), inset = mm(3);
+  const L = panel.x + inset, R = panel.x + panel.w - inset;
+  let top = panel.y + inset, y = top, prev = null, side = 0;
+  for (const dl of dialogues || []) {
+    const kind = TYPES[String(dl.type || 'parole').toLowerCase()] || 'parole';
+    const b = newBubble(kind, 0, 0);
+    Object.assign(b, styles[kind] || {});
+    b.text = String(dl.texte || '').trim(); b.auto = true; delete b.wrap; delete b.path; b.rot = 0;
+    if (dl.personnage) b.who = String(dl.personnage);
+    const fit = maxW => { autoSize(measure, b, dpi); if (b.w > maxW) { b.wrap = Math.round(wrapForWidth(b, maxW, dpi)); autoSize(measure, b, dpi); } };
+    if (kind === 'narration' || kind === 'texte') {
+      const e = mm(props(b).edge ?? 2);
+      fit(panel.w - 2 * e);
+      b.x = panel.x + e; b.y = out.length ? y : panel.y + e;
+      top = y = b.y + b.h + gap; prev = null; side = 0;
+    } else {
+      fit((R - L) * 0.6);
+      b.x = side === 0 ? L : R - b.w;
+      const beside = prev && prev.side !== side && prev.b.w + b.w + gap <= R - L;
+      b.y = beside ? Math.max(top, prev.b.y + prev.b.h * 0.55) : y;
+      y = Math.max(y, b.y + b.h + gap);
+      if (b.tail) b.tail = { x: Math.round(b.x + b.w * (side === 0 ? 0.35 : 0.65)), y: Math.round(b.y + b.h + Math.min(mm(9), panel.h * 0.12)) };
+      prev = { b, side }; side = 1 - side;
+    }
+    b.x = Math.round(b.x); b.y = Math.round(b.y); b.panel = panel.id;
+    out.push(b);
+  }
+  return out;
+}
+
+// Polices des styles de bulle : chargées avant de mesurer le texte (sinon les bulles seraient mal dimensionnées).
+export const loadBubbleFonts = (styles = {}) => Promise.all([...new Set(['architects', ...Object.values(styles).map(st => st && st.font).filter(Boolean)])].map(loadFont));
+
 // Crée un projet : une page par entrée, des cases annotées (plan, description), des bulles posées dans chaque case.
-export function projectFromDecoupage(d, { format = FORMATS[0], dpi = 300 } = {}) {
+export async function projectFromDecoupage(d, { format = FORMATS[0], dpi = 300, styles = {} } = {}) {
   const project = newProject({ title: (d.titre || d.title || 'Découpage importé').toString().slice(0, 120), format, dpi, layoutId: '1' });
   project.pages = [];
+  await loadBubbleFonts(styles);
   const measure = document.createElement('canvas').getContext('2d');
   for (const pd of d.pages) {
     const layout = LAYOUTS.find(l => l.id === pd.disposition && l.rows.flatMap(r => r.c).length === pd.cases.length) || autoLayout(pd.cases.length);
@@ -114,22 +154,7 @@ export function projectFromDecoupage(d, { format = FORMATS[0], dpi = 300 } = {})
     pd.cases.forEach((cd, i) => {
       const panel = page.panels[i];
       panel.note = { plan: String(cd.plan || ''), description: String(cd.description || '') };
-      let y = panel.y + panel.h * 0.12;   // sous l'étiquette de la note
-      (cd.dialogues || []).forEach((dl, k) => {
-        const kind = TYPES[String(dl.type || 'parole').toLowerCase()];
-        const b = newBubble(kind, 0, 0);
-        b.text = dl.texte; if (dl.personnage) b.who = String(dl.personnage);
-        b.pt = 8;
-        autoSize(measure, b, dpi);
-        b.w = Math.min(b.w, panel.w * 0.8);
-        const left = k % 2 === 0;
-        b.x = Math.round(left ? panel.x + panel.w * 0.05 : panel.x + panel.w - b.w - panel.w * 0.05);
-        b.y = Math.round(y);
-        y += b.h + panel.h * 0.05;
-        if (b.tail) b.tail = { x: Math.round(b.x + b.w * (left ? 0.3 : 0.7)), y: Math.round(b.y + b.h + panel.h * 0.07) };
-        b.panel = panel.id;
-        page.bubbles.push(b);
-      });
+      page.bubbles.push(...placeDialogues(panel, cd.dialogues, dpi, styles, measure));
     });
     project.pages.push(page);
   }

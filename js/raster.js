@@ -373,7 +373,7 @@ export function stampBrush(ctx, cx, cy, d, dir) {
 // Segment avec diamètre interpolé (pression du stylet), tamponné avec ctx.brush s'il y en a un.
 export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
   const dist = Math.hypot(x1 - x0, y1 - y0);
-  const spacing = ctx.brush ? Math.max(0.05, ctx.brush.spec.spacing) : 0.25;
+  const spacing = ctx.smudge ? 0.12 : ctx.brush ? Math.max(0.05, ctx.brush.spec.spacing) : 0.25;
   const step = Math.max(1, Math.min(d0, d1) * spacing);
   const n = Math.max(1, Math.ceil(dist / step));
   const dir = dist > 0 ? { x: (x1 - x0) / dist, y: (y1 - y0) / dist } : null;
@@ -383,8 +383,43 @@ export function strokeSegment(ctx, x0, y0, x1, y1, d0, d1 = d0) {
     const x = Math.round(x0 + (x1 - x0) * t), y = Math.round(y0 + (y1 - y0) * t);
     if (x === lx && y === ly) continue;
     lx = x; ly = y;
-    stampBrush(ctx, x, y, d0 + (d1 - d0) * t, dir);
+    if (ctx.smudge) smudgeStamp(ctx, x, y, d0 + (d1 - d0) * t);
+    else stampBrush(ctx, x, y, d0 + (d1 - d0) * t, dir);
   }
+}
+
+// Estompe (calque RVBA) : le tampon emporte la peinture qu'il traverse et la dépose plus loin, comme un doigt.
+// ctx.smudge = { strength 0–1, buf } : `buf` garde les pixels (prémultipliés) du tampon précédent, à la même place
+// relative ; chaque pixel du tampon va vers eux selon la force, plus au centre qu'au bord, puis ils deviennent la nouvelle charge.
+export function smudgeStamp(ctx, cx, cy, d) {
+  const sm = ctx.smudge, L = ctx.layer, data = ensureData(L), W = L.w;
+  const r = Math.max(1, d / 2), R = Math.ceil(r), S = 2 * R + 1, r2 = r * r;
+  ctx.undo.touch(L, cx - R, cy - R, cx + R + 1, cy + R + 1);
+  const nb = new Float32Array(S * S * 4), old = sm.buf, oR = sm.R, k = old ? oR / R : 0, oS = 2 * oR + 1;
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+    const q2 = dx * dx + dy * dy;
+    if (q2 > r2) continue;
+    const x = cx + dx, y = cy + dy;
+    if (x < 0 || y < 0 || x >= W || y >= L.h) continue;
+    const i = (y * W + x) * 4, a = data[i + 3] / 255, j = ((dy + R) * S + dx + R) * 4;
+    let c0 = data[i] * a, c1 = data[i + 1] * a, c2 = data[i + 2] * a, c3 = a;
+    if (old) {
+      const ox = Math.max(-oR, Math.min(oR, Math.round(dx * k))), oy = Math.max(-oR, Math.min(oR, Math.round(dy * k)));
+      const o = ((oy + oR) * oS + ox + oR) * 4;
+      const w = sm.strength * (1 - q2 / r2);   // bord doux : le doigt appuie surtout au centre
+      if (w > 0.002 && writable(ctx, x, y)) {
+        c0 += (old[o] - c0) * w; c1 += (old[o + 1] - c1) * w; c2 += (old[o + 2] - c2) * w;
+        const na = ctx.alphaLock ? a : c3 + (old[o + 3] - c3) * w;   // alpha verrouillé : seule la couleur se mélange
+        if (ctx.alphaLock && c3 + (old[o + 3] - c3) * w > 0) { const f = 1 / (c3 + (old[o + 3] - c3) * w); c0 *= f * na; c1 *= f * na; c2 *= f * na; }
+        c3 = na;
+        if (c3 <= 0.004) { data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0; c0 = c1 = c2 = c3 = 0; }
+        else { data[i] = Math.min(255, Math.round(c0 / c3)); data[i + 1] = Math.min(255, Math.round(c1 / c3)); data[i + 2] = Math.min(255, Math.round(c2 / c3)); data[i + 3] = Math.round(c3 * 255); }
+      }
+    }
+    nb[j] = c0; nb[j + 1] = c1; nb[j + 2] = c2; nb[j + 3] = c3;
+  }
+  sm.buf = nb; sm.R = R;
+  grow(ctx, cx - R, cy - R, cx + R + 1, cy + R + 1);
 }
 
 // Aperçu d'un pinceau : un trait ondulé tracé avec le vrai moteur, en pression qui monte puis redescend.

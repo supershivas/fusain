@@ -4,7 +4,7 @@ import {
   ed, page, activeLayer, growExtent, toRGBA, fillLayer, moveStrokeBelow, snapNarration, resizeBubbleWidth, selectPanel, markChanged, selectBubble, commitBubbleEdit, snapshotBubble, ensureMask, addFreeBubble, notify, gutterHandles, clampGutter, resizeGutter, gutterPreview, addTemplateBubble, mergePanels, confirmAdd, cancelAdd, splitRects, deleteBubble,
 } from './editor.js';
 import {
-  stampBrush, strokeSegment, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
+  stampBrush, strokeSegment, smudgeStamp, drawRect, drawEllipse, floodRegion, applyRegion, compositeValues, hexToRgb,
 } from './raster.js';
 import { tramaById } from './tramas.js';
 import { invalidate, setOverlay, requestRender, toScreen, view, bubbleCross, bubbleCorner, bubbleRotHandle, edgePluses, previewControls, mergeButtons } from './view.js';
@@ -119,7 +119,7 @@ export function down(pt) {
   const p = panelAt(pt.x, pt.y);
   if (!p) {
     // Départ hors de toute case : le geste est suivi, et il se pose dans la première case où il entre (rogné au cadre).
-    if (['pencil', 'eraser', 'mask', 'shape'].includes(ed.tool)) session = { kind: 'pre', pts: [pt] };
+    if (['pencil', 'eraser', 'smudge', 'mask', 'shape'].includes(ed.tool)) session = { kind: 'pre', pts: [pt] };
     return;
   }
   begin(p, pt);
@@ -145,6 +145,19 @@ function begin(p, pt) {
   }
   const lx = Math.floor(pt.x - p.ex), ly = Math.floor(pt.y - p.ey), tool = ed.tool;
   const trame = currentTrama();
+
+  if (tool === 'smudge') {
+    // l'estompe mélange de vraies couleurs : le calque passe en RVBA (annulable), un brouillon n'en a pas
+    if (layer.draft) { toast(`« ${layer.name} » est un brouillon : l'estompe agit sur un calque de dessin.`); return; }
+    toRGBA(layer);
+    ed.undo.begin('Estompe');
+    const ctx = makeCtx(p, layer, { v: 1 });
+    ctx.smudge = { strength: Math.min(0.98, ed.alpha), buf: null, R: 0 };
+    const d = diameter(pt);
+    session = { kind: 'stroke', smudge: true, p, layer, ctx, last: { x: lx, y: ly, d }, travel: 0, speed: 0, pos: { x: lx, y: ly }, target: { x: lx, y: ly }, mir: [] };
+    smudgeStamp(ctx, lx, ly, d);   // premier tampon : prend la charge sans rien changer
+    return;
+  }
 
   if (tool === 'pencil' || tool === 'eraser' || tool === 'mask') {
     const alpha = tool === 'mask' ? 1 : ed.alpha;   // opacité tramée du pinceau
@@ -302,7 +315,7 @@ export function up() {
       segment(s, s.last.x, s.last.y, s.target.x, s.target.y, s.last.d, Math.max(1, Math.round(s.last.d * 0.5))); flush(s);
     }
     const entry = ed.undo.commit(); markChanged();
-    inkHint(s.p, s.layer, entry, ed.tool);
+    if (!s.smudge) inkHint(s.p, s.layer, entry, ed.tool);
   } else if (s.kind === 'shape') {
     setOverlay({ shape: null });
     if (s.x1 === undefined) return;

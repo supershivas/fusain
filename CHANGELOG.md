@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.63.0 — 2026-11-24
+- Nouvel outil Estompe (U) : étire et fond la peinture comme un doigt ; curseurs taille et force
+- Images pour le web (menu Fichier) : carré ou portrait 4:5 pour Instagram, bande verticale façon webtoon, partage direct vers Photos
+- Dialogues d'un découpage posés dans les cases du projet ouvert (menu Page), mieux placés ; palette de pinceaux plus lisible, avec leur nom
+
 ## 1.62.1 — 2026-11-24
 - App installée sur iPad : la barre d'état (heure, wifi, batterie) a sa propre bande au-dessus de l'en-tête, au lieu d'empiéter dessus
 

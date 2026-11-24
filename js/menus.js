@@ -12,7 +12,7 @@ const menus = () => {
   return [
     ['Fichier', [
       ['home', 'Mes dessins', 'home-2'], ['new-project', 'Nouveau projet…', 'file-plus'], ['rename', 'Renommer le projet…', 'pencil'], null,
-      ['print', 'Imprimer…', 'printer', 'Ctrl+P'], ['export-pdf', 'Exporter en PDF…', 'file-type-pdf'], ['export-png', `Exporter la page ${ed.pageIdx + 1} en PNG`, 'photo'], ['export-json', 'Sauvegarde JSON du projet', 'file-export'], null,
+      ['print', 'Imprimer…', 'printer', 'Ctrl+P'], ['export-pdf', 'Exporter en PDF…', 'file-type-pdf'], ['export-png', `Exporter la page ${ed.pageIdx + 1} en PNG`, 'photo'], ['export-web', 'Images pour le web…', 'photo-share'], ['export-json', 'Sauvegarde JSON du projet', 'file-export'], null,
       ['import-decoupage', 'Importer un découpage…', 'file-import'], ['settings', 'Réglages…', 'settings']]],
     ['Édition', [
       ['undo', 'Annuler', 'arrow-back-up', 'Ctrl+Z', !ed.undo.canUndo], ['redo', 'Rétablir', 'arrow-forward-up', 'Ctrl+Maj+Z', !ed.undo.canRedo], null,
@@ -33,7 +33,7 @@ const menus = () => {
       ['lock-layer', layer.locked ? 'Déverrouiller' : 'Verrouiller', layer.locked ? 'lock-open' : 'lock'], ['solo-layer', ed.solo === layer.id ? 'Afficher tous les calques' : 'Afficher seul', 'eye']]],
     ['Page', [
       ['add-page', 'Nouvelle page…', 'file-plus'], ['add-cover', ed.project.pages.some(p => p.cover) ? 'Aller à la couverture' : 'Ajouter une couverture', 'book'], ['pages-board', 'Chemin de fer…', 'layout-grid'], ['dup-page', 'Dupliquer', 'copy'], ['del-page', 'Supprimer', 'trash', '', !many], null,
-      ['folio', ed.project.folio && ed.project.folio.on ? 'Numéros de page…' : 'Numéroter les pages…', 'list-numbers'], null,
+      ['folio', ed.project.folio && ed.project.folio.on ? 'Numéros de page…' : 'Numéroter les pages…', 'list-numbers'], ['place-dialogues', 'Placer les dialogues d\'un découpage…', 'messages'], null,
       ['page-left', 'Reculer', 'arrow-up', '', ed.pageIdx === 0], ['page-right', 'Avancer', 'arrow-down', '', ed.pageIdx >= ed.project.pages.length - 1], null,
       ['page-prev', 'Page précédente', 'chevron-left', '', ed.pageIdx === 0], ['page-next', 'Page suivante', 'chevron-right', '', ed.pageIdx >= ed.project.pages.length - 1]]],
     ['Affichage', [

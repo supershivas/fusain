@@ -502,3 +502,58 @@ export function download(blob, filename) {
 }
 
 export const safeName = s => (s || 'fusain').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'fusain';
+
+// ───────────────────────── Images pour le web ─────────────────────────
+// Carré et portrait 4:5 (Instagram) : une image par page ou par case, entière sur fond blanc ou rognée pour remplir.
+// Bande verticale (webtoon) : pages ou cases l'une sous l'autre, 800 px de large, en un fichier ou en morceaux.
+export const WEB_FORMATS = [
+  { id: 'square', name: 'Carré', w: 1080, h: 1080, help: '1080 × 1080 px, pour Instagram.' },
+  { id: 'portrait', name: 'Portrait 4:5', w: 1080, h: 1350, help: '1080 × 1350 px, le plus grand format en hauteur d\'Instagram.' },
+  { id: 'strip', name: 'Bande verticale', w: 800, help: '800 px de large, à lire en faisant défiler (webtoon).' },
+];
+export const STRIP_SLICE = 1280;    // hauteur des morceaux d'une bande (limite de Webtoon)
+const STRIP_MAX = 15000;            // au-delà, même « une seule image » est coupée (canevas de Safari : 16 Mpx)
+
+const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+const smoothDraw = (ctx, src, sx, sy, sw, sh, dx, dy, dw, dh) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh); };
+
+// Rectangle d'une case sur la page rendue (1 px = 1 px de page), avec 1 mm d'air, sans sortir de la page.
+export function panelCrop(project, p) {
+  const { w, h } = pageSize(project), m = mmToPx(1, project.dpi);
+  const x0 = Math.max(0, p.x - m), y0 = Math.max(0, p.y - m), x1 = Math.min(w, p.x + p.w + m), y1 = Math.min(h, p.y + p.h + m);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+// Pose la zone `r` de `src` dans une image W × H : entière sur fond blanc (« fit », avec une marge) ou rognée (« fill »).
+export function frameImage(src, r, W, H, mode = 'fit') {
+  const c = canvasOf(W, H), ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  const k = mode === 'fill' ? Math.max(W / r.w, H / r.h) : Math.min(W / r.w, H / r.h) * 0.94;
+  const dw = r.w * k, dh = r.h * k;
+  smoothDraw(ctx, src, r.x, r.y, r.w, r.h, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  return c;
+}
+
+// Ramène la zone `r` de `src` à la largeur de la bande.
+export function stripPiece(src, r, width) {
+  const k = width / r.w, c = canvasOf(width, r.h * k);
+  smoothDraw(c.getContext('2d'), src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  return c;
+}
+
+// Empile les morceaux (même largeur) avec un écart blanc, puis découpe en images de `sliceH` px au plus.
+export function stackStrip(pieces, width, gap, sliceH = STRIP_MAX) {
+  const total = pieces.reduce((t, c) => t + c.height, 0) + gap * (pieces.length + 1);
+  const H = Math.min(sliceH, STRIP_MAX), out = [];
+  for (let y0 = 0; y0 < total; y0 += H) {
+    const c = canvasOf(width, Math.min(H, total - y0)), ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    let y = gap;
+    for (const pc of pieces) {
+      if (y + pc.height > y0 && y < y0 + c.height) ctx.drawImage(pc, 0, y - y0);
+      y += pc.height + gap;
+    }
+    out.push(c);
+  }
+  return out;
+}
