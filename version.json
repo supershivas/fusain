@@ -1,7 +1,7 @@
 {
-  "version": "1.63.1",
-  "date": "2026-11-24",
+  "version": "1.63.2",
+  "date": "2026-11-27",
   "changes": [
-    "Pinceaux à grain plus rapides : aquarelle et gouache 3 à 5 fois, lavis 4 fois, acrylique, craie, fusain et estompe 2 fois"
+    "Remplir : toucher une petite zone (plus étroite que le trou à boucher) la remplit, au lieu de remplir la zone voisine"
   ]
 }

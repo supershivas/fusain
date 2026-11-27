@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.63.2 — 2026-11-27
+- Remplir : toucher une petite zone (plus étroite que le trou à boucher) la remplit, au lieu de remplir la zone voisine
+
 ## 1.63.1 — 2026-11-24
 - Pinceaux à grain plus rapides : aquarelle et gouache 3 à 5 fois, lavis 4 fois, acrylique, craie, fusain et estompe 2 fois
 

@@ -628,13 +628,16 @@ function floodClosed(src, w, h, sx, sy, r) {
   for (let i = 0; i < ink.length; i++) ink[i] = src[i] === INK ? 1 : 0;
   const wall = dilate(ink, w, h, r);
   let seed = sy * w + sx;
-  if (wall[seed]) {   // le clic est tout près d'un trait : on part du point libre le plus proche
+  if (wall[seed]) {
+    // le clic est tout près d'un trait : on part du point libre le plus proche, mais dans la zone touchée (jamais de
+    // l'autre côté du trait) ; une zone plus étroite que le trou à boucher se remplit telle quelle
+    const plain = floodRegion(src, w, h, sx, sy, 0);
     let best = -1, bd = Infinity;
     for (let y = Math.max(0, sy - 3 * r); y <= Math.min(h - 1, sy + 3 * r); y++) for (let x = Math.max(0, sx - 3 * r); x <= Math.min(w - 1, sx + 3 * r); x++) {
-      const d = (x - sx) ** 2 + (y - sy) ** 2;
-      if (!wall[y * w + x] && d < bd) { bd = d; best = y * w + x; }
+      const d = (x - sx) ** 2 + (y - sy) ** 2, i = y * w + x;
+      if (!wall[i] && plain.mask[i] && d < bd) { bd = d; best = i; }
     }
-    if (best < 0) return floodRegion(src, w, h, sx, sy, 0);
+    if (best < 0) return plain;
     seed = best;
   }
   const core = floodRegion(wall.map(v => v ? INK : 0), w, h, seed % w, (seed / w) | 0, 0);
